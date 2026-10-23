@@ -75,6 +75,10 @@ class FoundationViewModelTest {
         advanceUntilIdle()
         assertEquals(AppShell.REDUCED, viewModel.ui.value.shell)
         assertFalse(viewModel.ui.value.keyboardAllowed)
+        assertTrue(viewModel.ui.value.restrictions.noKeyboard)
+        assertTrue(viewModel.ui.value.restrictions.noVideo)
+        assertTrue(viewModel.ui.value.restrictions.limitStringLength)
+        assertEquals("", viewModel.ui.value.restrictions.clip("긴 문장"))
 
         driving.state.value = DrivingSnapshot(
             gear = GearPosition.PARK,
@@ -85,6 +89,7 @@ class FoundationViewModelTest {
         advanceUntilIdle()
         assertEquals(AppShell.FULL, viewModel.ui.value.shell)
         assertTrue(viewModel.ui.value.keyboardAllowed)
+        assertFalse(viewModel.ui.value.restrictions.noVideo)
 
         driving.state.value = driving.state.value.copy(
             restrictionMask = UxRestrictionBits.NO_KEYBOARD,
@@ -92,6 +97,8 @@ class FoundationViewModelTest {
         advanceUntilIdle()
         assertEquals(AppShell.FULL, viewModel.ui.value.shell)
         assertFalse(viewModel.ui.value.keyboardAllowed)
+        assertFalse(viewModel.ui.value.restrictions.noVideo)
+        assertTrue(viewModel.ui.value.restrictions.noKeyboard)
         job.cancel()
     }
 

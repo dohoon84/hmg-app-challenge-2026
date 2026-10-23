@@ -104,6 +104,7 @@ adb shell dumpsys gfxinfo io.hmg.appchallenge.foundation
 - 주행 중 화면은 Activity `distractionOptimized=true` 위에서 큰 버튼만 보여 줍니다. 선언만 하고 긴 목록이나 키보드를 그대로 두지 않습니다.
 - 상단 Back은 Activity를 끝내지 않고 `moveTaskToBack(true)`입니다. CCP 로터리 메타데이터 `com.hmg.rotary.ROTARY_SUPPORTED`는 false입니다.
 - 좌표 입력 칸은 `rememberSaveable`, 검증 오류 문구는 `SavedStateHandle`에 둡니다.
+- 창은 일반 Activity입니다. 기본은 세로 840×1184, 가로는 1700×1184이고 단위는 dp입니다. 주행 뷰 840×1280은 시스템 영역이라 앱이 덮지 않습니다. 회전은 구성을 다시 만들며 입력과 검증 오류는 유지됩니다. 서체는 Asta Sans(OFL, `res/font`)이고 글자 토큰은 `ivi_`입니다. 라이트와 다크를 모두 그립니다. 버튼은 Large 100 / Medium 80 / Small 64dp이고, 축소 화면의 Small은 Medium으로 올립니다. 눌림은 95%로 80ms 안에 반응합니다.
 - 안내 음성은 Pleos TTS SDK를 쓰지 않습니다. `android.speech.tts.TextToSpeech`가 준비되면 그것을 쓰고, 엔진이 없거나 초기화·재생이 실패하면 `res/raw`의 짧은 차임으로 넘깁니다. 둘 다 `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK`, 175ms 앞 무음, 내비 안내·어시스턴트가 겹치면 즉시 중지, 백그라운드에서는 포커스를 놓습니다.
 
 주행가능거리는 Vehicle SDK에 getter가 없습니다. `setRangeRemainingDistance`는 deprecated라 쓰지 않습니다. pleos flavor만 AAOS `RANGE_REMAINING`(위험 권한 `CAR_ENERGY`)을 시도하고, 없거나 권한이 없으면 "SDK 미제공"으로 둡니다. fake flavor는 시뮬레이션 값을 보여 줍니다.

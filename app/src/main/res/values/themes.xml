@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Foundation" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">#0E1116</item>
-        <item name="android:statusBarColor">#0E1116</item>
-        <item name="android:navigationBarColor">#0E1116</item>
-        <item name="android:windowLightStatusBar">false</item>
+    <style name="Theme.Foundation" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/ivi_surface_primary</item>
+        <item name="android:statusBarColor">@color/ivi_surface_primary</item>
+        <item name="android:navigationBarColor">@color/ivi_surface_primary</item>
+        <item name="android:windowLightStatusBar">true</item>
     </style>
 </resources>

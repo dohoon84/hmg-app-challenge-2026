@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Connect-S 17" window. All dp. Driving view is a system area the app does not cover. -->
+    <dimen name="window_apps_portrait_width">840dp</dimen>
+    <dimen name="window_apps_landscape_width">1700dp</dimen>
+    <dimen name="window_apps_application_height">1184dp</dimen>
+    <dimen name="window_apps_driving_view_width">840dp</dimen>
+    <dimen name="window_apps_driving_view_height">1280dp</dimen>
+
+    <dimen name="buttons_basic_large">100dp</dimen>
+    <dimen name="buttons_basic_medium">80dp</dimen>
+    <dimen name="buttons_basic_small">64dp</dimen>
+
+    <dimen name="driving_main_text_size">36sp</dimen>
+    <dimen name="driving_main_text_line_height">44sp</dimen>
+</resources>

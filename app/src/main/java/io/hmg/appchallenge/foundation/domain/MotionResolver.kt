@@ -29,20 +29,6 @@ object ShellPolicy {
     }
 }
 
-/**
- * CarUxRestrictions.UX_RESTRICTIONS_NO_KEYBOARD. Value is checked against android.car in unit tests.
- */
-object UxRestrictionBits {
-    const val NO_KEYBOARD = 8
-}
-
-object KeyboardPolicy {
-    fun allowsKeyboard(mask: Int, uxAvailable: Boolean, failClosed: Boolean): Boolean {
-        if (failClosed && !uxAvailable) return false
-        return mask and UxRestrictionBits.NO_KEYBOARD == 0
-    }
-}
-
 /** Snapshot written when CarService is down or the Car APIs cannot be used. */
 object SignalLoss {
     fun drivingSnapshot(): DrivingSnapshot {

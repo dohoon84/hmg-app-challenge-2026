@@ -18,7 +18,17 @@ class GearSelectionCodesTest {
         assertEquals(VehicleGear.GEAR_DRIVE, GearSelectionCodes.DRIVE)
         assertEquals(VehicleGear.GEAR_FIRST, GearSelectionCodes.FIRST)
         assertEquals(VehicleGear.GEAR_NINTH, GearSelectionCodes.NINTH)
+        assertEquals(CarUxRestrictions.UX_RESTRICTIONS_BASELINE, UxRestrictionBits.BASELINE)
+        assertEquals(CarUxRestrictions.UX_RESTRICTIONS_NO_DIALPAD, UxRestrictionBits.NO_DIALPAD)
+        assertEquals(CarUxRestrictions.UX_RESTRICTIONS_NO_FILTERING, UxRestrictionBits.NO_FILTERING)
+        assertEquals(CarUxRestrictions.UX_RESTRICTIONS_LIMIT_STRING_LENGTH, UxRestrictionBits.LIMIT_STRING_LENGTH)
         assertEquals(CarUxRestrictions.UX_RESTRICTIONS_NO_KEYBOARD, UxRestrictionBits.NO_KEYBOARD)
+        assertEquals(CarUxRestrictions.UX_RESTRICTIONS_NO_VIDEO, UxRestrictionBits.NO_VIDEO)
+        assertEquals(CarUxRestrictions.UX_RESTRICTIONS_LIMIT_CONTENT, UxRestrictionBits.LIMIT_CONTENT)
+        assertEquals(CarUxRestrictions.UX_RESTRICTIONS_NO_SETUP, UxRestrictionBits.NO_SETUP)
+        assertEquals(CarUxRestrictions.UX_RESTRICTIONS_NO_TEXT_MESSAGE, UxRestrictionBits.NO_TEXT_MESSAGE)
+        assertEquals(CarUxRestrictions.UX_RESTRICTIONS_NO_VOICE_TRANSCRIPTION, UxRestrictionBits.NO_VOICE_TRANSCRIPTION)
+        assertEquals(CarUxRestrictions.UX_RESTRICTIONS_FULLY_RESTRICTED, UxRestrictionBits.FULLY_RESTRICTED)
     }
 
     @Test

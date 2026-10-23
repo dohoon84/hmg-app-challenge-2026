@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="launcher_background">#0E1116</color>
+    <color name="launcher_background">#FFFFFF</color>
+    <color name="ivi_surface_primary">#FFFFFF</color>
+    <color name="ivi_text_primary">#121417</color>
 </resources>

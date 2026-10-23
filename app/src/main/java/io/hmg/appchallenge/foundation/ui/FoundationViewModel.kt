@@ -12,12 +12,12 @@ import io.hmg.appchallenge.foundation.domain.DestinationSnapshot
 import io.hmg.appchallenge.foundation.domain.DistractionPolicy
 import io.hmg.appchallenge.foundation.domain.DoorId
 import io.hmg.appchallenge.foundation.domain.DrivingSnapshot
-import io.hmg.appchallenge.foundation.domain.KeyboardPolicy
 import io.hmg.appchallenge.foundation.domain.LinkState
 import io.hmg.appchallenge.foundation.domain.PlaceParser
 import io.hmg.appchallenge.foundation.domain.PlaceRequest
 import io.hmg.appchallenge.foundation.domain.ShellPolicy
 import io.hmg.appchallenge.foundation.domain.TripEstimate
+import io.hmg.appchallenge.foundation.domain.UxRestrictionState
 import io.hmg.appchallenge.foundation.domain.VehicleSnapshot
 import io.hmg.appchallenge.foundation.driving.DrivingStateRepository
 import io.hmg.appchallenge.foundation.navi.NavigationRepository
@@ -39,6 +39,12 @@ data class FoundationUi(
     val vehicle: VehicleSnapshot = VehicleSnapshot(),
     val driving: DrivingSnapshot = DrivingSnapshot(),
     val shell: AppShell = AppShell.FULL,
+    val restrictions: UxRestrictionState = UxRestrictionState.from(
+        uxAvailable = true,
+        mask = 0,
+        maxRestrictedStringLength = 0,
+        failClosed = false,
+    ),
     val keyboardAllowed: Boolean = true,
     val destination: DestinationSnapshot? = null,
     val arrival: ArrivalSnapshot? = null,
@@ -82,7 +88,13 @@ class FoundationViewModel @Inject constructor(
         },
         cabinCache.observeVehicle(),
         formError,
-    ) { vehicleSlice, navSlice, cache, error ->
+        ) { vehicleSlice, navSlice, cache, error ->
+        val restrictions = UxRestrictionState.from(
+            uxAvailable = vehicleSlice.driving.uxAvailable,
+            mask = vehicleSlice.driving.restrictionMask,
+            maxRestrictedStringLength = vehicleSlice.driving.maxRestrictedStringLength,
+            failClosed = distractionPolicy.failClosed,
+        )
         FoundationUi(
             vehicleLink = vehicleSlice.link,
             navLink = navSlice.link,
@@ -93,11 +105,8 @@ class FoundationViewModel @Inject constructor(
                 uxAvailable = vehicleSlice.driving.uxAvailable,
                 failClosed = distractionPolicy.failClosed,
             ),
-            keyboardAllowed = KeyboardPolicy.allowsKeyboard(
-                mask = vehicleSlice.driving.restrictionMask,
-                uxAvailable = vehicleSlice.driving.uxAvailable,
-                failClosed = distractionPolicy.failClosed,
-            ),
+            restrictions = restrictions,
+            keyboardAllowed = restrictions.keyboardAllowed,
             destination = navSlice.destination,
             arrival = navSlice.arrival,
             trip = navSlice.trip,
@@ -197,9 +206,16 @@ class FoundationViewModel @Inject constructor(
 
     private fun initialUi(): FoundationUi {
         val failClosed = distractionPolicy.failClosed
+        val restrictions = UxRestrictionState.from(
+            uxAvailable = false,
+            mask = 0,
+            maxRestrictedStringLength = 0,
+            failClosed = failClosed,
+        )
         return FoundationUi(
             shell = if (failClosed) AppShell.REDUCED else AppShell.FULL,
-            keyboardAllowed = !failClosed,
+            restrictions = restrictions,
+            keyboardAllowed = restrictions.keyboardAllowed,
             simulatorEnabled = cabinSimulator.enabled,
             formError = savedStateHandle.get<String>(FORM_ERROR),
         )
