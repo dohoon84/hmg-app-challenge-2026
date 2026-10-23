@@ -1,4 +1,6 @@
+import org.gradle.api.execution.TaskExecutionGraph
 import org.gradle.api.tasks.Copy
+import org.gradle.kotlin.dsl.closureOf
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.Properties
 
@@ -177,30 +179,20 @@ val contestSigningMessage =
         "Set STORE_FILE, STORE_PASSWORD, KEY_ALIAS, and KEY_PASSWORD " +
         "in keystore.properties or the environment. Do not submit a fake or unsigned APK."
 
-// Fails at the start of execution, before assemblePleosRelease does any work.
-// A throw while configuring the build script would fail every Gradle command.
-// onlyIf would skip the export instead of failing it. doLast on the copy runs
-// only after assemblePleosRelease, which is the work we want to avoid.
-val checkContestSigning = tasks.register("checkContestSigning") {
-    group = "verification"
-    description = "Reject a contest export before the release build when signing is not configured."
-    doFirst {
-        if (!hasReleaseSigning) {
-            throw GradleException(contestSigningMessage)
-        }
+// org.gradle.parallel is on, so mustRunAfter(assemblePleosRelease) still lets that
+// task's compile and package dependencies start before a sibling signing check.
+// The graph callback runs after scheduling and before any task action, and a build
+// that did not request the export never enters the branch.
+gradle.taskGraph.whenReady(closureOf<TaskExecutionGraph> {
+    if (hasTask(":app:exportContestApk") && !hasReleaseSigning) {
+        throw GradleException(contestSigningMessage)
     }
-}
-
-tasks.configureEach {
-    if (name == "assemblePleosRelease") {
-        mustRunAfter(checkContestSigning)
-    }
-}
+})
 
 tasks.register<Copy>("exportContestApk") {
     group = "distribution"
     description = "Copy a signed pleos release APK into apk/. Fails when release signing is not configured."
-    dependsOn(checkContestSigning, "assemblePleosRelease")
+    dependsOn("assemblePleosRelease")
     from(layout.buildDirectory.dir("outputs/apk/pleos/release"))
     include("*-release.apk")
     exclude("*unaligned*")
