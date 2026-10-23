@@ -1,8 +1,9 @@
 package io.hmg.appchallenge.foundation.speech
 
 /**
- * Foreground announcements. [onSuspend] stops output and drops audio focus.
- * [onForeground] only clears that gate. It does not replay the last utterance.
+ * Foreground announcements. [onSuspend] stops output, drops audio focus, and
+ * shuts the engine down. [onForeground] only clears that gate. It does not
+ * replay the last utterance or pre-create the engine.
  */
 interface CabinAnnouncer {
     fun announce(text: String)
@@ -11,16 +12,27 @@ interface CabinAnnouncer {
     fun onForeground()
 }
 
-/** Platform [android.speech.tts.TextToSpeech]. The Pleos TTS SDK is not used. */
+/**
+ * Platform [android.speech.tts.TextToSpeech]. The Pleos TTS SDK is not used.
+ * [speak] creates the engine on first use. Completion is reported on the caller
+ * thread the implementation chooses; [io.hmg.appchallenge.foundation.speech.FocusedAnnouncer]
+ * expects those callbacks on the main thread.
+ */
 interface SpeechEngine {
     val ready: Boolean
-    fun speak(text: String)
+    fun speak(
+        text: String,
+        onDone: () -> Unit,
+        onError: () -> Unit,
+        onStop: () -> Unit,
+    )
     fun stop()
+    fun shutdown()
 }
 
-/** Pre-recorded clip. A missing clip is a no-op. */
+/** Pre-recorded clip. A missing clip still invokes [onFinished] so focus can be released. */
 interface ChimePlayer {
-    fun play()
+    fun play(onFinished: () -> Unit)
     fun stop()
 }
 

@@ -16,6 +16,7 @@ import io.hmg.appchallenge.foundation.domain.PlaceRequest
 import io.hmg.appchallenge.foundation.domain.StaticDistractionPolicy
 import io.hmg.appchallenge.foundation.domain.TripEstimate
 import io.hmg.appchallenge.foundation.domain.UxRestrictionBits
+import io.hmg.appchallenge.foundation.domain.UxRestrictionState
 import io.hmg.appchallenge.foundation.domain.VehicleSnapshot
 import io.hmg.appchallenge.foundation.driving.DrivingStateRepository
 import io.hmg.appchallenge.foundation.navi.NavigationRepository
@@ -43,6 +44,15 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FoundationViewModelTest {
+    @Test
+    fun defaultUiFailsClosedWithoutBlankingShortCopy() {
+        val ui = FoundationUi()
+        assertFalse(ui.keyboardAllowed)
+        assertTrue(ui.restrictions.limitStringLength)
+        assertEquals("SOC 80%", ui.restrictions.clip("SOC 80%"))
+        assertEquals("문 열림", ui.restrictions.clip("문 열림", preserve = true))
+    }
+
     private val scheduler = TestCoroutineScheduler()
     private val dispatcher = StandardTestDispatcher(scheduler)
 
@@ -78,7 +88,12 @@ class FoundationViewModelTest {
         assertTrue(viewModel.ui.value.restrictions.noKeyboard)
         assertTrue(viewModel.ui.value.restrictions.noVideo)
         assertTrue(viewModel.ui.value.restrictions.limitStringLength)
-        assertEquals("", viewModel.ui.value.restrictions.clip("긴 문장"))
+        assertEquals("긴 문장", viewModel.ui.value.restrictions.clip("긴 문장"))
+        assertEquals(
+            UxRestrictionState.UNKNOWN_MAX_STRING_LENGTH,
+            viewModel.ui.value.restrictions.maxRestrictedStringLength,
+        )
+        assertEquals("문 열림", viewModel.ui.value.restrictions.clip("문 열림", preserve = true))
 
         driving.state.value = DrivingSnapshot(
             gear = GearPosition.PARK,

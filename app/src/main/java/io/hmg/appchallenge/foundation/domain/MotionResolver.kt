@@ -100,8 +100,3 @@ object GeoEstimate {
         return ((distanceMeters / 1000.0) / speedKmh * 3600.0).toInt()
     }
 }
-
-fun shortenForRestriction(text: String, maxLength: Int, restricted: Boolean): String {
-    if (!restricted || maxLength <= 0 || text.length <= maxLength) return text
-    return text.take(maxLength)
-}

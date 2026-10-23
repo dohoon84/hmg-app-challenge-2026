@@ -2,8 +2,10 @@ package io.hmg.appchallenge.foundation.domain
 
 /**
  * CarUxRestrictions bits the UI can read. Values match android.car.
- * When [failClosed] and the UX service has not reported, every restriction is on
- * and string length collapses to empty. That is the most restrictive state.
+ * When [failClosed] and the UX service has not reported, every restriction is on.
+ * String length then uses [UxRestrictionState.UNKNOWN_MAX_STRING_LENGTH] (the AAOS
+ * `car_ux_restrictions` baseline of 120). A limit of 0 or less never blanks text,
+ * and [UxRestrictionState.clip] with `preserve` never shortens a safety warning.
  */
 object UxRestrictionBits {
     const val BASELINE = 0
@@ -34,13 +36,27 @@ data class UxRestrictionState(
 ) {
     val keyboardAllowed: Boolean get() = !noKeyboard
 
-    fun clip(text: String): String {
-        if (!limitStringLength) return text
-        if (maxRestrictedStringLength <= 0) return ""
-        return text.take(maxRestrictedStringLength)
+    /**
+     * Shortens [text] to the active limit.
+     * [preserve] is for safety copy such as the door-open warning: the text is never
+     * shortened or removed, even when the limit is one character.
+     * A limit of 0 or less keeps [text]. Unknown UX uses [UNKNOWN_MAX_STRING_LENGTH].
+     */
+    fun clip(text: String, preserve: Boolean = false): String {
+        if (preserve || !limitStringLength) return text
+        val limit = maxRestrictedStringLength
+        if (limit <= 0) return text
+        return text.take(limit)
     }
 
     companion object {
+        /**
+         * AAOS `frameworks/base/core/res/res/values/car_ux_restrictions.xml` default for
+         * `ux_restrictions_limit_string_length` when the car has not reported a length.
+         * Applied only while UX is unknown and the flavor fails closed.
+         */
+        const val UNKNOWN_MAX_STRING_LENGTH = 120
+
         fun from(
             uxAvailable: Boolean,
             mask: Int,
@@ -60,20 +76,14 @@ data class UxRestrictionState(
                 noSetup = active.has(UxRestrictionBits.NO_SETUP),
                 noTextMessage = active.has(UxRestrictionBits.NO_TEXT_MESSAGE),
                 noVoiceTranscription = active.has(UxRestrictionBits.NO_VOICE_TRANSCRIPTION),
-                maxRestrictedStringLength = if (locked) 0 else maxRestrictedStringLength,
+                maxRestrictedStringLength = if (locked) {
+                    UNKNOWN_MAX_STRING_LENGTH
+                } else {
+                    maxRestrictedStringLength
+                },
             )
         }
     }
 }
 
 private fun Int.has(bit: Int): Boolean = this and bit != 0
-
-object KeyboardPolicy {
-    fun allowsKeyboard(mask: Int, uxAvailable: Boolean, failClosed: Boolean): Boolean =
-        UxRestrictionState.from(
-            uxAvailable = uxAvailable,
-            mask = mask,
-            maxRestrictedStringLength = 0,
-            failClosed = failClosed,
-        ).keyboardAllowed
-}

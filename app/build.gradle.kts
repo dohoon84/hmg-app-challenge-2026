@@ -207,11 +207,60 @@ val forbiddenPleosReleaseNames = listOf(
     "FakeDrivingStateRepository",
 )
 
+// Names the app may ship. Library merges (Vehicle binding, AndroidX receiver) are included.
+// The post-2026-10-27 approval list is not published yet, so this is the read-only set
+// justified in the pleos manifest. Delete a line there and here together.
+val allowedPleosReleasePermissions = setOf(
+    "pleos.car.permission.CAR_DOORS",
+    "pleos.car.permission.CAR_WINDOWS",
+    "pleos.car.permission.CAR_ENERGY",
+    "pleos.car.permission.CAR_DRIVE",
+    "pleos.car.permission.CAR_INFO",
+    "pleos.car.permission.CAR_SEATS",
+    "pleos.car.permission.NAVI_ROUTE",
+    "pleos.car.permission.NAVI_ROUTE_SEARCH",
+    "android.car.permission.CAR_POWERTRAIN",
+    "android.car.permission.CAR_ENERGY",
+    "ai.pleos.playground.service.vehicle.VEHICLE_BINDING",
+    "io.hmg.appchallenge.foundation.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+)
+
 tasks.register("checkPleosReleaseContents") {
     group = "verification"
-    description = "Fail the pleos release APK when it contains the fake flavor."
+    description = "Fail the pleos release APK when it contains the fake flavor or an extra permission."
     dependsOn("assemblePleosRelease")
     doLast {
+        // Dex class-name scan is valid only while release isMinifyEnabled is false.
+        // R8 would rename these classes and this check would pass silently.
+        // A minified build needs a mapping-file check instead.
+        // Resource strings (main strings.xml simulator copy) are not scanned.
+        val mergedManifest = layout.buildDirectory.file(
+            "intermediates/merged_manifests/pleosRelease/processPleosReleaseManifest/AndroidManifest.xml",
+        ).get().asFile
+        if (!mergedManifest.isFile) {
+            throw GradleException("merged pleos release manifest not found at $mergedManifest")
+        }
+        val manifestXml = mergedManifest.readText()
+        val permissions = Regex("""<uses-permission\b[^>]*android:name="([^"]+)"""")
+            .findAll(manifestXml)
+            .map { it.groupValues[1] }
+            .toSet()
+        val extra = permissions - allowedPleosReleasePermissions
+        if (extra.isNotEmpty()) {
+            throw GradleException("pleos release manifest permissions outside the allowlist: $extra")
+        }
+        val forbidden = listOf(
+            "CONTROL_CAR",
+            "PRIVATE_CAR_SAFETY",
+            "CAR_LIGHTS",
+            "PERF_VEHICLE_SPEED",
+        )
+        val forbiddenHit = permissions.firstOrNull { name ->
+            forbidden.any { token -> name.contains(token) }
+        }
+        if (forbiddenHit != null) {
+            throw GradleException("pleos release manifest contains $forbiddenHit")
+        }
         val apkDir = layout.buildDirectory.dir("outputs/apk/pleos/release").get().asFile
         val apks = apkDir.listFiles().orEmpty().filter { file ->
             file.isFile && file.name.endsWith(".apk") && !file.name.contains("unaligned")

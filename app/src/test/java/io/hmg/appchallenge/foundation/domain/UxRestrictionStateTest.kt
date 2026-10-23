@@ -24,7 +24,25 @@ class UxRestrictionStateTest {
         assertTrue(state.noSetup)
         assertTrue(state.noTextMessage)
         assertTrue(state.noVoiceTranscription)
-        assertEquals("", state.clip("목적지 이름"))
+        assertEquals(UxRestrictionState.UNKNOWN_MAX_STRING_LENGTH, state.maxRestrictedStringLength)
+        assertEquals("목적지 이름", state.clip("목적지 이름"))
+        assertEquals("SOC 80%", state.clip("SOC 80%"))
+        assertEquals(120, state.clip("가".repeat(200)).length)
+        assertEquals("문 열림", state.clip("문 열림", preserve = true))
+    }
+
+    @Test
+    fun reportedZeroLengthDoesNotBlankAndSafetyCopyIsKept() {
+        val state = UxRestrictionState.from(
+            uxAvailable = true,
+            mask = UxRestrictionBits.LIMIT_STRING_LENGTH,
+            maxRestrictedStringLength = 0,
+            failClosed = true,
+        )
+        assertEquals("경고", state.clip("경고"))
+        val one = state.copy(maxRestrictedStringLength = 1)
+        assertEquals("문 열림", one.clip("문 열림", preserve = true))
+        assertEquals("문", one.clip("문 열림"))
     }
 
     @Test

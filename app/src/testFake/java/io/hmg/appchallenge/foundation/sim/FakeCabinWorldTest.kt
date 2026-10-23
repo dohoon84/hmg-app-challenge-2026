@@ -2,7 +2,7 @@ package io.hmg.appchallenge.foundation.sim
 
 import io.hmg.appchallenge.foundation.domain.AppShell
 import io.hmg.appchallenge.foundation.domain.DoorId
-import io.hmg.appchallenge.foundation.domain.KeyboardPolicy
+import io.hmg.appchallenge.foundation.domain.UxRestrictionState
 import io.hmg.appchallenge.foundation.domain.LinkState
 import io.hmg.appchallenge.foundation.domain.Motion
 import io.hmg.appchallenge.foundation.domain.ShellPolicy
@@ -42,7 +42,12 @@ class FakeCabinWorldTest {
         )
         assertEquals(
             false,
-            KeyboardPolicy.allowsKeyboard(driving.restrictionMask, driving.uxAvailable, failClosed = false),
+            UxRestrictionState.from(
+                uxAvailable = driving.uxAvailable,
+                mask = driving.restrictionMask,
+                maxRestrictedStringLength = driving.maxRestrictedStringLength,
+                failClosed = false,
+            ).keyboardAllowed,
         )
     }
 

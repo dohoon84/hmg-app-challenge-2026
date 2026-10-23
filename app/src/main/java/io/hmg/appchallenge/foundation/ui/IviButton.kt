@@ -9,7 +9,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import io.hmg.appchallenge.foundation.domain.AppShell
-import io.hmg.appchallenge.foundation.perf.PerformanceBudget
 
 /** Official basic-button heights. Small is parked-only. */
 enum class IviButtonSize {
@@ -50,10 +49,6 @@ fun resolveButtonSize(requested: IviButtonSize, shell: AppShell): IviButtonSize 
 object PressFeedback {
     const val PRESSED_SCALE = 0.95f
     const val DURATION_MS = 80
-
-    init {
-        check(DURATION_MS in 1..PerformanceBudget.TOUCH_RESPONSE_MS)
-    }
 }
 
 fun pressScaleOf(pressed: Boolean): Float =

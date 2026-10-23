@@ -115,12 +115,20 @@ class FailClosedShellTest {
     @Test
     fun keyboardFollowsNoKeyboardBit() {
         val mask = UxRestrictionBits.NO_KEYBOARD
-        assertFalse(KeyboardPolicy.allowsKeyboard(mask, uxAvailable = true, failClosed = true))
-        assertTrue(KeyboardPolicy.allowsKeyboard(0, uxAvailable = true, failClosed = true))
-        assertFalse(KeyboardPolicy.allowsKeyboard(0, uxAvailable = false, failClosed = true))
-        assertTrue(KeyboardPolicy.allowsKeyboard(0, uxAvailable = false, failClosed = false))
-        assertFalse(KeyboardPolicy.allowsKeyboard(mask, uxAvailable = true, failClosed = false))
+        assertFalse(keyboardAllowed(mask, uxAvailable = true, failClosed = true))
+        assertTrue(keyboardAllowed(0, uxAvailable = true, failClosed = true))
+        assertFalse(keyboardAllowed(0, uxAvailable = false, failClosed = true))
+        assertTrue(keyboardAllowed(0, uxAvailable = false, failClosed = false))
+        assertFalse(keyboardAllowed(mask, uxAvailable = true, failClosed = false))
     }
+
+    private fun keyboardAllowed(mask: Int, uxAvailable: Boolean, failClosed: Boolean): Boolean =
+        UxRestrictionState.from(
+            uxAvailable = uxAvailable,
+            mask = mask,
+            maxRestrictedStringLength = 0,
+            failClosed = failClosed,
+        ).keyboardAllowed
 
     @Test
     fun vinMaskKeepsLastFour() {
@@ -168,12 +176,5 @@ class CapabilityAndLayoutTest {
         assertEquals(900, GeoEstimate.etaSeconds(10_000, speedKmh = 40.0))
         val meters = GeoEstimate.haversineMeters(37.4979, 127.0276, 37.554722, 126.970833)
         assertTrue(meters in 7_000..12_000)
-    }
-
-    @Test
-    fun restrictionShortensOnlyWhenActive() {
-        assertEquals("서울역", shortenForRestriction("서울역", 2, restricted = false))
-        assertEquals("서울", shortenForRestriction("서울역", 2, restricted = true))
-        assertEquals("서울역", shortenForRestriction("서울역", 0, restricted = true))
     }
 }

@@ -4,8 +4,10 @@
     <!--
       Read permissions for Vehicle State and NaviHelper. Vehicle Control (door, HVAC,
       window, seat, light), Pleos TextToSpeech, SpeechToText, and FusedLocation are
-      Coming Soon and are not declared. Delete any line the list published after
-      2026-10-27 does not approve. Each line below is a read, not a set/control API.
+      Coming Soon and are not declared. The approval list is published after
+      2026-10-27, so a 1:1 match cannot be confirmed yet.
+      Delete any line that list does not approve, and the same name from
+      allowedPleosReleasePermissions. Each line below is a read, not a set/control API.
       The fake flavor does not merge this file.
     -->
     <!-- Door position read. Not CONTROL_CAR_DOORS. -->
@@ -18,7 +20,11 @@
     <uses-permission android:name="pleos.car.permission.CAR_DRIVE" />
     <!-- VIN read. -->
     <uses-permission android:name="pleos.car.permission.CAR_INFO" />
-    <!-- Seat occupancy and belt capability read. Not seat move or HVAC. -->
+    <!--
+      Seat occupancy and belt capability read (checkSeatOccupancyCapabilities,
+      checkSeatBeltBuckledCapabilities). Not seat move or HVAC. Kept because that
+      query is a state read. Drop the line only if the query is removed.
+    -->
     <uses-permission android:name="pleos.car.permission.CAR_SEATS" />
     <!-- NaviHelper route read. -->
     <uses-permission android:name="pleos.car.permission.NAVI_ROUTE" />

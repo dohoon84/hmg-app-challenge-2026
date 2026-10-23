@@ -1,5 +1,6 @@
 package io.hmg.appchallenge.foundation.ui
 
+import android.app.Activity
 import android.content.res.Configuration
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +31,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -60,8 +62,9 @@ fun FoundationRoute(
     onRequestEnergyPermission: () -> Unit,
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
-    LaunchedEffect(Unit) {
-        LaunchTiming.markFirstFrame()
+    val host = LocalContext.current as? Activity
+    LaunchedEffect(host) {
+        if (host != null) LaunchTiming.onFirstDraw(host)
     }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -148,9 +151,9 @@ private fun DrivingStatus(ui: FoundationUi) {
     val openDoors = ui.vehicle.doors.values.count { it.open }
     if (openDoors > 0) {
         Text(
-            text = clip(stringResource(R.string.door_open_alert)),
+            text = ui.restrictions.clip(stringResource(R.string.door_open_alert), preserve = true),
             style = IviType.drivingMain,
-            color = IviTheme.colors.textPrimary,
+            color = IviTheme.colors.drivingAlert,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -343,7 +346,7 @@ private fun VehiclePane(
     viewModel: FoundationViewModel,
     onRequestEnergyPermission: () -> Unit,
 ) {
-    Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineMedium)
+    Text(stringResource(R.string.app_name), style = IviType.headlineSmall)
     Text(motionLabel(ui.driving.motion), style = MaterialTheme.typography.titleLarge)
     if (ui.simulatorEnabled) {
         Text(stringResource(R.string.sim_banner), color = MaterialTheme.colorScheme.secondary)
@@ -435,6 +438,10 @@ private fun NavPane(ui: FoundationUi, viewModel: FoundationViewModel) {
     LargeButton(stringResource(R.string.action_refresh_dest)) { viewModel.refreshDestination() }
 }
 
+/**
+ * Driving and parked actions request Large. Small is parked-only;
+ * [resolveButtonSize] promotes it while the shell is reduced. No screen passes Small yet.
+ */
 @Composable
 private fun LargeButton(
     label: String,

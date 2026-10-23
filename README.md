@@ -98,14 +98,14 @@ adb shell dumpsys gfxinfo io.hmg.appchallenge.foundation
 ## 구성
 
 - `VehicleRepository`: 시작마다 새 `Vehicle`을 만들어 `initialize`하고, 중지할 때 `release`합니다. 도어, 창문, 연료 %, SOC, 적산거리(km), VIN. 각 항목은 `check*Capabilities`가 READ 또는 READ_WRITE일 때만 get/register 합니다. 좌석은 점유·벨트 capability만 조회하고, 값이 없거나 뒷좌석이 목록에 없으면 미지원입니다. 시트 이동, HVAC, 조명 같은 Vehicle Control API는 호출하지 않습니다.
-- `DrivingStateRepository`: AAOS `VehiclePropertyIds.GEAR_SELECTION`과 `CarUxRestrictionsManager`. 기어 P이고 주의 분산 최적화가 필요 없으면 정차, 그 외 알려진 기어이거나 UX가 최적화를 요구하면 주행입니다. pleos는 기어가 UNKNOWN이거나 UX를 아직 못 읽으면 축소 화면입니다. 키보드는 `UX_RESTRICTIONS_NO_KEYBOARD` 비트가 있으면 숨깁니다. `Vehicle.getGear()`는 호출하지 않습니다. `Car.createCar` 리스너와 `VehiclePropertyIds`는 API 30/29입니다. minSdk 28 기기에서는 Car API를 호출하지 않고 축소 화면을 유지합니다. 공모전 이미지는 API 34입니다.
+- `DrivingStateRepository`: AAOS `VehiclePropertyIds.GEAR_SELECTION`과 `CarUxRestrictionsManager`. 기어 P이고 주의 분산 최적화가 필요 없으면 정차, 그 외 알려진 기어이거나 UX가 최적화를 요구하면 주행입니다. pleos는 기어가 UNKNOWN이거나 UX를 아직 못 읽으면 축소 화면입니다. 그때 문자열 제한은 AAOS `car_ux_restrictions` 기본값 120자(`UNKNOWN_MAX_STRING_LENGTH`)이고, 0자 이하는 문구를 비우지 않습니다. 문 열림 경고는 자르지 않습니다. 키보드는 `UX_RESTRICTIONS_NO_KEYBOARD` 비트가 있으면 숨깁니다. `Vehicle.getGear()`는 호출하지 않습니다. `Car.createCar` 리스너와 `VehiclePropertyIds`는 API 30/29입니다. minSdk 28 기기에서는 Car API를 호출하지 않고 축소 화면을 유지합니다. 공모전 이미지는 API 34입니다.
 - `NavigationRepository`: `requestRoute(RouteInfo)`로 좌표 목적지, `onDestinationInfo` / `onDestinationArrived`, `requestTrip` → `onTripInfo`.
 - Room `foundation.db`: 마지막 차량 스냅샷과 내비 캐시 한 행. 스키마는 `app/schemas`에 내보냅니다. 이 테이블은 캐시라서 버전을 올리면 `fallbackToDestructiveMigration()`으로 지웁니다. 아이디어 데이터를 영구 저장하기 전에 명시적 마이그레이션으로 바꿔야 합니다. VIN은 로컬 DB와 화면에 끝 4자리만 남기고 저장·표시합니다.
 - 주행 중 화면은 Activity `distractionOptimized=true` 위에서 큰 버튼만 보여 줍니다. 선언만 하고 긴 목록이나 키보드를 그대로 두지 않습니다.
-- 상단 Back은 Activity를 끝내지 않고 `moveTaskToBack(true)`입니다. CCP 로터리 메타데이터 `com.hmg.rotary.ROTARY_SUPPORTED`는 false입니다.
+- 최상위에서 시스템 Back은 Activity를 끝내지 않고 `moveTaskToBack(true)`입니다. 화면 안의 Back 버튼은 없습니다. 하위 화면이 생기면 그 화면이 보이는 동안 루트 콜백의 `isEnabled`를 끕니다. CCP 로터리 메타데이터 `com.hmg.rotary.ROTARY_SUPPORTED`는 false입니다.
 - 좌표 입력 칸은 `rememberSaveable`, 검증 오류 문구는 `SavedStateHandle`에 둡니다.
-- 창은 일반 Activity입니다. 기본은 세로 840×1184, 가로는 1700×1184이고 단위는 dp입니다. 주행 뷰 840×1280은 시스템 영역이라 앱이 덮지 않습니다. 회전은 구성을 다시 만들며 입력과 검증 오류는 유지됩니다. 서체는 Asta Sans(OFL, `res/font`)이고 글자 토큰은 `ivi_`입니다. 라이트와 다크를 모두 그립니다. 버튼은 Large 100 / Medium 80 / Small 64dp이고, 축소 화면의 Small은 Medium으로 올립니다. 눌림은 95%로 80ms 안에 반응합니다.
-- 안내 음성은 Pleos TTS SDK를 쓰지 않습니다. `android.speech.tts.TextToSpeech`가 준비되면 그것을 쓰고, 엔진이 없거나 초기화·재생이 실패하면 `res/raw`의 짧은 차임으로 넘깁니다. 둘 다 `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK`, 175ms 앞 무음, 내비 안내·어시스턴트가 겹치면 즉시 중지, 백그라운드에서는 포커스를 놓습니다.
+- 창은 일반 Activity입니다. 기본은 세로 840×1184, 가로는 1700×1184이고 단위는 dp입니다. 주행 뷰 840×1280은 시스템 영역이라 앱이 덮지 않습니다. 회전은 구성을 다시 만들며 입력과 검증 오류는 유지됩니다. 서체는 Asta Sans 가변 폰트 한 파일입니다(OFL, `res/font/asta_sans.ttf`, 약 5.5MB). 웨이트 400/700/800은 `wght` 축입니다. 예전 정적 파일 세 개는 OS/2 웨이트가 실제로 400/700/800이었고, 한글 음절이 글리프의 대부분이라 크기가 거의 같았습니다(합계 7,790,400바이트). 서브셋은 라틴, 문장부호, 한글 음절이고 OFL 고지는 `assets/asta-sans/OFL.txt`에 둡니다. 글자 토큰은 `ivi_`입니다. 오류 빨강은 앱 정의 `ivi_informative_negative`(#FF4C28, 라이트·다크 동일, 공식 Pleos 토큰 아님)입니다. 이전 팀 상태 색은 `ivi_team_status_negative_legacy`(라이트 #FE3D16, 다크 #FF4C28)로 이름을 바꿨고 오류 빨강에는 쓰지 않습니다. 주행 문 열림 경고는 `ivi_driving_alert`(#FF8A00, 라이트·다크 동일)입니다. 라이트와 다크를 모두 그립니다. 버튼은 Large 100 / Medium 80 / Small 64dp이고, 축소 화면의 Small은 Medium으로 올립니다. 주행·정차 액션은 Large만 요청합니다. 눌림은 95%로 80ms 안에 반응합니다. 공식 아이콘 42종은 2026-10-27 이후에 넣습니다. Figma "Official Icons (Pleos)"를 그 때 봅니다.
+- 안내 음성은 Pleos TTS SDK를 쓰지 않습니다. `android.speech.tts.TextToSpeech`는 첫 발화 때 만들고, 백그라운드에서 `shutdown` 합니다. 오디오 속성은 포커스와 같이 `USAGE_ASSISTANCE_SONIFICATION` + `CONTENT_TYPE_SPEECH`입니다. 내비 안내 usage는 쓰지 않습니다. 우리 발화를 내비 겹침으로 보면 안 되기 때문입니다. 엔진이 없거나 초기화·재생이 실패하거나 비동기 `onError`가 오면 `res/raw` 차임으로 넘깁니다. 차임 content type은 `SONIFICATION`입니다. 둘 다 `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK`, 175ms 앞 무음입니다. 발화나 차임이 끝나면 포커스를 놓고, 다음 안내 전에 이전 요청을 abandon 합니다. 내비 안내·어시스턴트가 겹치거나 포커스를 잃으면 즉시 중지합니다. `LOSS_TRANSIENT_CAN_DUCK`도 끊습니다.
 
 주행가능거리는 Vehicle SDK에 getter가 없습니다. `setRangeRemainingDistance`는 deprecated라 쓰지 않습니다. pleos flavor만 AAOS `RANGE_REMAINING`(위험 권한 `CAR_ENERGY`)을 시도하고, 없거나 권한이 없으면 "SDK 미제공"으로 둡니다. fake flavor는 시뮬레이션 값을 보여 줍니다.
 
@@ -137,7 +137,7 @@ Vehicle 2.3.2 AAR을 풀어 확인했습니다.
 
 ## 10/27 이후 권한 정리
 
-읽기 권한은 `app/src/pleos/AndroidManifest.xml`에만 있습니다. fake 빌드에는 합쳐지지 않습니다. 한 줄씩 지울 수 있게 두었고, 2026-10-27 이후 승인 목록에 없는 줄은 제거합니다. Vehicle Control, Pleos TTS, STT, FusedLocation, `CAR_LIGHTS`, `CONTROL_CAR_*`, `PERF_VEHICLE_SPEED`는 선언하지 않습니다. 정차 판정에 속도를 쓰지 않습니다. `android.car.permission.CAR_ENERGY`는 주행가능거리를 쓸 때만 남기고, 빼면 매니페스트와 권한 버튼도 같이 제거합니다.
+읽기 권한은 `app/src/pleos/AndroidManifest.xml`에만 있습니다. fake 빌드에는 합쳐지지 않습니다. 승인 목록은 2026-10-27 이후에 나오므로, 지금 1:1 대조는 할 수 없습니다. 목록에 없는 줄은 그때 매니페스트와 `allowedPleosReleasePermissions`에서 함께 지웁니다. 아래 여섯 Pleos Vehicle 권한과 내비·AAOS 줄은 모두 읽기이고 제어 API를 부르지 않습니다. `CAR_SEATS`는 좌석 점유·벨트 capability 조회가 필요해서 남깁니다. 조회를 빼면 권한도 뺍니다. Vehicle Control, Pleos TTS, STT, FusedLocation, `CAR_LIGHTS`, `CONTROL_CAR_*`, `PERF_VEHICLE_SPEED`, `PRIVATE_CAR_SAFETY`는 선언하지 않습니다. 정차 판정에 속도를 쓰지 않습니다. `android.car.permission.CAR_ENERGY`는 `RANGE_REMAINING`을 쓸 때만 남기고, 빼면 매니페스트와 권한 버튼도 같이 제거합니다. `checkPleosReleaseContents`가 합쳐진 매니페스트의 uses-permission을 허용 목록과 비교합니다.
 
 | 권한 | 쓰는 곳 | 정리 |
 |---|---|---|
@@ -146,7 +146,7 @@ Vehicle 2.3.2 AAR을 풀어 확인했습니다.
 | `pleos.car.permission.CAR_ENERGY` | 연료·SOC 읽기 | 배터리를 안 쓰면 제거 |
 | `pleos.car.permission.CAR_DRIVE` | 적산거리 읽기 | 주행 제어가 아님. 적산을 안 쓰면 제거 |
 | `pleos.car.permission.CAR_INFO` | VIN 읽기 | VIN을 안 쓰면 제거 |
-| `pleos.car.permission.CAR_SEATS` | 좌석 점유·벨트 capability 읽기 | 시트 이동·HVAC가 아님. capability를 안 쓰면 제거 |
+| `pleos.car.permission.CAR_SEATS` | `checkSeatOccupancyCapabilities`, `checkSeatBeltBuckledCapabilities` | 상태 읽기. 시트 이동·HVAC가 아님. 조회를 유지하는 동안 유지. 승인 목록에 없으면 제거 |
 | `pleos.car.permission.NAVI_ROUTE_SEARCH` | `requestRoute` | 경로 안내를 안 쓰면 제거 |
 | `pleos.car.permission.NAVI_ROUTE` | 목적지·도착·ETA | 내비를 안 쓰면 제거 |
 | `android.car.permission.CAR_POWERTRAIN` | `GEAR_SELECTION` 읽기 | 정차 판정을 유지하는 동안 유지 |

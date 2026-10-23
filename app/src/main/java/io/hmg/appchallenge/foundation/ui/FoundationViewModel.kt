@@ -40,12 +40,12 @@ data class FoundationUi(
     val driving: DrivingSnapshot = DrivingSnapshot(),
     val shell: AppShell = AppShell.FULL,
     val restrictions: UxRestrictionState = UxRestrictionState.from(
-        uxAvailable = true,
+        uxAvailable = false,
         mask = 0,
         maxRestrictedStringLength = 0,
-        failClosed = false,
+        failClosed = true,
     ),
-    val keyboardAllowed: Boolean = true,
+    val keyboardAllowed: Boolean = false,
     val destination: DestinationSnapshot? = null,
     val arrival: ArrivalSnapshot? = null,
     val trip: TripEstimate? = null,
@@ -88,7 +88,7 @@ class FoundationViewModel @Inject constructor(
         },
         cabinCache.observeVehicle(),
         formError,
-        ) { vehicleSlice, navSlice, cache, error ->
+    ) { vehicleSlice, navSlice, cache, error ->
         val restrictions = UxRestrictionState.from(
             uxAvailable = vehicleSlice.driving.uxAvailable,
             mask = vehicleSlice.driving.restrictionMask,
