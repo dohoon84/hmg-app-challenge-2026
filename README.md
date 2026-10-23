@@ -40,7 +40,9 @@ Apple Silicon Mac의 Android Studio에서 엽니다. JDK 17 이상, Gradle 8.11.
 
 `*.jks`, `*.keystore`, `keystore.properties`, `signing.properties`는 git에 올리지 않습니다. 제출 APK도 마감 직전에 한 번만 커밋합니다. 지금은 `apk/.gitkeep`만 있습니다.
 
-Vehicle / NaviHelper / Car 연결은 `ProcessLifecycleOwner`의 시작과 중지에 묶여 있습니다. 프로세스가 백그라운드로 가면 `release()`와 `Car.disconnect()`가 호출되고, 다시 전면에 오면 새 NaviHelper로 다시 시작합니다.
+Vehicle / NaviHelper / Car 연결은 `ProcessLifecycleOwner`의 시작과 중지에 묶여 있습니다. 프로세스가 백그라운드로 가면 `release()`와 `Car.disconnect()`가 호출되고, 다시 전면에 오면 새 `Vehicle`과 새 NaviHelper로 다시 시작합니다.
+
+백그라운드에서 SDK를 유지할지는 아직 정하지 않았습니다. 지금 방식은 백그라운드로 나간 뒤 약 700ms가 지나면 SDK를 해제하므로, 그 동안의 도착·기어·도어 이벤트는 받지 못합니다. 운행 기록이나 도착 트리거가 필요하면 아이디어가 확정된 뒤에 foreground service로 옮길지 결정합니다. Phase 0은 포그라운드에서만 SDK를 붙입니다.
 
 ## 테스트 환경
 
@@ -56,7 +58,7 @@ Vehicle / NaviHelper / Car 연결은 `ProcessLifecycleOwner`의 시작과 중지
 fake 화면에서 확인할 것:
 
 - 정차: 세로 1열, 가로(또는 너비 800dp 이상) 2열. 좌표 입력은 정차 화면에만 있습니다.
-- 주행: 큰 버튼만 있는 화면. 키보드 없음. 시뮬레이션 빌드에서는 정차로 돌아가는 버튼이 같이 있습니다.
+- 주행: 큰 버튼(높이 88dp)만 있는 화면. 키보드 없음. 시뮬레이션 빌드의 버튼은 높이에 맞춰 1~3열로 배치되어 세로와 가로 모두에서 닿습니다. 화면이 그 열보다 낮을 때만 동작 영역이 스크롤됩니다.
 - 운전석 문 열림, SOC ±10, 도착 이벤트.
 
 주행 규제 adb (에뮬레이터):
@@ -72,15 +74,17 @@ git에는 APK를 넣지 않습니다. 아래 경로는 로컬 빌드 결과입�
 
 | 용도 | 경로 |
 |---|---|
-| 제출용 pleos release | 키스토어가 있을 때 `./gradlew exportContestApk` → `apk/placeholder-team_foundation_release.apk` |
+| 제출용 pleos release | 키스토어가 있을 때 `./gradlew exportContestApk` → `apk/placeholder-team_foundation_release.apk`. 서명이 없으면 태스크가 실패합니다 |
 | 서명된 Android Studio 산출물 | `app/build/outputs/apk/pleos/release/app-pleos-release.apk` |
-| 키스토어 없이 만든 release | `app/build/outputs/apk/pleos/release/app-pleos-release-unsigned.apk` (제출하지 않음. `exportContestApk`는 복사하지 않음) |
+| 키스토어 없이 만든 release | `app/build/outputs/apk/pleos/release/app-pleos-release-unsigned.apk` (제출하지 않음) |
+
+제출하는 파일은 서명된 pleos release뿐입니다. fake debug APK와 unsigned release는 제출하지 않습니다.
 | 폰에서 볼 fake debug | `app/build/outputs/apk/fake/debug/app-fake-debug.apk` |
 | 에뮬레이터용 pleos debug | `app/build/outputs/apk/pleos/debug/app-pleos-debug.apk` |
 
 ## 구성
 
-- `VehicleRepository`: `Vehicle.initialize` / `release`. 도어, 창문, 연료 %, SOC, 적산거리(km), VIN. 각 항목은 `check*Capabilities`가 READ 또는 READ_WRITE일 때만 get/register 합니다.
+- `VehicleRepository`: 시작마다 새 `Vehicle`을 만들어 `initialize`하고, 중지할 때 `release`합니다. 도어, 창문, 연료 %, SOC, 적산거리(km), VIN. 각 항목은 `check*Capabilities`가 READ 또는 READ_WRITE일 때만 get/register 합니다.
 - `DrivingStateRepository`: AAOS `VehiclePropertyIds.GEAR_SELECTION`과 `CarUxRestrictionsManager`. 기어 P이고 주의 분산 최적화가 필요 없으면 정차, 그 외 알려진 기어이거나 UX가 최적화를 요구하면 주행입니다. pleos는 기어가 UNKNOWN이거나 UX를 아직 못 읽으면 축소 화면입니다. 키보드는 `UX_RESTRICTIONS_NO_KEYBOARD` 비트가 있으면 숨깁니다. `Vehicle.getGear()`는 호출하지 않습니다. `Car.createCar` 리스너와 `VehiclePropertyIds`는 API 30/29입니다. minSdk 28 기기에서는 Car API를 호출하지 않고 축소 화면을 유지합니다. 공모전 이미지는 API 34입니다.
 - `NavigationRepository`: `requestRoute(RouteInfo)`로 좌표 목적지, `onDestinationInfo` / `onDestinationArrived`, `requestTrip` → `onTripInfo`.
 - Room `foundation.db`: 마지막 차량 스냅샷과 내비 캐시 한 행. 스키마는 `app/schemas`에 내보냅니다. 이 테이블은 캐시라서 버전을 올리면 `fallbackToDestructiveMigration()`으로 지웁니다. 아이디어 데이터를 영구 저장하기 전에 명시적 마이그레이션으로 바꿔야 합니다. VIN은 로컬 DB와 화면에 끝 4자리만 남기고 저장·표시합니다.

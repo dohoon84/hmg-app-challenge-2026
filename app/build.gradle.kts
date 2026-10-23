@@ -171,14 +171,26 @@ dependencies {
     testImplementation(files(carJar))
 }
 
-tasks.register<Copy>("exportContestApk") {
+tasks.register("exportContestApk") {
     group = "distribution"
-    description = "Copy a signed pleos release APK into apk/. Unsigned builds copy nothing."
+    description = "Copy a signed pleos release APK into apk/. Fails when release signing is not configured."
     dependsOn("assemblePleosRelease")
-    from(layout.buildDirectory.dir("outputs/apk/pleos/release"))
-    include("*-release.apk")
-    exclude("*unaligned*")
-    exclude("*unsigned*")
-    into(rootProject.layout.projectDirectory.dir("apk"))
-    rename { "placeholder-team_foundation_release.apk" }
+    // A Copy task with no matching inputs is skipped as NO-SOURCE and never runs doFirst.
+    doLast {
+        if (!hasReleaseSigning) {
+            throw GradleException(
+                "exportContestApk requires a signed pleos release. " +
+                    "Set STORE_FILE, STORE_PASSWORD, KEY_ALIAS, and KEY_PASSWORD " +
+                    "in keystore.properties or the environment. Do not submit a fake or unsigned APK.",
+            )
+        }
+        copy {
+            from(layout.buildDirectory.dir("outputs/apk/pleos/release"))
+            include("*-release.apk")
+            exclude("*unaligned*")
+            exclude("*unsigned*")
+            into(rootProject.layout.projectDirectory.dir("apk"))
+            rename { "placeholder-team_foundation_release.apk" }
+        }
+    }
 }

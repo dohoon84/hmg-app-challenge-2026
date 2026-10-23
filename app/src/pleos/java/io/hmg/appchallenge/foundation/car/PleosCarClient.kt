@@ -52,7 +52,7 @@ class PleosCarClient @Inject constructor(
     private val _rangeMeters = MutableStateFlow<Float?>(null)
     val rangeMeters: StateFlow<Float?> = _rangeMeters
 
-    private var car: Car? = null
+    @Volatile private var car: Car? = null
     private var propertyManager: CarPropertyManager? = null
     private var propertyCallback: CarPropertyManager.CarPropertyEventCallback? = null
     private var uxManager: CarUxRestrictionsManager? = null
@@ -96,6 +96,8 @@ class PleosCarClient @Inject constructor(
                 handler,
                 Car.CAR_WAIT_TIMEOUT_DO_NOT_WAIT,
                 Car.CarServiceLifecycleListener { created, ready ->
+                    // DO_NOT_WAIT can deliver ready after stop, or after a newer Car exists.
+                    if (created !== car || users.get() == 0) return@CarServiceLifecycleListener
                     if (!ready) {
                         clearSignals()
                         return@CarServiceLifecycleListener
