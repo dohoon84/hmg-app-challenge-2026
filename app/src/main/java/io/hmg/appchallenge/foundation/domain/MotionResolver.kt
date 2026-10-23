@@ -15,12 +15,68 @@ object MotionResolver {
     }
 }
 
+/**
+ * Pleos has no trustworthy shell until both gear and UX restrictions have been read.
+ * Fake builds pass failClosed = false so a simulated park still shows the full UI.
+ */
 object ShellPolicy {
-    fun select(motion: Motion): AppShell = when (motion) {
-        Motion.DRIVING -> AppShell.REDUCED
-        Motion.PARKED, Motion.UNKNOWN -> AppShell.FULL
+    fun select(motion: Motion, uxAvailable: Boolean, failClosed: Boolean): AppShell {
+        if (failClosed && (!uxAvailable || motion == Motion.UNKNOWN)) return AppShell.REDUCED
+        return when (motion) {
+            Motion.DRIVING -> AppShell.REDUCED
+            Motion.PARKED, Motion.UNKNOWN -> AppShell.FULL
+        }
     }
 }
+
+/**
+ * CarUxRestrictions.UX_RESTRICTIONS_NO_KEYBOARD. Value is checked against android.car in unit tests.
+ */
+object UxRestrictionBits {
+    const val NO_KEYBOARD = 8
+}
+
+object KeyboardPolicy {
+    fun allowsKeyboard(mask: Int, uxAvailable: Boolean, failClosed: Boolean): Boolean {
+        if (failClosed && !uxAvailable) return false
+        return mask and UxRestrictionBits.NO_KEYBOARD == 0
+    }
+}
+
+/** Snapshot written when CarService is down or the Car APIs cannot be used. */
+object SignalLoss {
+    fun drivingSnapshot(): DrivingSnapshot {
+        val requiresDistractionOptimization = true
+        return DrivingSnapshot(
+            gear = GearPosition.UNKNOWN,
+            gearRaw = null,
+            gearAvailable = false,
+            uxAvailable = false,
+            requiresDistractionOptimization = requiresDistractionOptimization,
+            restrictionMask = 0,
+            maxRestrictedStringLength = 0,
+            motion = MotionResolver.resolve(GearPosition.UNKNOWN, requiresDistractionOptimization),
+        )
+    }
+}
+
+/** Last four characters only. Null and empty stay as they are. */
+fun maskVin(vin: String?): String? {
+    if (vin.isNullOrEmpty()) return vin
+    if (vin.length <= VIN_VISIBLE_TAIL) return "*".repeat(vin.length)
+    val hidden = vin.length - VIN_VISIBLE_TAIL
+    return "*".repeat(hidden) + vin.takeLast(VIN_VISIBLE_TAIL)
+}
+
+private const val VIN_VISIBLE_TAIL = 4
+
+interface DistractionPolicy {
+    val failClosed: Boolean
+}
+
+class StaticDistractionPolicy(
+    override val failClosed: Boolean,
+) : DistractionPolicy
 
 object PanePolicy {
     const val TWO_PANE_MIN_WIDTH_DP = 800

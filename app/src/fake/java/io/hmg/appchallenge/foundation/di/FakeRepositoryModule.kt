@@ -2,8 +2,11 @@ package io.hmg.appchallenge.foundation.di
 
 import dagger.Binds
 import dagger.Module
+import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import io.hmg.appchallenge.foundation.domain.DistractionPolicy
+import io.hmg.appchallenge.foundation.domain.StaticDistractionPolicy
 import io.hmg.appchallenge.foundation.driving.DrivingStateRepository
 import io.hmg.appchallenge.foundation.driving.FakeDrivingStateRepository
 import io.hmg.appchallenge.foundation.navi.FakeNavigationRepository
@@ -32,4 +35,11 @@ abstract class FakeRepositoryModule {
     @Binds
     @Singleton
     abstract fun simulator(impl: FakeCabinWorld): CabinSimulator
+}
+
+@Module
+@InstallIn(SingletonComponent::class)
+object FakePolicyModule {
+    @Provides
+    fun distractionPolicy(): DistractionPolicy = StaticDistractionPolicy(failClosed = false)
 }

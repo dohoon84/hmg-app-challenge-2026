@@ -20,6 +20,9 @@ object DatabaseModule {
     @Singleton
     fun database(@ApplicationContext context: Context): FoundationDatabase =
         Room.databaseBuilder(context, FoundationDatabase::class.java, "foundation.db")
+            // Phase 0 rows are a disposable cache. A version bump wipes foundation.db.
+            // Replace this with explicit migrations before any durable idea data is stored.
+            .fallbackToDestructiveMigration()
             .build()
 
     @Provides

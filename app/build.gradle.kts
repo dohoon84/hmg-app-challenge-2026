@@ -1,3 +1,6 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -6,12 +9,39 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
 kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
     }
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+if (keystorePropertiesFile.isFile) {
+    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
+}
+
+fun signingProp(name: String): String? =
+    keystoreProperties.getProperty(name)?.takeIf { it.isNotBlank() }
+        ?: System.getenv(name)?.takeIf { it.isNotBlank() }
+
+val releaseStorePath = signingProp("STORE_FILE")
+val releaseStorePassword = signingProp("STORE_PASSWORD")
+val releaseKeyAlias = signingProp("KEY_ALIAS")
+val releaseKeyPassword = signingProp("KEY_PASSWORD")
+val releaseStoreFile = releaseStorePath?.let { rootProject.file(it) }
+val hasReleaseSigning = releaseStoreFile != null &&
+    releaseStoreFile.isFile &&
+    releaseStorePassword != null &&
+    releaseKeyAlias != null &&
+    releaseKeyPassword != null
+
+if (releaseStorePath != null && !hasReleaseSigning) {
+    logger.warn("Release signing is incomplete. The release APK will be unsigned.")
 }
 
 android {
@@ -59,6 +89,17 @@ android {
         }
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = releaseStoreFile
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -66,8 +107,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            // Placeholder signing so a release APK can be produced before the team keystore exists.
-            signingConfig = signingConfigs.getByName("debug")
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
@@ -89,13 +131,22 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+        unitTests.isIncludeAndroidResources = true
     }
 }
 
 dependencies {
+    val carJar = android.sdkDirectory.resolve("platforms/android-${android.compileSdk}/optional/android.car.jar")
+    if (!carJar.isFile) {
+        throw GradleException(
+            "android.car.jar not found at $carJar. Install platforms;android-${android.compileSdk}.",
+        )
+    }
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(platform(libs.compose.bom))
@@ -115,18 +166,19 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
-    testImplementation(
-        files(android.sdkDirectory.resolve("platforms/android-34/optional/android.car.jar")),
-    )
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(files(carJar))
 }
 
 tasks.register<Copy>("exportContestApk") {
     group = "distribution"
-    description = "Copy the pleos release APK into apk/ with the contest file name."
+    description = "Copy a signed pleos release APK into apk/. Unsigned builds copy nothing."
     dependsOn("assemblePleosRelease")
     from(layout.buildDirectory.dir("outputs/apk/pleos/release"))
-    include("*.apk")
+    include("*-release.apk")
     exclude("*unaligned*")
+    exclude("*unsigned*")
     into(rootProject.layout.projectDirectory.dir("apk"))
     rename { "placeholder-team_foundation_release.apk" }
 }

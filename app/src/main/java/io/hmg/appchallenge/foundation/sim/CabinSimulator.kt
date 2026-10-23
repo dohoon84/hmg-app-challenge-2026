@@ -11,4 +11,8 @@ interface CabinSimulator {
     fun setDriverDoorOpen(open: Boolean)
     fun nudgeSoc(delta: Int)
     fun simulateArrival()
+
+    /** Fake flavor only. Pleos binds a no-op so release builds have no sample destination. */
+    fun setSampleDestination()
+    fun requestSampleTrip()
 }

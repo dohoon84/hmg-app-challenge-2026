@@ -14,4 +14,8 @@ class DisabledCabinSimulator @Inject constructor() : CabinSimulator {
     override fun nudgeSoc(delta: Int) = Unit
 
     override fun simulateArrival() = Unit
+
+    override fun setSampleDestination() = Unit
+
+    override fun requestSampleTrip() = Unit
 }

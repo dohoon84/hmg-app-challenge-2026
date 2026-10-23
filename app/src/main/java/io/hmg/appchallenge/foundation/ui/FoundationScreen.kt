@@ -2,8 +2,10 @@ package io.hmg.appchallenge.foundation.ui
 
 import android.content.res.Configuration
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -17,12 +19,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -32,8 +35,8 @@ import io.hmg.appchallenge.foundation.domain.DoorId
 import io.hmg.appchallenge.foundation.domain.Motion
 import io.hmg.appchallenge.foundation.domain.PanePolicy
 import io.hmg.appchallenge.foundation.domain.RangeSource
-import io.hmg.appchallenge.foundation.domain.SamplePlaces
 import io.hmg.appchallenge.foundation.domain.WindowId
+import io.hmg.appchallenge.foundation.domain.maskVin
 import io.hmg.appchallenge.foundation.domain.shortenForRestriction
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -45,15 +48,17 @@ fun FoundationRoute(
     onRequestEnergyPermission: () -> Unit,
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
-    val configuration = LocalConfiguration.current
-    val twoPanes = PanePolicy.useTwoPanes(
-        landscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
-        widthDp = configuration.screenWidthDp,
-    )
-    if (ui.shell == AppShell.REDUCED) {
-        DrivingScreen(ui, twoPanes, viewModel)
-    } else {
-        ParkedScreen(ui, twoPanes, viewModel, onRequestEnergyPermission)
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+        val twoPanes = PanePolicy.useTwoPanes(
+            landscape = landscape,
+            widthDp = maxWidth.value.toInt(),
+        )
+        if (ui.shell == AppShell.REDUCED) {
+            DrivingScreen(ui, twoPanes, viewModel)
+        } else {
+            ParkedScreen(ui, twoPanes, viewModel, onRequestEnergyPermission)
+        }
     }
 }
 
@@ -63,69 +68,119 @@ private fun DrivingScreen(
     twoPanes: Boolean,
     viewModel: FoundationViewModel,
 ) {
-    val restricted = ui.driving.requiresDistractionOptimization
-    val maxLen = ui.driving.maxRestrictedStringLength
-    val energy = energyLine(ui)
-    val openDoors = ui.vehicle.doors.values.count { it.open }
-    val dest = ui.destination?.name?.let { shortenForRestriction(it, maxLen, restricted) }
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Text(
-            text = stringResource(R.string.shell_driving),
-            fontSize = 40.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.secondary,
-        )
-        if (ui.simulatorEnabled) {
-            Text(stringResource(R.string.sim_banner), color = MaterialTheme.colorScheme.secondary)
-        }
-        Text(text = energy, fontSize = 56.sp, fontWeight = FontWeight.Bold)
-        if (openDoors > 0) {
-            Text(
-                text = stringResource(R.string.door_open_alert),
-                fontSize = 36.sp,
-                color = MaterialTheme.colorScheme.error,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-        if (dest != null) {
-            Text(text = dest, fontSize = 28.sp)
-            Text(text = remainLine(ui), fontSize = 22.sp)
-        }
-        ui.trip?.let { trip ->
-            Text(text = etaLine(trip.eta, trip.distance), fontSize = 22.sp)
-        }
-        if (twoPanes && ui.simulatorEnabled) {
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    DrivingActions(viewModel)
-                }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SimulatorActions(viewModel)
-                }
+    if (twoPanes) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Column(
+                Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                DrivingStatus(ui)
             }
-        } else {
-            DrivingActions(viewModel)
-            if (ui.simulatorEnabled) SimulatorActions(viewModel)
+            Column(
+                Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                DrivingActions(ui, viewModel)
+            }
+        }
+    } else {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Column(
+                Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                DrivingStatus(ui)
+            }
+            DrivingActions(ui, viewModel)
         }
     }
 }
 
 @Composable
-private fun DrivingActions(viewModel: FoundationViewModel) {
-    LargeButton(stringResource(R.string.action_route_sample)) {
-        viewModel.setDestination(SamplePlaces.seoulStation)
+private fun DrivingStatus(ui: FoundationUi) {
+    val clip = clipFor(ui)
+    Text(
+        text = stringResource(R.string.shell_driving),
+        fontSize = 40.sp,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.secondary,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+    if (ui.simulatorEnabled) {
+        Text(stringResource(R.string.sim_banner), color = MaterialTheme.colorScheme.secondary)
     }
-    LargeButton(stringResource(R.string.action_trip_sample)) {
-        viewModel.requestTrip(SamplePlaces.seoulStation)
+    Text(
+        text = clip(energyLine(ui)),
+        fontSize = 56.sp,
+        fontWeight = FontWeight.Bold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+    val openDoors = ui.vehicle.doors.values.count { it.open }
+    if (openDoors > 0) {
+        Text(
+            text = clip(stringResource(R.string.door_open_alert)),
+            fontSize = 36.sp,
+            color = MaterialTheme.colorScheme.error,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+    ui.destination?.let { dest ->
+        Text(
+            text = clip(dest.name),
+            fontSize = 28.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = clip(remainLine(ui)),
+            fontSize = 22.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+    ui.trip?.let { trip ->
+        Text(
+            text = clip(etaLine(trip.eta, trip.distance)),
+            fontSize = 22.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun DrivingActions(ui: FoundationUi, viewModel: FoundationViewModel) {
+    if (ui.simulatorEnabled) {
+        LargeButton(stringResource(R.string.action_route_sample)) {
+            viewModel.setSampleDestination()
+        }
+        LargeButton(stringResource(R.string.action_trip_sample)) {
+            viewModel.requestSampleTrip()
+        }
     }
     LargeButton(stringResource(R.string.action_refresh_dest)) {
         viewModel.refreshDestination()
+    }
+    if (ui.simulatorEnabled) {
+        SimulatorActions(viewModel)
     }
 }
 
@@ -199,7 +254,7 @@ private fun VehiclePane(
     Text("연료 ${percent(ui.vehicle.fuelPercent, ui.vehicle.fuelReadable)}")
     Text("적산 ${odometer(ui)}")
     Text("주행가능거리 ${range(ui)}")
-    Text("VIN ${if (ui.vehicle.vinReadable) ui.vehicle.vin ?: "-" else "읽기 불가"}")
+    Text("VIN ${if (ui.vehicle.vinReadable) maskVin(ui.vehicle.vin) ?: "-" else "읽기 불가"}")
     ui.vehicle.lastError?.let { Text("오류 $it", color = MaterialTheme.colorScheme.error) }
     DoorId.entries.forEach { id ->
         val panel = ui.vehicle.doors[id] ?: return@forEach
@@ -229,9 +284,9 @@ private fun VehiclePane(
 
 @Composable
 private fun NavPane(ui: FoundationUi, viewModel: FoundationViewModel) {
-    var name by remember { mutableStateOf(SamplePlaces.seoulStation.name) }
-    var latitude by remember { mutableStateOf(SamplePlaces.seoulStation.latitude.toString()) }
-    var longitude by remember { mutableStateOf(SamplePlaces.seoulStation.longitude.toString()) }
+    var name by rememberSaveable { mutableStateOf("") }
+    var latitude by rememberSaveable { mutableStateOf("") }
+    var longitude by rememberSaveable { mutableStateOf("") }
     Text(stringResource(R.string.section_nav), style = MaterialTheme.typography.titleMedium)
     Text("내비 ${ui.navLink.name}")
     ui.navStatus?.let { Text(it) }
@@ -246,15 +301,34 @@ private fun NavPane(ui: FoundationUi, viewModel: FoundationViewModel) {
     ui.arrival?.let { arrival ->
         Text("도착 ${arrival.name} · 거리 ${arrival.distance} · 시간 ${arrival.duration}")
     }
-    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(stringResource(R.string.hint_name)) }, modifier = Modifier.fillMaxWidth())
-    OutlinedTextField(value = latitude, onValueChange = { latitude = it }, label = { Text(stringResource(R.string.hint_lat)) }, modifier = Modifier.fillMaxWidth())
-    OutlinedTextField(value = longitude, onValueChange = { longitude = it }, label = { Text(stringResource(R.string.hint_lon)) }, modifier = Modifier.fillMaxWidth())
-    ui.formError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-    LargeButton(stringResource(R.string.action_set_custom)) {
-        viewModel.submitDestination(latitude, longitude, name, asTrip = false)
-    }
-    LargeButton(stringResource(R.string.action_trip_custom)) {
-        viewModel.submitDestination(latitude, longitude, name, asTrip = true)
+    if (ui.keyboardAllowed) {
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = { Text(stringResource(R.string.hint_name)) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = latitude,
+            onValueChange = { latitude = it },
+            label = { Text(stringResource(R.string.hint_lat)) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = longitude,
+            onValueChange = { longitude = it },
+            label = { Text(stringResource(R.string.hint_lon)) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        ui.formError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        LargeButton(stringResource(R.string.action_set_custom)) {
+            viewModel.submitDestination(latitude, longitude, name, asTrip = false)
+        }
+        LargeButton(stringResource(R.string.action_trip_custom)) {
+            viewModel.submitDestination(latitude, longitude, name, asTrip = true)
+        }
+    } else {
+        Text(stringResource(R.string.keyboard_blocked))
     }
     LargeButton(stringResource(R.string.action_refresh_dest)) { viewModel.refreshDestination() }
 }
@@ -267,8 +341,15 @@ private fun LargeButton(label: String, onClick: () -> Unit) {
             .fillMaxWidth()
             .height(88.dp),
     ) {
-        Text(text = label, fontSize = 22.sp)
+        Text(text = label, fontSize = 22.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
+}
+
+@Composable
+private fun clipFor(ui: FoundationUi): (String) -> String {
+    val restricted = ui.driving.requiresDistractionOptimization || ui.shell == AppShell.REDUCED
+    val maxLen = ui.driving.maxRestrictedStringLength
+    return { text -> shortenForRestriction(text, maxLen, restricted) }
 }
 
 private fun motionLabel(motion: Motion): String = when (motion) {

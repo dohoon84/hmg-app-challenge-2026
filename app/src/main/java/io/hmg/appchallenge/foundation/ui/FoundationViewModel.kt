@@ -8,8 +8,10 @@ import io.hmg.appchallenge.foundation.data.cache.CabinCache
 import io.hmg.appchallenge.foundation.domain.AppShell
 import io.hmg.appchallenge.foundation.domain.ArrivalSnapshot
 import io.hmg.appchallenge.foundation.domain.DestinationSnapshot
+import io.hmg.appchallenge.foundation.domain.DistractionPolicy
 import io.hmg.appchallenge.foundation.domain.DoorId
 import io.hmg.appchallenge.foundation.domain.DrivingSnapshot
+import io.hmg.appchallenge.foundation.domain.KeyboardPolicy
 import io.hmg.appchallenge.foundation.domain.LinkState
 import io.hmg.appchallenge.foundation.domain.PlaceParser
 import io.hmg.appchallenge.foundation.domain.PlaceRequest
@@ -36,6 +38,7 @@ data class FoundationUi(
     val vehicle: VehicleSnapshot = VehicleSnapshot(),
     val driving: DrivingSnapshot = DrivingSnapshot(),
     val shell: AppShell = AppShell.FULL,
+    val keyboardAllowed: Boolean = true,
     val destination: DestinationSnapshot? = null,
     val arrival: ArrivalSnapshot? = null,
     val trip: TripEstimate? = null,
@@ -54,6 +57,7 @@ class FoundationViewModel @Inject constructor(
     private val navigationRepository: NavigationRepository,
     private val cabinSimulator: CabinSimulator,
     private val cabinCache: CabinCache,
+    private val distractionPolicy: DistractionPolicy,
 ) : ViewModel() {
     private val formError = MutableStateFlow<String?>(null)
 
@@ -82,7 +86,16 @@ class FoundationViewModel @Inject constructor(
             navLink = navSlice.link,
             vehicle = vehicleSlice.snapshot,
             driving = vehicleSlice.driving,
-            shell = ShellPolicy.select(vehicleSlice.driving.motion),
+            shell = ShellPolicy.select(
+                motion = vehicleSlice.driving.motion,
+                uxAvailable = vehicleSlice.driving.uxAvailable,
+                failClosed = distractionPolicy.failClosed,
+            ),
+            keyboardAllowed = KeyboardPolicy.allowsKeyboard(
+                mask = vehicleSlice.driving.restrictionMask,
+                uxAvailable = vehicleSlice.driving.uxAvailable,
+                failClosed = distractionPolicy.failClosed,
+            ),
             destination = navSlice.destination,
             arrival = navSlice.arrival,
             trip = navSlice.trip,
@@ -92,12 +105,13 @@ class FoundationViewModel @Inject constructor(
             cachedAtEpochMs = cache?.updatedAtEpochMs ?: 0L,
             simulatorEnabled = cabinSimulator.enabled,
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FoundationUi(simulatorEnabled = cabinSimulator.enabled))
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        initialUi(),
+    )
 
     init {
-        vehicleRepository.start()
-        drivingStateRepository.start()
-        navigationRepository.start()
         viewModelScope.launch {
             vehicleRepository.snapshot.debounce(500).collect { snapshot ->
                 try {
@@ -140,6 +154,10 @@ class FoundationViewModel @Inject constructor(
 
     fun simulateArrival() = cabinSimulator.simulateArrival()
 
+    fun setSampleDestination() = cabinSimulator.setSampleDestination()
+
+    fun requestSampleTrip() = cabinSimulator.requestSampleTrip()
+
     fun setDestination(request: PlaceRequest) {
         formError.value = null
         navigationRepository.setDestination(request)
@@ -164,6 +182,15 @@ class FoundationViewModel @Inject constructor(
 
     fun onEnergyPermissionResult(granted: Boolean) {
         if (granted) vehicleRepository.refresh()
+    }
+
+    private fun initialUi(): FoundationUi {
+        val failClosed = distractionPolicy.failClosed
+        return FoundationUi(
+            shell = if (failClosed) AppShell.REDUCED else AppShell.FULL,
+            keyboardAllowed = !failClosed,
+            simulatorEnabled = cabinSimulator.enabled,
+        )
     }
 
     private data class VehicleSlice(

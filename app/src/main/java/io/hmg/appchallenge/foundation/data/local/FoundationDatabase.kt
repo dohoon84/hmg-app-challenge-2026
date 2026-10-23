@@ -59,7 +59,7 @@ interface CabinDao {
 @Database(
     entities = [VehicleCacheEntity::class, NavCacheEntity::class],
     version = 1,
-    exportSchema = false,
+    exportSchema = true,
 )
 abstract class FoundationDatabase : RoomDatabase() {
     abstract fun cabinDao(): CabinDao

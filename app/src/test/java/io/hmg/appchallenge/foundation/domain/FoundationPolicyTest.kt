@@ -1,6 +1,7 @@
 package io.hmg.appchallenge.foundation.domain
 
 import android.car.VehicleGear
+import android.car.drivingstate.CarUxRestrictions
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -17,6 +18,7 @@ class GearSelectionCodesTest {
         assertEquals(VehicleGear.GEAR_DRIVE, GearSelectionCodes.DRIVE)
         assertEquals(VehicleGear.GEAR_FIRST, GearSelectionCodes.FIRST)
         assertEquals(VehicleGear.GEAR_NINTH, GearSelectionCodes.NINTH)
+        assertEquals(CarUxRestrictions.UX_RESTRICTIONS_NO_KEYBOARD, UxRestrictionBits.NO_KEYBOARD)
     }
 
     @Test
@@ -36,13 +38,19 @@ class MotionResolverTest {
     @Test
     fun parkWithoutUxRestrictionIsParked() {
         assertEquals(Motion.PARKED, MotionResolver.resolve(GearPosition.PARK, false))
-        assertEquals(AppShell.FULL, ShellPolicy.select(Motion.PARKED))
+        assertEquals(
+            AppShell.FULL,
+            ShellPolicy.select(Motion.PARKED, uxAvailable = true, failClosed = true),
+        )
     }
 
     @Test
     fun uxRestrictionForcesDrivingEvenInPark() {
         assertEquals(Motion.DRIVING, MotionResolver.resolve(GearPosition.PARK, true))
-        assertEquals(AppShell.REDUCED, ShellPolicy.select(Motion.DRIVING))
+        assertEquals(
+            AppShell.REDUCED,
+            ShellPolicy.select(Motion.DRIVING, uxAvailable = true, failClosed = true),
+        )
     }
 
     @Test
@@ -55,7 +63,61 @@ class MotionResolverTest {
     @Test
     fun unknownGearWithoutRestrictionStaysUnknown() {
         assertEquals(Motion.UNKNOWN, MotionResolver.resolve(GearPosition.UNKNOWN, false))
-        assertEquals(AppShell.FULL, ShellPolicy.select(Motion.UNKNOWN))
+    }
+}
+
+class FailClosedShellTest {
+    @Test
+    fun pleosUnknownOrMissingUxIsReduced() {
+        assertEquals(
+            AppShell.REDUCED,
+            ShellPolicy.select(Motion.UNKNOWN, uxAvailable = true, failClosed = true),
+        )
+        assertEquals(
+            AppShell.REDUCED,
+            ShellPolicy.select(Motion.PARKED, uxAvailable = false, failClosed = true),
+        )
+        assertEquals(
+            AppShell.REDUCED,
+            ShellPolicy.select(Motion.UNKNOWN, uxAvailable = false, failClosed = true),
+        )
+    }
+
+    @Test
+    fun fakeUnknownCanStayFull() {
+        assertEquals(
+            AppShell.FULL,
+            ShellPolicy.select(Motion.UNKNOWN, uxAvailable = false, failClosed = false),
+        )
+    }
+
+    @Test
+    fun lostCarServiceRequiresOptimization() {
+        val lost = SignalLoss.drivingSnapshot()
+        assertFalse(lost.uxAvailable)
+        assertEquals(Motion.DRIVING, lost.motion)
+        assertEquals(
+            AppShell.REDUCED,
+            ShellPolicy.select(lost.motion, lost.uxAvailable, failClosed = true),
+        )
+    }
+
+    @Test
+    fun keyboardFollowsNoKeyboardBit() {
+        val mask = UxRestrictionBits.NO_KEYBOARD
+        assertFalse(KeyboardPolicy.allowsKeyboard(mask, uxAvailable = true, failClosed = true))
+        assertTrue(KeyboardPolicy.allowsKeyboard(0, uxAvailable = true, failClosed = true))
+        assertFalse(KeyboardPolicy.allowsKeyboard(0, uxAvailable = false, failClosed = true))
+        assertTrue(KeyboardPolicy.allowsKeyboard(0, uxAvailable = false, failClosed = false))
+        assertFalse(KeyboardPolicy.allowsKeyboard(mask, uxAvailable = true, failClosed = false))
+    }
+
+    @Test
+    fun vinMaskKeepsLastFour() {
+        assertNull(maskVin(null))
+        assertEquals("", maskVin(""))
+        assertEquals("***", maskVin("ABC"))
+        assertEquals("**********-VIN", maskVin("FAKE-NOT-A-VIN"))
     }
 }
 

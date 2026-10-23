@@ -32,9 +32,9 @@ import javax.inject.Singleton
 class PleosNavigationRepository @Inject constructor(
     @ApplicationContext context: Context,
 ) : NavigationRepository {
-    private val helper = NaviHelper(context)
+    private val appContext = context
+    private var helper: NaviHelper? = null
     private val started = AtomicBoolean(false)
-    private val listenerAdded = AtomicBoolean(false)
 
     private val _link = MutableStateFlow(LinkState.IDLE)
     override val link: StateFlow<LinkState> = _link
@@ -91,15 +91,19 @@ class PleosNavigationRepository @Inject constructor(
 
     override fun start() {
         if (!started.compareAndSet(false, true)) return
+        val created = NaviHelper(appContext)
+        helper = created
         _link.value = LinkState.CONNECTING
-        ensureListener()
         try {
-            helper.initialize(
+            created.addListener(listener)
+            created.initialize(
                 {
+                    if (!started.get() || helper !== created) return@initialize
                     _link.value = LinkState.READY
-                    refreshDestination()
+                    readDestination(created)
                 },
                 { error ->
+                    if (!started.get() || helper !== created) return@initialize
                     _link.value = LinkState.FAILED
                     _status.value = error.message ?: error.javaClass.simpleName
                 },
@@ -112,28 +116,31 @@ class PleosNavigationRepository @Inject constructor(
 
     override fun stop() {
         if (!started.compareAndSet(true, false)) return
-        if (listenerAdded.compareAndSet(true, false)) {
+        val current = helper
+        helper = null
+        if (current != null) {
             try {
-                helper.removeListener(listener)
+                current.removeListener(listener)
             } catch (error: Throwable) {
                 _status.value = error.message
             }
-        }
-        try {
-            helper.release()
-        } catch (error: Throwable) {
-            _status.value = error.message
+            try {
+                current.release()
+            } catch (error: Throwable) {
+                _status.value = error.message
+            }
         }
         _link.value = LinkState.IDLE
     }
 
     override fun setDestination(request: PlaceRequest) {
-        if (_link.value != LinkState.READY) {
+        val current = helper
+        if (_link.value != LinkState.READY || current == null) {
             _status.value = "내비에 연결되지 않았습니다"
             return
         }
         try {
-            helper.requestRoute(
+            current.requestRoute(
                 RouteInfo(
                     latitude = request.latitude,
                     longitude = request.longitude,
@@ -153,12 +160,13 @@ class PleosNavigationRepository @Inject constructor(
     }
 
     override fun requestTrip(request: PlaceRequest) {
-        if (_link.value != LinkState.READY) {
+        val current = helper
+        if (_link.value != LinkState.READY || current == null) {
             _status.value = "내비에 연결되지 않았습니다"
             return
         }
         try {
-            helper.requestTrip(
+            current.requestTrip(
                 TripRequest(
                     latitude = request.latitude,
                     longitude = request.longitude,
@@ -174,17 +182,17 @@ class PleosNavigationRepository @Inject constructor(
     }
 
     override fun refreshDestination() {
-        if (_link.value != LinkState.READY && _link.value != LinkState.CONNECTING) return
-        try {
-            helper.getDestinationInfo()
-        } catch (error: Throwable) {
-            _status.value = error.message ?: error.javaClass.simpleName
-        }
+        val current = helper ?: return
+        if (_link.value != LinkState.READY) return
+        readDestination(current)
     }
 
-    private fun ensureListener() {
-        if (listenerAdded.compareAndSet(false, true)) {
-            helper.addListener(listener)
+    private fun readDestination(target: NaviHelper) {
+        if (!started.get() || helper !== target || _link.value != LinkState.READY) return
+        try {
+            target.getDestinationInfo()
+        } catch (error: Throwable) {
+            _status.value = error.message ?: error.javaClass.simpleName
         }
     }
 }

@@ -24,4 +24,5 @@
     <string name="section_nav">내비</string>
     <string name="section_sim">시뮬레이션</string>
     <string name="door_open_alert">문 열림</string>
+    <string name="keyboard_blocked">키보드 제한</string>
 </resources>

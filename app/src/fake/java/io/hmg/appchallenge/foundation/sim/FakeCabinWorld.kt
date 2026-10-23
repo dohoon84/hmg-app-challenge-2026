@@ -13,6 +13,7 @@ import io.hmg.appchallenge.foundation.domain.PanelState
 import io.hmg.appchallenge.foundation.domain.PlaceRequest
 import io.hmg.appchallenge.foundation.domain.RangeSource
 import io.hmg.appchallenge.foundation.domain.TripEstimate
+import io.hmg.appchallenge.foundation.domain.UxRestrictionBits
 import io.hmg.appchallenge.foundation.domain.VehicleSnapshot
 import io.hmg.appchallenge.foundation.domain.WindowId
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -72,6 +73,10 @@ class FakeCabinWorld @Inject constructor() : CabinSimulator {
             current.copy(socPercent = next, updatedAtEpochMs = System.currentTimeMillis())
         }
     }
+
+    override fun setSampleDestination() = setDestination(SamplePlaces.seoulStation)
+
+    override fun requestSampleTrip() = requestTrip(SamplePlaces.seoulStation)
 
     override fun simulateArrival() {
         val dest = _destination.value
@@ -171,12 +176,8 @@ class FakeCabinWorld @Inject constructor() : CabinSimulator {
         gearAvailable = true,
         uxAvailable = true,
         requiresDistractionOptimization = requiresDistractionOptimization,
-        restrictionMask = if (requiresDistractionOptimization) NO_KEYBOARD_MASK else 0,
+        restrictionMask = if (requiresDistractionOptimization) UxRestrictionBits.NO_KEYBOARD else 0,
         maxRestrictedStringLength = if (requiresDistractionOptimization) 60 else 0,
         motion = MotionResolver.resolve(gear, requiresDistractionOptimization),
     )
-
-    private companion object {
-        const val NO_KEYBOARD_MASK = 8
-    }
 }

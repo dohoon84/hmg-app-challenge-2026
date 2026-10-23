@@ -2,8 +2,11 @@ package io.hmg.appchallenge.foundation.di
 
 import dagger.Binds
 import dagger.Module
+import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import io.hmg.appchallenge.foundation.domain.DistractionPolicy
+import io.hmg.appchallenge.foundation.domain.StaticDistractionPolicy
 import io.hmg.appchallenge.foundation.driving.DrivingStateRepository
 import io.hmg.appchallenge.foundation.driving.PleosDrivingStateRepository
 import io.hmg.appchallenge.foundation.navi.NavigationRepository
@@ -32,4 +35,11 @@ abstract class PleosRepositoryModule {
     @Binds
     @Singleton
     abstract fun simulator(impl: DisabledCabinSimulator): CabinSimulator
+}
+
+@Module
+@InstallIn(SingletonComponent::class)
+object PleosPolicyModule {
+    @Provides
+    fun distractionPolicy(): DistractionPolicy = StaticDistractionPolicy(failClosed = true)
 }

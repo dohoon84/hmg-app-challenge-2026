@@ -12,7 +12,10 @@ build/
 *.aab
 *.ap_
 *.dex
-!apk/*.apk
+*.jks
+*.keystore
+keystore.properties
+signing.properties
 output-metadata.json
 *.hprof
 .kotlin/

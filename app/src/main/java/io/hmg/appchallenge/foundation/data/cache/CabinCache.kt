@@ -9,6 +9,7 @@ import io.hmg.appchallenge.foundation.domain.DestinationSnapshot
 import io.hmg.appchallenge.foundation.domain.Motion
 import io.hmg.appchallenge.foundation.domain.TripEstimate
 import io.hmg.appchallenge.foundation.domain.VehicleSnapshot
+import io.hmg.appchallenge.foundation.domain.maskVin
 import kotlinx.coroutines.flow.Flow
 
 interface CabinCache {
@@ -40,7 +41,7 @@ class RoomCabinCache(
                 odometerKm = snapshot.odometerKm,
                 rangeMeters = snapshot.rangeMeters,
                 rangeSource = snapshot.rangeSource.name,
-                vin = snapshot.vin,
+                vin = maskVin(snapshot.vin),
                 motion = motion.name,
                 openDoorCount = snapshot.doors.values.count { it.open },
             ),

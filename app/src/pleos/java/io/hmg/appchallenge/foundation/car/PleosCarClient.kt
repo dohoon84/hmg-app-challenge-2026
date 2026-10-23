@@ -8,11 +8,16 @@ import android.car.hardware.CarPropertyValue
 import android.car.hardware.property.CarPropertyManager
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.hmg.appchallenge.foundation.domain.DrivingSnapshot
 import io.hmg.appchallenge.foundation.domain.GearSelectionCodes
 import io.hmg.appchallenge.foundation.domain.MotionResolver
+import io.hmg.appchallenge.foundation.domain.SignalLoss
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.util.concurrent.atomic.AtomicInteger
@@ -28,6 +33,13 @@ import javax.inject.Singleton
  *
  * Remaining range is [VehiclePropertyIds.RANGE_REMAINING] (permission CAR_ENERGY, dangerous).
  * The Vehicle SDK has no range getter. Whether Pleos exposes this property is unverified.
+ *
+ * Car.createCar(listener) is API 30 and VehiclePropertyIds is API 29. minSdk stays 28 so the
+ * package can be installed more widely; below API 30 this client publishes [SignalLoss]
+ * and does not call those APIs. The contest image is API 34.
+ *
+ * Gear, UX, and property callbacks are delivered on the main looper. start/stop run on the
+ * main thread via ProcessLifecycleOwner, so the snapshot fields are not written from other threads.
  */
 @Singleton
 class PleosCarClient @Inject constructor(
@@ -58,10 +70,30 @@ class PleosCarClient @Inject constructor(
 
     fun start() {
         if (users.incrementAndGet() != 1) return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            clearSignals()
+            return
+        }
+        connect()
+    }
+
+    fun stop() {
+        if (users.decrementAndGet() > 0) return
+        disconnect()
+    }
+
+    fun refreshRange() {
+        val manager = propertyManager ?: return
+        readRange(manager)
+    }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    private fun connect() {
         try {
+            val handler = Handler(Looper.getMainLooper())
             car = Car.createCar(
                 context,
-                null,
+                handler,
                 Car.CAR_WAIT_TIMEOUT_DO_NOT_WAIT,
                 Car.CarServiceLifecycleListener { created, ready ->
                     if (!ready) {
@@ -76,16 +108,7 @@ class PleosCarClient @Inject constructor(
         }
     }
 
-    fun stop() {
-        if (users.decrementAndGet() > 0) return
-        disconnect()
-    }
-
-    fun refreshRange() {
-        val manager = propertyManager ?: return
-        readRange(manager)
-    }
-
+    @RequiresApi(Build.VERSION_CODES.R)
     private fun bind(created: Car) {
         val manager = created.getCarManager(Car.PROPERTY_SERVICE) as? CarPropertyManager
         propertyManager = manager
@@ -106,7 +129,9 @@ class PleosCarClient @Inject constructor(
         publishDriving()
     }
 
+    @RequiresApi(Build.VERSION_CODES.R)
     private fun subscribeProperties(manager: CarPropertyManager) {
+        rangeRegistered = false
         val callback = object : CarPropertyManager.CarPropertyEventCallback {
             override fun onChangeEvent(value: CarPropertyValue<*>) {
                 when (value.propertyId) {
@@ -152,6 +177,7 @@ class PleosCarClient @Inject constructor(
         publishDriving()
     }
 
+    @RequiresApi(Build.VERSION_CODES.R)
     private fun readRange(manager: CarPropertyManager) {
         if (!hasEnergyPermission()) {
             _rangeMeters.value = null
@@ -211,14 +237,16 @@ class PleosCarClient @Inject constructor(
         ContextCompat.checkSelfPermission(context, Car.PERMISSION_ENERGY) == PackageManager.PERMISSION_GRANTED
 
     private fun clearSignals() {
-        gearRaw = null
-        gearAvailable = false
-        uxAvailable = false
-        requiresDistractionOptimization = false
-        restrictionMask = 0
-        maxRestrictedStringLength = 0
+        val lost = SignalLoss.drivingSnapshot()
+        gearRaw = lost.gearRaw
+        gearAvailable = lost.gearAvailable
+        uxAvailable = lost.uxAvailable
+        requiresDistractionOptimization = lost.requiresDistractionOptimization
+        restrictionMask = lost.restrictionMask
+        maxRestrictedStringLength = lost.maxRestrictedStringLength
+        rangeRegistered = false
         _rangeMeters.value = null
-        publishDriving()
+        _driving.value = lost
     }
 
     private fun disconnect() {
