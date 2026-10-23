@@ -33,7 +33,7 @@ class PleosNavigationRepository @Inject constructor(
     @ApplicationContext context: Context,
 ) : NavigationRepository {
     private val appContext = context
-    private var helper: NaviHelper? = null
+    @Volatile private var helper: NaviHelper? = null
     private val started = AtomicBoolean(false)
 
     private val _link = MutableStateFlow(LinkState.IDLE)

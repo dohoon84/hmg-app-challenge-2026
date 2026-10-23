@@ -38,6 +38,7 @@ import javax.inject.Singleton
  * Vehicle SDK 2.3.2 wrapper. Every read is gated on check*Capabilities access READ or READ_WRITE.
  * initialize() has no connection callback in this version, so a successful return is treated as ready
  * and a later capability failure is stored on [VehicleSnapshot.lastError].
+ * Each [start] constructs a new [Vehicle]. Re-initializing a released instance is not documented.
  *
  * Not used: getGear(), hidden battery/port listeners, deprecated setRangeRemainingDistance,
  * deprecated getCRNInfo. Remaining range is read from AAOS, not from the SDK.
@@ -50,7 +51,8 @@ class PleosVehicleRepository @Inject constructor(
     @ApplicationContext context: Context,
     private val carClient: PleosCarClient,
 ) : VehicleRepository {
-    private val vehicle = Vehicle(context)
+    private val appContext = context
+    private var vehicle: Vehicle? = null
     private val started = AtomicBoolean(false)
     private val listeners = ListenerSession()
     @Volatile private var sessionToken = 0
@@ -67,19 +69,25 @@ class PleosVehicleRepository @Inject constructor(
         override fun onFuelPercentUpdated(value: Int?) {
             if (live(sessionToken)) updateFuel(value)
         }
-        override fun onFailed(error: Exception) = note(error)
+        override fun onFailed(error: Exception) {
+            if (live(sessionToken)) note(error)
+        }
     }
     private val socListener = object : EvBatteryStateOfChargeListener {
         override fun onEvBatteryStateOfChargeUpdated(value: Int?) {
             if (live(sessionToken)) updateSoc(value)
         }
-        override fun onFailed(error: Exception) = note(error)
+        override fun onFailed(error: Exception) {
+            if (live(sessionToken)) note(error)
+        }
     }
     private val odometerListener = object : DistanceDrivenListener {
         override fun onDistanceDrivenUpdated(value: Float?) {
             if (live(sessionToken)) updateOdometer(value)
         }
-        override fun onFailed(error: Exception) = note(error)
+        override fun onFailed(error: Exception) {
+            if (live(sessionToken)) note(error)
+        }
     }
 
     override fun start() {
@@ -102,8 +110,10 @@ class PleosVehicleRepository @Inject constructor(
                 }
             }
         }
+        val created = Vehicle(appContext)
+        vehicle = created
         try {
-            vehicle.initialize()
+            created.initialize()
         } catch (error: Throwable) {
             _link.value = LinkState.FAILED
             note(error)
@@ -124,8 +134,10 @@ class PleosVehicleRepository @Inject constructor(
         rangeJob = null
         listeners.close()
         sessionToken = 0
+        val current = vehicle
+        vehicle = null
         try {
-            vehicle.release()
+            current?.release()
         } catch (error: Throwable) {
             note(error)
         }
@@ -139,7 +151,8 @@ class PleosVehicleRepository @Inject constructor(
 
     private fun subscribeDoors() {
         val token = sessionToken
-        val door = VehicleDomains.door(vehicle)
+        val current = vehicle ?: return
+        val door = VehicleDomains.door(current)
         door.checkDoorPositionCapabilities(
             { config, areaMap ->
                 if (!live(token)) return@checkDoorPositionCapabilities
@@ -158,7 +171,9 @@ class PleosVehicleRepository @Inject constructor(
                         override fun onPositionUpdated(pos: Int?) {
                             if (live(token)) updateDoor(id, pos, readable = true)
                         }
-                        override fun onFailed(error: Exception) = note(error)
+                        override fun onFailed(error: Exception) {
+                            if (live(token)) note(error)
+                        }
                     }
                     try {
                         door.registerDoorPosition(area, listener)
@@ -166,7 +181,7 @@ class PleosVehicleRepository @Inject constructor(
                         door.getCurrentDoorPosition(
                             area,
                             { pos -> if (live(token)) updateDoor(id, pos, readable = true) },
-                            { error -> note(error) },
+                            { error -> if (live(token)) note(error) },
                         )
                     } catch (error: Throwable) {
                         note(error)
@@ -175,6 +190,7 @@ class PleosVehicleRepository @Inject constructor(
                 }
             },
             { error ->
+                if (!live(token)) return@checkDoorPositionCapabilities
                 markDoorsUnreadable()
                 note(error)
             },
@@ -183,7 +199,8 @@ class PleosVehicleRepository @Inject constructor(
 
     private fun subscribeWindows() {
         val token = sessionToken
-        val window = VehicleDomains.window(vehicle)
+        val current = vehicle ?: return
+        val window = VehicleDomains.window(current)
         window.checkWindowPositionCapabilities(
             { config, areaMap ->
                 if (!live(token)) return@checkWindowPositionCapabilities
@@ -202,7 +219,9 @@ class PleosVehicleRepository @Inject constructor(
                         override fun onWindowPositionUpdated(position: Int?) {
                             if (live(token)) updateWindow(id, position, readable = true)
                         }
-                        override fun onFailed(error: Exception) = note(error)
+                        override fun onFailed(error: Exception) {
+                            if (live(token)) note(error)
+                        }
                     }
                     try {
                         window.registerWindowPosition(area, listener)
@@ -210,7 +229,7 @@ class PleosVehicleRepository @Inject constructor(
                         window.getCurrentWindowPosition(
                             area,
                             { position -> if (live(token)) updateWindow(id, position, readable = true) },
-                            { error -> note(error) },
+                            { error -> if (live(token)) note(error) },
                         )
                     } catch (error: Throwable) {
                         note(error)
@@ -219,6 +238,7 @@ class PleosVehicleRepository @Inject constructor(
                 }
             },
             { error ->
+                if (!live(token)) return@checkWindowPositionCapabilities
                 markWindowsUnreadable()
                 note(error)
             },
@@ -227,7 +247,8 @@ class PleosVehicleRepository @Inject constructor(
 
     private fun subscribeFuel() {
         val token = sessionToken
-        val fuel = VehicleDomains.fuel(vehicle)
+        val current = vehicle ?: return
+        val fuel = VehicleDomains.fuel(current)
         fuel.checkFuelPercentCapabilities(
             { config ->
                 if (!live(token)) return@checkFuelPercentCapabilities
@@ -240,13 +261,14 @@ class PleosVehicleRepository @Inject constructor(
                     track(token) { fuel.unregisterFuelPercent(fuelListener) }
                     fuel.getFuelPercent(
                         { value -> if (live(token)) updateFuel(value) },
-                        { error -> note(error) },
+                        { error -> if (live(token)) note(error) },
                     )
                 } catch (error: Throwable) {
                     note(error)
                 }
             },
             { error ->
+                if (!live(token)) return@checkFuelPercentCapabilities
                 _snapshot.update { it.copy(fuelReadable = false, fuelPercent = null) }
                 note(error)
             },
@@ -255,7 +277,8 @@ class PleosVehicleRepository @Inject constructor(
 
     private fun subscribeSoc() {
         val token = sessionToken
-        val battery = VehicleDomains.evBattery(vehicle)
+        val current = vehicle ?: return
+        val battery = VehicleDomains.evBattery(current)
         battery.checkEvBatteryStateOfChargeCapabilities(
             { config ->
                 if (!live(token)) return@checkEvBatteryStateOfChargeCapabilities
@@ -268,13 +291,14 @@ class PleosVehicleRepository @Inject constructor(
                     track(token) { battery.unregisterEvBatteryStateOfCharge(socListener) }
                     battery.getEvBatteryStateOfCharge(
                         { value -> if (live(token)) updateSoc(value) },
-                        { error -> note(error) },
+                        { error -> if (live(token)) note(error) },
                     )
                 } catch (error: Throwable) {
                     note(error)
                 }
             },
             { error ->
+                if (!live(token)) return@checkEvBatteryStateOfChargeCapabilities
                 _snapshot.update { it.copy(socReadable = false, socPercent = null) }
                 note(error)
             },
@@ -283,7 +307,8 @@ class PleosVehicleRepository @Inject constructor(
 
     private fun subscribeOdometer() {
         val token = sessionToken
-        val odometer = VehicleDomains.odometer(vehicle)
+        val current = vehicle ?: return
+        val odometer = VehicleDomains.odometer(current)
         odometer.checkCurrentDistanceDrivenCapabilities(
             { config ->
                 if (!live(token)) return@checkCurrentDistanceDrivenCapabilities
@@ -296,13 +321,14 @@ class PleosVehicleRepository @Inject constructor(
                     track(token) { odometer.unregisterDistanceDriven(odometerListener) }
                     odometer.getCurrentDistanceDriven(
                         { value -> if (live(token)) updateOdometer(value) },
-                        { error -> note(error) },
+                        { error -> if (live(token)) note(error) },
                     )
                 } catch (error: Throwable) {
                     note(error)
                 }
             },
             { error ->
+                if (!live(token)) return@checkCurrentDistanceDrivenCapabilities
                 _snapshot.update { it.copy(odometerReadable = false, odometerKm = null) }
                 note(error)
             },
@@ -311,7 +337,8 @@ class PleosVehicleRepository @Inject constructor(
 
     private fun subscribeVin() {
         val token = sessionToken
-        val info = VehicleDomains.carInfo(vehicle)
+        val current = vehicle ?: return
+        val info = VehicleDomains.carInfo(current)
         info.checkVINInfoCapabilities(
             { config ->
                 if (!live(token)) return@checkVINInfoCapabilities
@@ -330,10 +357,11 @@ class PleosVehicleRepository @Inject constructor(
                             )
                         }
                     },
-                    { error -> note(error) },
+                    { error -> if (live(token)) note(error) },
                 )
             },
             { error ->
+                if (!live(token)) return@checkVINInfoCapabilities
                 _snapshot.update { it.copy(vinReadable = false, vin = null) }
                 note(error)
             },

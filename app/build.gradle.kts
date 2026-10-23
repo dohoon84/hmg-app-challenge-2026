@@ -1,3 +1,4 @@
+import org.gradle.api.tasks.Copy
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.Properties
 
@@ -171,10 +172,35 @@ dependencies {
     testImplementation(files(carJar))
 }
 
+val contestSigningMessage =
+    "exportContestApk requires a signed pleos release. " +
+        "Set STORE_FILE, STORE_PASSWORD, KEY_ALIAS, and KEY_PASSWORD " +
+        "in keystore.properties or the environment. Do not submit a fake or unsigned APK."
+
+// Fails at the start of execution, before assemblePleosRelease does any work.
+// A throw while configuring the build script would fail every Gradle command.
+// onlyIf would skip the export instead of failing it. doLast on the copy runs
+// only after assemblePleosRelease, which is the work we want to avoid.
+val checkContestSigning = tasks.register("checkContestSigning") {
+    group = "verification"
+    description = "Reject a contest export before the release build when signing is not configured."
+    doFirst {
+        if (!hasReleaseSigning) {
+            throw GradleException(contestSigningMessage)
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name == "assemblePleosRelease") {
+        mustRunAfter(checkContestSigning)
+    }
+}
+
 tasks.register<Copy>("exportContestApk") {
     group = "distribution"
-    description = "Copy a signed pleos release APK into apk/. Unsigned builds copy nothing."
-    dependsOn("assemblePleosRelease")
+    description = "Copy a signed pleos release APK into apk/. Fails when release signing is not configured."
+    dependsOn(checkContestSigning, "assemblePleosRelease")
     from(layout.buildDirectory.dir("outputs/apk/pleos/release"))
     include("*-release.apk")
     exclude("*unaligned*")

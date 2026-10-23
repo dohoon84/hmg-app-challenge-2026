@@ -5,14 +5,17 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -25,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -83,29 +87,29 @@ private fun DrivingScreen(
             ) {
                 DrivingStatus(ui)
             }
-            Column(
+            DrivingActions(
+                ui,
+                viewModel,
                 Modifier
                     .weight(1f)
                     .fillMaxHeight(),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                DrivingActions(ui, viewModel)
-            }
+            )
         }
     } else {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(
-                Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                DrivingStatus(ui)
-            }
-            DrivingActions(ui, viewModel)
+            DrivingStatus(ui)
+            DrivingActions(
+                ui,
+                viewModel,
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+            )
         }
     }
 }
@@ -167,31 +171,118 @@ private fun DrivingStatus(ui: FoundationUi) {
 }
 
 @Composable
-private fun DrivingActions(ui: FoundationUi, viewModel: FoundationViewModel) {
-    if (ui.simulatorEnabled) {
-        LargeButton(stringResource(R.string.action_route_sample)) {
-            viewModel.setSampleDestination()
+private fun DrivingActions(
+    ui: FoundationUi,
+    viewModel: FoundationViewModel,
+    modifier: Modifier = Modifier,
+) {
+    val actions = drivingActionList(ui, viewModel)
+    BoxWithConstraints(modifier) {
+        val columns = drivingActionColumns(
+            actionCount = actions.size,
+            availableHeightDp = maxHeight.value.toInt(),
+            availableWidthDp = maxWidth.value.toInt(),
+        )
+        val rows = actions.chunked(columns)
+        val needed = DRIVING_BUTTON_HEIGHT * rows.size + DRIVING_BUTTON_GAP * (rows.size - 1).coerceAtLeast(0)
+        val scroll = if (needed > maxHeight && actions.size > 1) {
+            Modifier.verticalScroll(rememberScrollState())
+        } else {
+            Modifier
         }
-        LargeButton(stringResource(R.string.action_trip_sample)) {
-            viewModel.requestSampleTrip()
+        Column(
+            modifier = scroll.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(DRIVING_BUTTON_GAP),
+        ) {
+            rows.forEach { row ->
+                val labelStyle = drivingActionLabelStyle(if (row.size > 1) columns else 1)
+                if (row.size == 1) {
+                    LargeButton(row[0].label, labelStyle = labelStyle, onClick = row[0].onClick)
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(DRIVING_BUTTON_GAP),
+                    ) {
+                        row.forEach { action ->
+                            LargeButton(
+                                label = action.label,
+                                modifier = Modifier.weight(1f),
+                                labelStyle = labelStyle,
+                                onClick = action.onClick,
+                            )
+                        }
+                        repeat(columns - row.size) {
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
         }
-    }
-    LargeButton(stringResource(R.string.action_refresh_dest)) {
-        viewModel.refreshDestination()
-    }
-    if (ui.simulatorEnabled) {
-        SimulatorActions(viewModel)
     }
 }
 
 @Composable
-private fun SimulatorActions(viewModel: FoundationViewModel) {
-    LargeButton(stringResource(R.string.action_park)) { viewModel.setParked(true) }
-    LargeButton(stringResource(R.string.action_door)) { viewModel.toggleDriverDoor() }
-    LargeButton(stringResource(R.string.action_soc_up)) { viewModel.nudgeSoc(10) }
-    LargeButton(stringResource(R.string.action_soc_down)) { viewModel.nudgeSoc(-10) }
-    LargeButton(stringResource(R.string.action_arrival)) { viewModel.simulateArrival() }
+private fun drivingActionList(ui: FoundationUi, viewModel: FoundationViewModel): List<DrivingAction> {
+    val actions = mutableListOf<DrivingAction>()
+    if (ui.simulatorEnabled) {
+        actions += DrivingAction(stringResource(R.string.action_route_sample)) { viewModel.setSampleDestination() }
+        actions += DrivingAction(stringResource(R.string.action_trip_sample)) { viewModel.requestSampleTrip() }
+    }
+    actions += DrivingAction(stringResource(R.string.action_refresh_dest)) { viewModel.refreshDestination() }
+    if (ui.simulatorEnabled) {
+        actions += DrivingAction(stringResource(R.string.action_park)) { viewModel.setParked(true) }
+        actions += DrivingAction(stringResource(R.string.action_door)) { viewModel.toggleDriverDoor() }
+        actions += DrivingAction(stringResource(R.string.action_soc_up)) { viewModel.nudgeSoc(10) }
+        actions += DrivingAction(stringResource(R.string.action_soc_down)) { viewModel.nudgeSoc(-10) }
+        actions += DrivingAction(stringResource(R.string.action_arrival)) { viewModel.simulateArrival() }
+    }
+    return actions
 }
+
+private data class DrivingAction(val label: String, val onClick: () -> Unit)
+
+/**
+ * Keeps every driving control on screen at [buttonHeightDp]. Adds columns when a single
+ * stack would be taller than the pane, and never makes a button narrower than [minButtonWidthDp].
+ */
+internal fun drivingActionColumns(
+    actionCount: Int,
+    availableHeightDp: Int,
+    availableWidthDp: Int,
+    buttonHeightDp: Int = 88,
+    gapDp: Int = 12,
+    minButtonWidthDp: Int = 96,
+): Int {
+    if (actionCount <= 1) return 1
+    val width = availableWidthDp.coerceAtLeast(minButtonWidthDp)
+    val maxByWidth = ((width + gapDp) / (minButtonWidthDp + gapDp))
+        .coerceAtLeast(1)
+        .coerceAtMost(actionCount)
+    if (availableHeightDp <= 0) return maxByWidth
+    for (columns in 1..maxByWidth) {
+        val rows = (actionCount + columns - 1) / columns
+        val needed = rows * buttonHeightDp + (rows - 1).coerceAtLeast(0) * gapDp
+        if (needed <= availableHeightDp) return columns
+    }
+    return maxByWidth
+}
+
+/**
+ * A shared column is about 97dp wide, which clips a 22sp label. Wrap those labels at 18sp.
+ * A single full-width button keeps 22sp.
+ */
+internal data class DrivingLabelStyle(
+    val fontSp: Int,
+    val maxLines: Int,
+    val horizontalPaddingDp: Int,
+)
+
+internal fun drivingActionLabelStyle(columns: Int): DrivingLabelStyle =
+    if (columns <= 1) {
+        DrivingLabelStyle(fontSp = 22, maxLines = 1, horizontalPaddingDp = 24)
+    } else {
+        DrivingLabelStyle(fontSp = 18, maxLines = 2, horizontalPaddingDp = 8)
+    }
 
 @Composable
 private fun ParkedScreen(
@@ -278,7 +369,7 @@ private fun VehiclePane(
         LargeButton(stringResource(R.string.action_soc_down)) { viewModel.nudgeSoc(-10) }
         LargeButton(stringResource(R.string.action_arrival)) { viewModel.simulateArrival() }
     } else {
-        LargeButton(stringResource(R.string.action_energy_permission), onRequestEnergyPermission)
+        LargeButton(stringResource(R.string.action_energy_permission), onClick = onRequestEnergyPermission)
     }
 }
 
@@ -334,14 +425,32 @@ private fun NavPane(ui: FoundationUi, viewModel: FoundationViewModel) {
 }
 
 @Composable
-private fun LargeButton(label: String, onClick: () -> Unit) {
+private fun LargeButton(
+    label: String,
+    modifier: Modifier = Modifier,
+    labelStyle: DrivingLabelStyle = drivingActionLabelStyle(1),
+    onClick: () -> Unit,
+) {
     Button(
         onClick = onClick,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .height(88.dp),
+            .height(DRIVING_BUTTON_HEIGHT),
+        contentPadding = if (labelStyle.maxLines > 1) {
+            PaddingValues(horizontal = labelStyle.horizontalPaddingDp.dp, vertical = 4.dp)
+        } else {
+            ButtonDefaults.ContentPadding
+        },
     ) {
-        Text(text = label, fontSize = 22.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(
+            text = label,
+            modifier = Modifier.fillMaxWidth(),
+            fontSize = labelStyle.fontSp.sp,
+            lineHeight = (labelStyle.fontSp + 4).sp,
+            maxLines = labelStyle.maxLines,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 
@@ -411,3 +520,5 @@ private fun windowLabel(id: WindowId): String = when (id) {
 }
 
 private val clock = SimpleDateFormat("HH:mm:ss", Locale.KOREA)
+private val DRIVING_BUTTON_HEIGHT = 88.dp
+private val DRIVING_BUTTON_GAP = 12.dp

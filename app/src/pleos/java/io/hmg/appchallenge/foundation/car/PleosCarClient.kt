@@ -40,19 +40,31 @@ import javax.inject.Singleton
  *
  * Gear, UX, and property callbacks are delivered on the main looper. start/stop run on the
  * main thread via ProcessLifecycleOwner, so the snapshot fields are not written from other threads.
+ *
+ * When CarService is already up, AOSP android14 Car.createCar calls the lifecycle listener on the
+ * calling thread before it returns (Car.java dispatchCarReadyToMainThread). CabinSession calls
+ * this from the main thread, so the ready callback is synchronous and any field assigned from the
+ * createCar return value is still null. A generation token accepts that callback and rejects one
+ * that arrives after stop or after a newer connect.
  */
 @Singleton
-class PleosCarClient @Inject constructor(
-    @ApplicationContext private val context: Context,
+class PleosCarClient internal constructor(
+    private val context: Context,
+    private val connector: CarConnector?,
 ) {
+    @Inject
+    constructor(@ApplicationContext context: Context) : this(context, null)
+
     private val users = AtomicInteger(0)
+    private val connectGen = AtomicInteger(0)
     private val _driving = MutableStateFlow(DrivingSnapshot())
     val driving: StateFlow<DrivingSnapshot> = _driving
 
     private val _rangeMeters = MutableStateFlow<Float?>(null)
     val rangeMeters: StateFlow<Float?> = _rangeMeters
 
-    private var car: Car? = null
+    @Volatile private var link: CarLink? = null
+    private var closing: CarLink? = null
     private var propertyManager: CarPropertyManager? = null
     private var propertyCallback: CarPropertyManager.CarPropertyEventCallback? = null
     private var uxManager: CarUxRestrictionsManager? = null
@@ -89,20 +101,21 @@ class PleosCarClient @Inject constructor(
 
     @RequiresApi(Build.VERSION_CODES.R)
     private fun connect() {
+        val gen = connectGen.incrementAndGet()
+        val opening = connector ?: AndroidCarConnector(context) { created -> bind(created) }
         try {
-            val handler = Handler(Looper.getMainLooper())
-            car = Car.createCar(
-                context,
-                handler,
-                Car.CAR_WAIT_TIMEOUT_DO_NOT_WAIT,
-                Car.CarServiceLifecycleListener { created, ready ->
-                    if (!ready) {
-                        clearSignals()
-                        return@CarServiceLifecycleListener
-                    }
-                    bind(created)
-                },
-            )
+            opening.open { created, ready ->
+                if (gen != connectGen.get() || users.get() == 0) {
+                    release(created)
+                    return@open
+                }
+                link = created
+                if (!ready) {
+                    clearSignals()
+                    return@open
+                }
+                created.bindSignals()
+            }
         } catch (error: Throwable) {
             clearSignals()
         }
@@ -250,6 +263,8 @@ class PleosCarClient @Inject constructor(
     }
 
     private fun disconnect() {
+        // Bump the generation before releasing so a listener re-entered from disconnect is stale.
+        connectGen.incrementAndGet()
         try {
             uxManager?.unregisterListener()
         } catch (error: Throwable) {
@@ -263,17 +278,27 @@ class PleosCarClient @Inject constructor(
                 // Ignore a disconnect race.
             }
         }
-        try {
-            car?.disconnect()
-        } catch (error: Throwable) {
-            // Ignore a disconnect race.
-        }
+        val current = link
+        link = null
+        if (current != null) release(current)
         propertyCallback = null
         propertyManager = null
         uxManager = null
-        car = null
         rangeRegistered = false
         clearSignals()
+    }
+
+    private fun release(target: CarLink) {
+        if (closing === target) return
+        val outer = closing
+        closing = target
+        try {
+            target.disconnect()
+        } catch (error: Throwable) {
+            // The service may already be gone.
+        } finally {
+            closing = outer
+        }
     }
 
     private fun numericFloat(value: Any?): Float? = when (value) {
@@ -285,5 +310,48 @@ class PleosCarClient @Inject constructor(
 
     private companion object {
         const val GLOBAL_AREA = 0
+    }
+}
+
+/** Test seam. Production calls [Car.createCar]; tests deliver the listener themselves. */
+internal fun interface CarConnector {
+    fun open(listener: (CarLink, Boolean) -> Unit)
+}
+
+/** One Car session. [disconnect] is safe to call again while a release is already in progress. */
+internal interface CarLink {
+    fun disconnect()
+    fun bindSignals()
+}
+
+@RequiresApi(Build.VERSION_CODES.R)
+private class AndroidCarConnector(
+    private val context: Context,
+    private val bind: (Car) -> Unit,
+) : CarConnector {
+    override fun open(listener: (CarLink, Boolean) -> Unit) {
+        val handler = Handler(Looper.getMainLooper())
+        Car.createCar(
+            context,
+            handler,
+            Car.CAR_WAIT_TIMEOUT_DO_NOT_WAIT,
+            Car.CarServiceLifecycleListener { created, ready ->
+                listener(AndroidCarLink(created, bind), ready)
+            },
+        )
+    }
+}
+
+@RequiresApi(Build.VERSION_CODES.R)
+private class AndroidCarLink(
+    private val car: Car,
+    private val bind: (Car) -> Unit,
+) : CarLink {
+    override fun disconnect() {
+        car.disconnect()
+    }
+
+    override fun bindSignals() {
+        bind(car)
     }
 }
