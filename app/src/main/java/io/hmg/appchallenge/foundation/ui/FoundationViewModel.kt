@@ -1,0 +1,186 @@
+package io.hmg.appchallenge.foundation.ui
+
+import android.util.Log
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import dagger.hilt.android.lifecycle.HiltViewModel
+import io.hmg.appchallenge.foundation.data.cache.CabinCache
+import io.hmg.appchallenge.foundation.domain.AppShell
+import io.hmg.appchallenge.foundation.domain.ArrivalSnapshot
+import io.hmg.appchallenge.foundation.domain.DestinationSnapshot
+import io.hmg.appchallenge.foundation.domain.DoorId
+import io.hmg.appchallenge.foundation.domain.DrivingSnapshot
+import io.hmg.appchallenge.foundation.domain.LinkState
+import io.hmg.appchallenge.foundation.domain.PlaceParser
+import io.hmg.appchallenge.foundation.domain.PlaceRequest
+import io.hmg.appchallenge.foundation.domain.ShellPolicy
+import io.hmg.appchallenge.foundation.domain.TripEstimate
+import io.hmg.appchallenge.foundation.domain.VehicleSnapshot
+import io.hmg.appchallenge.foundation.driving.DrivingStateRepository
+import io.hmg.appchallenge.foundation.navi.NavigationRepository
+import io.hmg.appchallenge.foundation.sim.CabinSimulator
+import io.hmg.appchallenge.foundation.vehicle.VehicleRepository
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+data class FoundationUi(
+    val vehicleLink: LinkState = LinkState.IDLE,
+    val navLink: LinkState = LinkState.IDLE,
+    val vehicle: VehicleSnapshot = VehicleSnapshot(),
+    val driving: DrivingSnapshot = DrivingSnapshot(),
+    val shell: AppShell = AppShell.FULL,
+    val destination: DestinationSnapshot? = null,
+    val arrival: ArrivalSnapshot? = null,
+    val trip: TripEstimate? = null,
+    val navStatus: String? = null,
+    val formError: String? = null,
+    val cachedSoc: Int? = null,
+    val cachedAtEpochMs: Long = 0L,
+    val simulatorEnabled: Boolean = false,
+)
+
+@OptIn(FlowPreview::class)
+@HiltViewModel
+class FoundationViewModel @Inject constructor(
+    private val vehicleRepository: VehicleRepository,
+    private val drivingStateRepository: DrivingStateRepository,
+    private val navigationRepository: NavigationRepository,
+    private val cabinSimulator: CabinSimulator,
+    private val cabinCache: CabinCache,
+) : ViewModel() {
+    private val formError = MutableStateFlow<String?>(null)
+
+    val ui: StateFlow<FoundationUi> = combine(
+        combine(
+            vehicleRepository.link,
+            vehicleRepository.snapshot,
+            drivingStateRepository.state,
+        ) { link, snapshot, driving ->
+            VehicleSlice(link, snapshot, driving)
+        },
+        combine(
+            navigationRepository.link,
+            navigationRepository.destination,
+            navigationRepository.arrival,
+            navigationRepository.trip,
+            navigationRepository.statusMessage,
+        ) { link, destination, arrival, trip, status ->
+            NavSlice(link, destination, arrival, trip, status)
+        },
+        cabinCache.observeVehicle(),
+        formError,
+    ) { vehicleSlice, navSlice, cache, error ->
+        FoundationUi(
+            vehicleLink = vehicleSlice.link,
+            navLink = navSlice.link,
+            vehicle = vehicleSlice.snapshot,
+            driving = vehicleSlice.driving,
+            shell = ShellPolicy.select(vehicleSlice.driving.motion),
+            destination = navSlice.destination,
+            arrival = navSlice.arrival,
+            trip = navSlice.trip,
+            navStatus = navSlice.status,
+            formError = error,
+            cachedSoc = cache?.socPercent,
+            cachedAtEpochMs = cache?.updatedAtEpochMs ?: 0L,
+            simulatorEnabled = cabinSimulator.enabled,
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FoundationUi(simulatorEnabled = cabinSimulator.enabled))
+
+    init {
+        vehicleRepository.start()
+        drivingStateRepository.start()
+        navigationRepository.start()
+        viewModelScope.launch {
+            vehicleRepository.snapshot.debounce(500).collect { snapshot ->
+                try {
+                    cabinCache.saveVehicle(snapshot, drivingStateRepository.state.value.motion)
+                } catch (error: Throwable) {
+                    Log.w(TAG, "vehicle cache", error)
+                }
+            }
+        }
+        viewModelScope.launch {
+            combine(
+                navigationRepository.destination,
+                navigationRepository.trip,
+                navigationRepository.arrival,
+            ) { destination, trip, arrival ->
+                Triple(destination, trip, arrival)
+            }.debounce(500).collect { (destination, trip, arrival) ->
+                try {
+                    cabinCache.saveNavigation(
+                        destination = destination,
+                        trip = trip,
+                        arrival = arrival,
+                        updatedAtEpochMs = System.currentTimeMillis(),
+                    )
+                } catch (error: Throwable) {
+                    Log.w(TAG, "nav cache", error)
+                }
+            }
+        }
+    }
+
+    fun setParked(parked: Boolean) = cabinSimulator.setParked(parked)
+
+    fun toggleDriverDoor() {
+        val open = vehicleRepository.snapshot.value.doors[DoorId.ROW_1_LEFT]?.open == true
+        cabinSimulator.setDriverDoorOpen(!open)
+    }
+
+    fun nudgeSoc(delta: Int) = cabinSimulator.nudgeSoc(delta)
+
+    fun simulateArrival() = cabinSimulator.simulateArrival()
+
+    fun setDestination(request: PlaceRequest) {
+        formError.value = null
+        navigationRepository.setDestination(request)
+    }
+
+    fun requestTrip(request: PlaceRequest) {
+        formError.value = null
+        navigationRepository.requestTrip(request)
+    }
+
+    fun submitDestination(latitude: String, longitude: String, name: String, asTrip: Boolean) {
+        val request = PlaceParser.parse(latitude, longitude, name)
+        if (request == null) {
+            formError.value = "위도 -90~90, 경도 -180~180 사이의 숫자여야 합니다"
+            return
+        }
+        formError.value = null
+        if (asTrip) navigationRepository.requestTrip(request) else navigationRepository.setDestination(request)
+    }
+
+    fun refreshDestination() = navigationRepository.refreshDestination()
+
+    fun onEnergyPermissionResult(granted: Boolean) {
+        if (granted) vehicleRepository.refresh()
+    }
+
+    private data class VehicleSlice(
+        val link: LinkState,
+        val snapshot: VehicleSnapshot,
+        val driving: DrivingSnapshot,
+    )
+
+    private data class NavSlice(
+        val link: LinkState,
+        val destination: DestinationSnapshot?,
+        val arrival: ArrivalSnapshot?,
+        val trip: TripEstimate?,
+        val status: String?,
+    )
+
+    private companion object {
+        const val TAG = "FoundationViewModel"
+    }
+}

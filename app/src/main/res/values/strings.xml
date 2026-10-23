@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Foundation</string>
+    <string name="shell_parked">정차</string>
+    <string name="shell_driving">주행 중</string>
+    <string name="shell_unknown">상태 확인 중</string>
+    <string name="sim_banner">시뮬레이션</string>
+    <string name="action_park">정차로</string>
+    <string name="action_drive">주행으로</string>
+    <string name="action_door">운전석 문</string>
+    <string name="action_soc_up">SOC +10</string>
+    <string name="action_soc_down">SOC -10</string>
+    <string name="action_arrival">도착 이벤트</string>
+    <string name="action_route_sample">서울역 안내</string>
+    <string name="action_trip_sample">서울역 ETA</string>
+    <string name="action_refresh_dest">목적지 정보</string>
+    <string name="action_set_custom">이 좌표로 안내</string>
+    <string name="action_trip_custom">이 좌표 ETA</string>
+    <string name="action_energy_permission">주행가능거리 권한</string>
+    <string name="hint_name">이름</string>
+    <string name="hint_lat">위도</string>
+    <string name="hint_lon">경도</string>
+    <string name="section_vehicle">차량</string>
+    <string name="section_nav">내비</string>
+    <string name="section_sim">시뮬레이션</string>
+    <string name="door_open_alert">문 열림</string>
+</resources>
