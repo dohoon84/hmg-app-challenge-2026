@@ -20,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -37,11 +38,14 @@ import io.hmg.appchallenge.foundation.R
 import io.hmg.appchallenge.foundation.domain.AppShell
 import io.hmg.appchallenge.foundation.domain.DoorId
 import io.hmg.appchallenge.foundation.domain.Motion
+import io.hmg.appchallenge.foundation.domain.SeatId
+import io.hmg.appchallenge.foundation.domain.SeatSupport
 import io.hmg.appchallenge.foundation.domain.PanePolicy
 import io.hmg.appchallenge.foundation.domain.RangeSource
 import io.hmg.appchallenge.foundation.domain.WindowId
 import io.hmg.appchallenge.foundation.domain.maskVin
 import io.hmg.appchallenge.foundation.domain.shortenForRestriction
+import io.hmg.appchallenge.foundation.perf.LaunchTiming
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -52,6 +56,9 @@ fun FoundationRoute(
     onRequestEnergyPermission: () -> Unit,
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) {
+        LaunchTiming.markFirstFrame()
+    }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
         val twoPanes = PanePolicy.useTwoPanes(
@@ -346,6 +353,7 @@ private fun VehiclePane(
     Text("적산 ${odometer(ui)}")
     Text("주행가능거리 ${range(ui)}")
     Text("VIN ${if (ui.vehicle.vinReadable) maskVin(ui.vehicle.vin) ?: "-" else "읽기 불가"}")
+    Text(seatLine(ui.vehicle.seats))
     ui.vehicle.lastError?.let { Text("오류 $it", color = MaterialTheme.colorScheme.error) }
     DoorId.entries.forEach { id ->
         val panel = ui.vehicle.doors[id] ?: return@forEach
@@ -496,6 +504,16 @@ private fun remainLine(ui: FoundationUi): String {
 }
 
 private fun etaLine(eta: Int, distance: Int): String = "ETA $eta · 거리 $distance (원시값)"
+
+private fun seatLine(seats: Map<SeatId, SeatSupport>): String {
+    fun mark(id: SeatId, name: String) = "$name ${if (seats[id]?.available == true) "지원" else "미지원"}"
+    return listOf(
+        mark(SeatId.DRIVER, "운전석"),
+        mark(SeatId.PASSENGER, "조수석"),
+        mark(SeatId.REAR_LEFT, "뒷좌석 좌"),
+        mark(SeatId.REAR_RIGHT, "뒷좌석 우"),
+    ).joinToString(" · ")
+}
 
 private fun doorLabel(id: DoorId): String = when (id) {
     DoorId.ROW_1_LEFT -> "운전석"

@@ -11,6 +11,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import androidx.annotation.MainThread
 import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -38,8 +39,10 @@ import javax.inject.Singleton
  * package can be installed more widely; below API 30 this client publishes [SignalLoss]
  * and does not call those APIs. The contest image is API 34.
  *
- * Gear, UX, and property callbacks are delivered on the main looper. start/stop run on the
- * main thread via ProcessLifecycleOwner, so the snapshot fields are not written from other threads.
+ * Every callback and every CabinSession start/stop runs on the main looper
+ * (AOSP posts CarServiceLifecycleListener there; ProcessLifecycleOwner is main).
+ * The fields below are plain vars for that reason. [start] and [stop] reject any other thread.
+ * There is no test-only registration branch in this class.
  *
  * When CarService is already up, AOSP android14 Car.createCar calls the lifecycle listener on the
  * calling thread before it returns (Car.java dispatchCarReadyToMainThread). CabinSession calls
@@ -50,11 +53,11 @@ import javax.inject.Singleton
  * When CarService is not up yet, createCar returns before the callback. That returned session is
  * kept and disconnected on stop, so it does not wait for a late callback or finalize.
  */
+@MainThread
 @Singleton
 class PleosCarClient internal constructor(
     private val context: Context,
     private val connector: CarConnector?,
-    private val rangeRegistrar: RangeRegistrar? = null,
 ) {
     @Inject
     constructor(@ApplicationContext context: Context) : this(context, null)
@@ -67,12 +70,11 @@ class PleosCarClient internal constructor(
     private val _rangeMeters = MutableStateFlow<Float?>(null)
     val rangeMeters: StateFlow<Float?> = _rangeMeters
 
-    @Volatile private var link: CarLink? = null
+    private var link: CarLink? = null
     private var pending: CarLink? = null
     private var closing: CarLink? = null
     private var releasedLink: CarLink? = null
-    private var propertyManager: CarPropertyManager? = null
-    private var propertyCallback: CarPropertyManager.CarPropertyEventCallback? = null
+    private var propertyPort: PropertyPort? = null
     private var uxManager: CarUxRestrictionsManager? = null
     private var gearRaw: Int? = null
     private var gearAvailable = false
@@ -82,11 +84,63 @@ class PleosCarClient internal constructor(
     private var maxRestrictedStringLength = 0
     private var rangeRegistered = false
 
+    private val portListener = object : PortListener {
+        override fun onChange(propertyId: Int, value: Any?) {
+            when (propertyId) {
+                VehiclePropertyIds.GEAR_SELECTION -> {
+                    gearRaw = value as? Int
+                    gearAvailable = true
+                    publishDriving()
+                }
+                VehiclePropertyIds.RANGE_REMAINING -> {
+                    _rangeMeters.value = numericFloat(value)
+                }
+            }
+        }
+
+        override fun onError(propertyId: Int, areaId: Int) {
+            if (propertyId == VehiclePropertyIds.GEAR_SELECTION) {
+                gearAvailable = false
+                gearRaw = null
+                publishDriving()
+            }
+        }
+    }
+
     private val uxListener = CarUxRestrictionsManager.OnUxRestrictionsChangedListener { restrictions ->
         applyUx(restrictions)
     }
 
+    private val host = object : CarHost {
+        @RequiresApi(Build.VERSION_CODES.R)
+        override fun bindProperties(port: PropertyPort) {
+            propertyPort = port
+            subscribeProperties(port)
+        }
+
+        @RequiresApi(Build.VERSION_CODES.R)
+        override fun bindUx(car: Car) {
+            val ux = car.getCarManager(Car.CAR_UX_RESTRICTION_SERVICE) as? CarUxRestrictionsManager
+            uxManager = ux
+            if (ux != null) {
+                uxAvailable = true
+                try {
+                    ux.registerListener(uxListener)
+                    ux.currentCarUxRestrictions?.let(::applyUx)
+                } catch (error: Throwable) {
+                    uxAvailable = false
+                }
+            }
+            publishDriving()
+        }
+
+        override fun unbind() {
+            unregisterManagers()
+        }
+    }
+
     fun start() {
+        checkMainThread()
         if (users.incrementAndGet() != 1) return
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             clearSignals()
@@ -96,26 +150,28 @@ class PleosCarClient internal constructor(
     }
 
     fun stop() {
+        checkMainThread()
         if (users.decrementAndGet() > 0) return
         disconnect()
     }
 
     fun refreshRange() {
-        val manager = propertyManager ?: return
-        readRange(manager)
+        checkMainThread()
+        val port = propertyPort ?: return
+        readRange(port)
     }
 
     @RequiresApi(Build.VERSION_CODES.R)
     private fun connect() {
         val gen = connectGen.incrementAndGet()
+        // A second disconnect of the same wrapper is skipped only inside this generation.
+        // connect() clears releasedLink, so a late callback from the previous Car, after a new
+        // start, may disconnect once more. AOSP Car.disconnect() is idempotent.
         releasedLink = null
-        val opening = connector ?: AndroidCarConnector(
-            context,
-            bind = { created -> bind(created) },
-            unbind = { unregisterManagers() },
-        )
+        val opening = connector ?: AndroidCarConnector(context)
         try {
-            val opened = opening.open { created, ready ->
+            val opened = opening.open(host) { created, ready ->
+                checkMainThread()
                 if (gen != connectGen.get() || users.get() == 0) {
                     release(created)
                     return@open
@@ -128,11 +184,6 @@ class PleosCarClient internal constructor(
                     return@open
                 }
                 created.bindSignals()
-                // Production bind() already registered when it obtained a property manager.
-                // Tests have no manager, so the same flag still records the registration.
-                if (propertyManager == null) {
-                    ensureRangeRegistered { rangeRegistrar?.register() ?: false }
-                }
             }
             // The sync callback may already have stopped the session. Do not resurrect its Car.
             if (gen == connectGen.get() && users.get() > 0) {
@@ -146,82 +197,38 @@ class PleosCarClient internal constructor(
     }
 
     @RequiresApi(Build.VERSION_CODES.R)
-    private fun bind(created: Car) {
-        val manager = created.getCarManager(Car.PROPERTY_SERVICE) as? CarPropertyManager
-        propertyManager = manager
-        if (manager != null) {
-            subscribeProperties(manager)
-        }
-        val ux = created.getCarManager(Car.CAR_UX_RESTRICTION_SERVICE) as? CarUxRestrictionsManager
-        uxManager = ux
-        if (ux != null) {
-            uxAvailable = true
-            try {
-                ux.registerListener(uxListener)
-                ux.currentCarUxRestrictions?.let(::applyUx)
-            } catch (error: Throwable) {
-                uxAvailable = false
-            }
-        }
-        publishDriving()
-    }
-
-    @RequiresApi(Build.VERSION_CODES.R)
-    private fun subscribeProperties(manager: CarPropertyManager) {
+    private fun subscribeProperties(port: PropertyPort) {
         rangeRegistered = false
-        val callback = object : CarPropertyManager.CarPropertyEventCallback {
-            override fun onChangeEvent(value: CarPropertyValue<*>) {
-                when (value.propertyId) {
-                    VehiclePropertyIds.GEAR_SELECTION -> {
-                        gearRaw = value.value as? Int
-                        gearAvailable = true
-                        publishDriving()
-                    }
-                    VehiclePropertyIds.RANGE_REMAINING -> {
-                        _rangeMeters.value = numericFloat(value.value)
-                    }
-                }
-            }
-
-            override fun onErrorEvent(propId: Int, areaId: Int) {
-                if (propId == VehiclePropertyIds.GEAR_SELECTION) {
-                    gearAvailable = false
-                    gearRaw = null
-                    publishDriving()
-                }
-            }
-        }
-        propertyCallback = callback
         gearAvailable = try {
-            manager.isPropertyAvailable(VehiclePropertyIds.GEAR_SELECTION, GLOBAL_AREA)
+            port.isPropertyAvailable(VehiclePropertyIds.GEAR_SELECTION, GLOBAL_AREA)
         } catch (error: Throwable) {
             false
         }
         if (gearAvailable) {
             try {
-                manager.registerCallback(
-                    callback,
+                port.registerCallback(
+                    portListener,
                     VehiclePropertyIds.GEAR_SELECTION,
                     CarPropertyManager.SENSOR_RATE_ONCHANGE,
                 )
-                gearRaw = manager.getIntProperty(VehiclePropertyIds.GEAR_SELECTION, GLOBAL_AREA)
+                gearRaw = port.getIntProperty(VehiclePropertyIds.GEAR_SELECTION, GLOBAL_AREA)
             } catch (error: Throwable) {
                 gearAvailable = false
                 gearRaw = null
             }
         }
-        readRange(manager)
+        readRange(port)
         publishDriving()
     }
 
     @RequiresApi(Build.VERSION_CODES.R)
-    private fun readRange(manager: CarPropertyManager) {
+    private fun readRange(port: PropertyPort) {
         if (!hasEnergyPermission()) {
             _rangeMeters.value = null
             return
         }
         val available = try {
-            manager.isPropertyAvailable(VehiclePropertyIds.RANGE_REMAINING, GLOBAL_AREA)
+            port.isPropertyAvailable(VehiclePropertyIds.RANGE_REMAINING, GLOBAL_AREA)
         } catch (error: Throwable) {
             false
         }
@@ -230,10 +237,14 @@ class PleosCarClient internal constructor(
             return
         }
         ensureRangeRegistered {
-            registerRangeCallback(manager, propertyCallback)
+            port.registerCallback(
+                portListener,
+                VehiclePropertyIds.RANGE_REMAINING,
+                CarPropertyManager.SENSOR_RATE_ONCHANGE,
+            )
         }
         _rangeMeters.value = try {
-            manager.getFloatProperty(VehiclePropertyIds.RANGE_REMAINING, GLOBAL_AREA)
+            port.getFloatProperty(VehiclePropertyIds.RANGE_REMAINING, GLOBAL_AREA)
         } catch (error: Throwable) {
             null
         }
@@ -288,7 +299,6 @@ class PleosCarClient internal constructor(
         if (current != null) release(current)
         // createCar's return value, including a Car whose ready callback has not arrived yet.
         if (held != null) release(held)
-        rangeRegistered = false
         clearSignals()
     }
 
@@ -298,21 +308,16 @@ class PleosCarClient internal constructor(
         } catch (error: Throwable) {
             // The UX service may already be gone.
         }
-        val callback = propertyCallback
-        if (callback != null) {
-            try {
-                propertyManager?.unregisterCallback(callback)
-            } catch (error: Throwable) {
-                // Ignore a disconnect race.
-            }
+        try {
+            propertyPort?.unregisterCallback(portListener)
+        } catch (error: Throwable) {
+            // Ignore a disconnect race.
         }
-        propertyCallback = null
-        propertyManager = null
+        propertyPort = null
         uxManager = null
     }
 
     /**
-     * One registration decision for the real property manager and for tests.
      * [clearSignals] resets [rangeRegistered], so a later ready on the same Car registers again.
      */
     private fun ensureRangeRegistered(register: () -> Boolean) {
@@ -322,19 +327,6 @@ class PleosCarClient internal constructor(
         } catch (error: Throwable) {
             false
         }
-    }
-
-    @RequiresApi(Build.VERSION_CODES.R)
-    private fun registerRangeCallback(
-        manager: CarPropertyManager,
-        callback: CarPropertyManager.CarPropertyEventCallback?,
-    ): Boolean {
-        if (callback == null) return false
-        return manager.registerCallback(
-            callback,
-            VehiclePropertyIds.RANGE_REMAINING,
-            CarPropertyManager.SENSOR_RATE_ONCHANGE,
-        )
     }
 
     private fun release(target: CarLink) {
@@ -351,6 +343,12 @@ class PleosCarClient internal constructor(
         }
     }
 
+    private fun checkMainThread() {
+        check(Looper.myLooper() == Looper.getMainLooper()) {
+            "PleosCarClient runs only on the main thread"
+        }
+    }
+
     private fun numericFloat(value: Any?): Float? = when (value) {
         is Float -> value
         is Double -> value.toFloat()
@@ -363,10 +361,30 @@ class PleosCarClient internal constructor(
     }
 }
 
+/** Property reads shared by [CarPropertyManager] and the connect tests. */
+internal interface PropertyPort {
+    fun isPropertyAvailable(propertyId: Int, areaId: Int): Boolean
+    fun registerCallback(listener: PortListener, propertyId: Int, rate: Float): Boolean
+    fun unregisterCallback(listener: PortListener)
+    fun getIntProperty(propertyId: Int, areaId: Int): Int
+    fun getFloatProperty(propertyId: Int, areaId: Int): Float
+}
+
+internal interface PortListener {
+    fun onChange(propertyId: Int, value: Any?)
+    fun onError(propertyId: Int, areaId: Int)
+}
+
 /** Test seam. Production calls [Car.createCar]; tests deliver the listener themselves. */
 internal fun interface CarConnector {
     /** @return the session [Car.createCar] returned, even when the listener has not run yet. */
-    fun open(listener: (CarLink, Boolean) -> Unit): CarLink
+    fun open(host: CarHost, listener: (CarLink, Boolean) -> Unit): CarLink
+}
+
+internal interface CarHost {
+    fun bindProperties(port: PropertyPort)
+    fun bindUx(car: Car)
+    fun unbind()
 }
 
 /** One Car session. [disconnect] is safe to call again while a release is already in progress. */
@@ -376,18 +394,11 @@ internal interface CarLink {
     fun unbindSignals()
 }
 
-/** Test double for RANGE_REMAINING registration when no [CarPropertyManager] exists. */
-internal fun interface RangeRegistrar {
-    fun register(): Boolean
-}
-
 @RequiresApi(Build.VERSION_CODES.R)
 private class AndroidCarConnector(
     private val context: Context,
-    private val bind: (Car) -> Unit,
-    private val unbind: () -> Unit,
 ) : CarConnector {
-    override fun open(listener: (CarLink, Boolean) -> Unit): CarLink {
+    override fun open(host: CarHost, listener: (CarLink, Boolean) -> Unit): CarLink {
         val handler = Handler(Looper.getMainLooper())
         var session: AndroidCarLink? = null
         val car = Car.createCar(
@@ -396,29 +407,69 @@ private class AndroidCarConnector(
             Car.CAR_WAIT_TIMEOUT_DO_NOT_WAIT,
             Car.CarServiceLifecycleListener { created, ready ->
                 // Sync dispatch runs before createCar returns, so reuse the wrapper either way.
-                val link = session ?: AndroidCarLink(created, bind, unbind).also { session = it }
+                val link = session ?: AndroidCarLink(created, host).also { session = it }
                 listener(link, ready)
             },
         )
-        return session ?: AndroidCarLink(car, bind, unbind).also { session = it }
+        return session ?: AndroidCarLink(car, host).also { session = it }
     }
 }
 
 @RequiresApi(Build.VERSION_CODES.R)
 private class AndroidCarLink(
     private val car: Car,
-    private val bind: (Car) -> Unit,
-    private val unbind: () -> Unit,
+    private val host: CarHost,
 ) : CarLink {
     override fun disconnect() {
         car.disconnect()
     }
 
     override fun bindSignals() {
-        bind(car)
+        val manager = car.getCarManager(Car.PROPERTY_SERVICE) as? CarPropertyManager
+        if (manager != null) {
+            host.bindProperties(CarPropertyPort(manager))
+        }
+        host.bindUx(car)
     }
 
     override fun unbindSignals() {
-        unbind()
+        host.unbind()
     }
+}
+
+@RequiresApi(Build.VERSION_CODES.R)
+private class CarPropertyPort(
+    private val manager: CarPropertyManager,
+) : PropertyPort {
+    private var callback: CarPropertyManager.CarPropertyEventCallback? = null
+    private var listener: PortListener? = null
+
+    override fun isPropertyAvailable(propertyId: Int, areaId: Int): Boolean =
+        manager.isPropertyAvailable(propertyId, areaId)
+
+    override fun registerCallback(listener: PortListener, propertyId: Int, rate: Float): Boolean {
+        this.listener = listener
+        val current = callback ?: object : CarPropertyManager.CarPropertyEventCallback {
+            override fun onChangeEvent(value: CarPropertyValue<*>) {
+                this@CarPropertyPort.listener?.onChange(value.propertyId, value.value)
+            }
+
+            override fun onErrorEvent(propId: Int, areaId: Int) {
+                this@CarPropertyPort.listener?.onError(propId, areaId)
+            }
+        }.also { callback = it }
+        return manager.registerCallback(current, propertyId, rate)
+    }
+
+    override fun unregisterCallback(listener: PortListener) {
+        callback?.let { manager.unregisterCallback(it) }
+        callback = null
+        this.listener = null
+    }
+
+    override fun getIntProperty(propertyId: Int, areaId: Int): Int =
+        manager.getIntProperty(propertyId, areaId)
+
+    override fun getFloatProperty(propertyId: Int, areaId: Int): Float =
+        manager.getFloatProperty(propertyId, areaId)
 }

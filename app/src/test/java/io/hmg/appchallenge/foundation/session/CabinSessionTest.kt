@@ -11,6 +11,7 @@ import io.hmg.appchallenge.foundation.domain.TripEstimate
 import io.hmg.appchallenge.foundation.domain.VehicleSnapshot
 import io.hmg.appchallenge.foundation.driving.DrivingStateRepository
 import io.hmg.appchallenge.foundation.navi.NavigationRepository
+import io.hmg.appchallenge.foundation.speech.CabinAnnouncer
 import io.hmg.appchallenge.foundation.vehicle.VehicleRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,7 +24,8 @@ class CabinSessionTest {
         val vehicle = CountingVehicle()
         val driving = CountingDriving()
         val navigation = CountingNavigation()
-        val session = CabinSession(vehicle, driving, navigation)
+        val announcer = CountingAnnouncer()
+        val session = CabinSession(vehicle, driving, navigation, announcer)
         val owner = object : LifecycleOwner {
             override val lifecycle: Lifecycle get() = error("unused")
         }
@@ -38,6 +40,8 @@ class CabinSessionTest {
         assertEquals(1, driving.stops)
         assertEquals(2, navigation.starts)
         assertEquals(1, navigation.stops)
+        assertEquals(2, announcer.foregrounds)
+        assertEquals(1, announcer.suspends)
     }
 
     private class CountingVehicle : VehicleRepository {
@@ -83,5 +87,18 @@ class CabinSessionTest {
         override fun setDestination(request: PlaceRequest) = Unit
         override fun requestTrip(request: PlaceRequest) = Unit
         override fun refreshDestination() = Unit
+    }
+
+    private class CountingAnnouncer : CabinAnnouncer {
+        var foregrounds = 0
+        var suspends = 0
+        override fun announce(text: String) = Unit
+        override fun stop() = Unit
+        override fun onSuspend() {
+            suspends += 1
+        }
+        override fun onForeground() {
+            foregrounds += 1
+        }
     }
 }

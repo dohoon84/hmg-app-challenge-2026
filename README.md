@@ -80,15 +80,31 @@ git에는 APK를 넣지 않습니다. 아래 경로는 로컬 빌드 결과입�
 | 폰에서 볼 fake debug | `app/build/outputs/apk/fake/debug/app-fake-debug.apk` |
 | 에뮬레이터용 pleos debug | `app/build/outputs/apk/pleos/debug/app-pleos-debug.apk` |
 
-제출하는 파일은 서명된 pleos release뿐입니다. fake debug APK와 unsigned release는 제출하지 않습니다. 서명이 없으면 `exportContestApk`는 release 빌드를 시작하기 전에 실패합니다.
+제출하는 파일은 서명된 pleos release뿐입니다. fake debug APK와 unsigned release는 제출하지 않습니다. `fakeRelease` variant는 꺼 두었습니다. `checkPleosReleaseContents`는 pleos release APK dex에 fake 클래스 이름이 있으면 실패하고, `exportContestApk`는 그 검사에 의존합니다. 서명이 없으면 `exportContestApk`는 release 빌드를 시작하기 전에 실패합니다.
+
+## 성능 예산
+
+런타임으로 강제하지 않습니다. 심사 기준은 주행 중 CPU 5% 미만, 정차 중 25% 이하, RAM 400MB 이하, 터치 반응 0.25초, 콜드 스타트 10초 이내입니다. debug 빌드는 프로세스 시작부터 첫 프레임까지를 `LaunchTiming`으로 로그합니다.
+
+```bash
+adb shell dumpsys cpuinfo
+adb shell top -n 1
+adb shell dumpsys meminfo io.hmg.appchallenge.foundation
+adb shell am start -W -n io.hmg.appchallenge.foundation/.MainActivity
+adb shell am start -W -n io.hmg.appchallenge.foundation.fake/io.hmg.appchallenge.foundation.MainActivity
+adb shell dumpsys gfxinfo io.hmg.appchallenge.foundation
+```
 
 ## 구성
 
-- `VehicleRepository`: 시작마다 새 `Vehicle`을 만들어 `initialize`하고, 중지할 때 `release`합니다. 도어, 창문, 연료 %, SOC, 적산거리(km), VIN. 각 항목은 `check*Capabilities`가 READ 또는 READ_WRITE일 때만 get/register 합니다.
+- `VehicleRepository`: 시작마다 새 `Vehicle`을 만들어 `initialize`하고, 중지할 때 `release`합니다. 도어, 창문, 연료 %, SOC, 적산거리(km), VIN. 각 항목은 `check*Capabilities`가 READ 또는 READ_WRITE일 때만 get/register 합니다. 좌석은 점유·벨트 capability만 조회하고, 값이 없거나 뒷좌석이 목록에 없으면 미지원입니다. 시트 이동, HVAC, 조명 같은 Vehicle Control API는 호출하지 않습니다.
 - `DrivingStateRepository`: AAOS `VehiclePropertyIds.GEAR_SELECTION`과 `CarUxRestrictionsManager`. 기어 P이고 주의 분산 최적화가 필요 없으면 정차, 그 외 알려진 기어이거나 UX가 최적화를 요구하면 주행입니다. pleos는 기어가 UNKNOWN이거나 UX를 아직 못 읽으면 축소 화면입니다. 키보드는 `UX_RESTRICTIONS_NO_KEYBOARD` 비트가 있으면 숨깁니다. `Vehicle.getGear()`는 호출하지 않습니다. `Car.createCar` 리스너와 `VehiclePropertyIds`는 API 30/29입니다. minSdk 28 기기에서는 Car API를 호출하지 않고 축소 화면을 유지합니다. 공모전 이미지는 API 34입니다.
 - `NavigationRepository`: `requestRoute(RouteInfo)`로 좌표 목적지, `onDestinationInfo` / `onDestinationArrived`, `requestTrip` → `onTripInfo`.
 - Room `foundation.db`: 마지막 차량 스냅샷과 내비 캐시 한 행. 스키마는 `app/schemas`에 내보냅니다. 이 테이블은 캐시라서 버전을 올리면 `fallbackToDestructiveMigration()`으로 지웁니다. 아이디어 데이터를 영구 저장하기 전에 명시적 마이그레이션으로 바꿔야 합니다. VIN은 로컬 DB와 화면에 끝 4자리만 남기고 저장·표시합니다.
 - 주행 중 화면은 Activity `distractionOptimized=true` 위에서 큰 버튼만 보여 줍니다. 선언만 하고 긴 목록이나 키보드를 그대로 두지 않습니다.
+- 상단 Back은 Activity를 끝내지 않고 `moveTaskToBack(true)`입니다. CCP 로터리 메타데이터 `com.hmg.rotary.ROTARY_SUPPORTED`는 false입니다.
+- 좌표 입력 칸은 `rememberSaveable`, 검증 오류 문구는 `SavedStateHandle`에 둡니다.
+- 안내 음성은 Pleos TTS SDK를 쓰지 않습니다. `android.speech.tts.TextToSpeech`가 준비되면 그것을 쓰고, 엔진이 없거나 초기화·재생이 실패하면 `res/raw`의 짧은 차임으로 넘깁니다. 둘 다 `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK`, 175ms 앞 무음, 내비 안내·어시스턴트가 겹치면 즉시 중지, 백그라운드에서는 포커스를 놓습니다.
 
 주행가능거리는 Vehicle SDK에 getter가 없습니다. `setRangeRemainingDistance`는 deprecated라 쓰지 않습니다. pleos flavor만 AAOS `RANGE_REMAINING`(위험 권한 `CAR_ENERGY`)을 시도하고, 없거나 권한이 없으면 "SDK 미제공"으로 둡니다. fake flavor는 시뮬레이션 값을 보여 줍니다.
 
@@ -115,19 +131,22 @@ Vehicle 2.3.2 AAR을 풀어 확인했습니다.
 - CarService가 끊겼다가 다시 붙을 때 화면이 축소됐다가 정차 신호와 함께 복구되는지
 - 세로/가로 전환 시 좌표 입력이 유지되는지
 - 팀 키로 서명한 release APK의 설치와 실행
+- 좌석 capability가 실제로 어느 열을 돌려주는지, TTS 엔진 유무, 내비 안내와 겹칠 때의 오디오 포커스
+- 콜드 스타트 10초, 주행 CPU, RAM 예산의 실측
 
 ## 10/27 이후 권한 정리
 
-권한은 지금은 그대로 둡니다. 아이디어가 확정된 뒤에 실제로 쓰는 도메인만 남깁니다. `PERF_VEHICLE_SPEED`는 넣지 않으며, 정차 판정에 속도를 쓰지 않습니다. `android.car.permission.CAR_ENERGY`는 주행가능거리를 쓸 때만 남기고, 빼면 매니페스트와 권한 버튼도 같이 제거합니다.
+읽기 권한은 `app/src/pleos/AndroidManifest.xml`에만 있습니다. fake 빌드에는 합쳐지지 않습니다. 한 줄씩 지울 수 있게 두었고, 2026-10-27 이후 승인 목록에 없는 줄은 제거합니다. Vehicle Control, Pleos TTS, STT, FusedLocation, `CAR_LIGHTS`, `CONTROL_CAR_*`, `PERF_VEHICLE_SPEED`는 선언하지 않습니다. 정차 판정에 속도를 쓰지 않습니다. `android.car.permission.CAR_ENERGY`는 주행가능거리를 쓸 때만 남기고, 빼면 매니페스트와 권한 버튼도 같이 제거합니다.
 
 | 권한 | 쓰는 곳 | 정리 |
 |---|---|---|
-| `pleos.car.permission.CAR_DOORS` | 도어 | 아이디어가 문을 안 쓰면 제거 |
-| `pleos.car.permission.CAR_WINDOWS` | 창문 | 아이디어가 창문을 안 쓰면 제거 |
-| `pleos.car.permission.CAR_ENERGY` | SOC | 아이디어가 배터리를 안 쓰면 제거 |
-| `pleos.car.permission.CAR_DRIVE` | 적산거리 | 아이디어가 적산을 안 쓰면 제거 |
-| `pleos.car.permission.CAR_INFO` | VIN | 아이디어가 VIN을 안 쓰면 제거 |
+| `pleos.car.permission.CAR_DOORS` | 도어 위치 읽기 | 제어 권한이 아님. 문을 안 쓰면 제거 |
+| `pleos.car.permission.CAR_WINDOWS` | 창문 위치 읽기 | 창문 제어는 Coming Soon. 창문을 안 쓰면 제거 |
+| `pleos.car.permission.CAR_ENERGY` | 연료·SOC 읽기 | 배터리를 안 쓰면 제거 |
+| `pleos.car.permission.CAR_DRIVE` | 적산거리 읽기 | 주행 제어가 아님. 적산을 안 쓰면 제거 |
+| `pleos.car.permission.CAR_INFO` | VIN 읽기 | VIN을 안 쓰면 제거 |
+| `pleos.car.permission.CAR_SEATS` | 좌석 점유·벨트 capability 읽기 | 시트 이동·HVAC가 아님. capability를 안 쓰면 제거 |
 | `pleos.car.permission.NAVI_ROUTE_SEARCH` | `requestRoute` | 경로 안내를 안 쓰면 제거 |
 | `pleos.car.permission.NAVI_ROUTE` | 목적지·도착·ETA | 내비를 안 쓰면 제거 |
-| `android.car.permission.CAR_POWERTRAIN` | `GEAR_SELECTION` | 정차 판정을 유지하는 동안 유지 |
-| `android.car.permission.CAR_ENERGY` | `RANGE_REMAINING` | 주행가능거리를 안 쓰면 제거 |
+| `android.car.permission.CAR_POWERTRAIN` | `GEAR_SELECTION` 읽기 | 정차 판정을 유지하는 동안 유지 |
+| `android.car.permission.CAR_ENERGY` | `RANGE_REMAINING` | 위험 권한. 주행가능거리를 안 쓰면 제거 |

@@ -6,6 +6,7 @@ import ai.pleos.playground.vehicle.api.Door;
 import ai.pleos.playground.vehicle.api.EvBattery;
 import ai.pleos.playground.vehicle.api.Fuel;
 import ai.pleos.playground.vehicle.api.Odometer;
+import ai.pleos.playground.vehicle.api.Seat;
 import ai.pleos.playground.vehicle.api.Window;
 
 /**
@@ -38,5 +39,9 @@ public final class VehicleDomains {
 
     public static CarInfo carInfo(Vehicle vehicle) {
         return vehicle.getCarInfo();
+    }
+
+    public static Seat seat(Vehicle vehicle) {
+        return vehicle.getSeat();
     }
 }

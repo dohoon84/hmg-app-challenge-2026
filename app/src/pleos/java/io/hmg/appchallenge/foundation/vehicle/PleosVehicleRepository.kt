@@ -2,9 +2,11 @@ package io.hmg.appchallenge.foundation.vehicle
 
 import ai.pleos.playground.vehicle.Vehicle
 import ai.pleos.playground.vehicle.api.model.area.DoorArea
+import ai.pleos.playground.vehicle.api.model.area.SeatArea
 import ai.pleos.playground.vehicle.api.model.area.WindowArea
 import ai.pleos.playground.vehicle.api.model.capability.AccessType
 import ai.pleos.playground.vehicle.constant.area.DoorValue
+import ai.pleos.playground.vehicle.constant.area.SeatValue
 import ai.pleos.playground.vehicle.constant.area.WindowValue
 import ai.pleos.playground.vehicle.listener.DistanceDrivenListener
 import ai.pleos.playground.vehicle.listener.DoorPositionListener
@@ -18,8 +20,10 @@ import io.hmg.appchallenge.foundation.domain.DoorId
 import io.hmg.appchallenge.foundation.domain.LinkState
 import io.hmg.appchallenge.foundation.domain.PanelState
 import io.hmg.appchallenge.foundation.domain.RangeSource
+import io.hmg.appchallenge.foundation.domain.SeatId
 import io.hmg.appchallenge.foundation.domain.SignalAccess
 import io.hmg.appchallenge.foundation.domain.VehicleSnapshot
+import io.hmg.appchallenge.foundation.domain.seatSupport
 import io.hmg.appchallenge.foundation.domain.WindowId
 import io.hmg.appchallenge.foundation.domain.allowsRead
 import kotlinx.coroutines.CoroutineScope
@@ -41,7 +45,9 @@ import javax.inject.Singleton
  * Each [start] constructs a new [Vehicle]. Re-initializing a released instance is not documented.
  *
  * Not used: getGear(), hidden battery/port listeners, deprecated setRangeRemainingDistance,
- * deprecated getCRNInfo. Remaining range is read from AAOS, not from the SDK.
+ * deprecated getCRNInfo, seat move, HVAC, and occupancy/belt value listeners.
+ * Seat support is a capability query only. Remaining range is read from AAOS, not from the SDK.
+ * Vehicle Control APIs are Coming Soon and are not called.
  *
  * The docs name the failure type VehicleException. In the 2.3.2 AAR that type is obfuscated
  * (callback.exception.a), so failures are recorded from Exception.message only.
@@ -126,6 +132,7 @@ class PleosVehicleRepository @Inject constructor(
         subscribeSoc()
         subscribeOdometer()
         subscribeVin()
+        subscribeSeats()
     }
 
     override fun stop() {
@@ -416,6 +423,47 @@ class PleosVehicleRepository @Inject constructor(
         }
     }
 
+    private fun subscribeSeats() {
+        val token = sessionToken
+        val current = vehicle ?: return
+        val seat = VehicleDomains.seat(current)
+        var occupancy: Pair<SignalAccess, Set<SeatId>>? = null
+        var belt: Pair<SignalAccess, Set<SeatId>>? = null
+        fun publish() {
+            val occ = occupancy ?: return
+            val bel = belt ?: return
+            if (!live(token)) return
+            _snapshot.update { snapshot ->
+                snapshot.copy(
+                    seats = seatSupport(occ.second, bel.second, occ.first, bel.first),
+                    updatedAtEpochMs = System.currentTimeMillis(),
+                )
+            }
+        }
+        seat.checkSeatOccupancyCapabilities(
+            { config, areas ->
+                occupancy = config.accessType.toSignal() to areas.mapNotNull { it.toSeatId() }.toSet()
+                publish()
+            },
+            { error ->
+                occupancy = SignalAccess.NONE to emptySet()
+                if (live(token)) note(error)
+                publish()
+            },
+        )
+        seat.checkSeatBeltBuckledCapabilities(
+            { config, areas ->
+                belt = config.accessType.toSignal() to areas.mapNotNull { it.toSeatId() }.toSet()
+                publish()
+            },
+            { error ->
+                belt = SignalAccess.NONE to emptySet()
+                if (live(token)) note(error)
+                publish()
+            },
+        )
+    }
+
     private fun live(token: Int): Boolean = listeners.isCurrent(token)
 
     private fun track(token: Int, cleanup: () -> Unit) {
@@ -472,6 +520,19 @@ private fun WindowArea.toWindowId(): WindowId? {
         WindowValue.REAR_WINDSHIELD -> WindowId.REAR_WINDSHIELD
         WindowValue.ROOF_TOP_1 -> WindowId.ROOF_TOP_1
         WindowValue.ROOF_TOP_2 -> WindowId.ROOF_TOP_2
+    }
+}
+
+private fun SeatArea.toSeatId(): SeatId? {
+    val items = values
+    if (items.size != 1) return null
+    // Left-hand drive. Center and third-row areas are not a named seat.
+    return when (items[0]) {
+        SeatValue.ROW_1_LEFT -> SeatId.DRIVER
+        SeatValue.ROW_1_RIGHT -> SeatId.PASSENGER
+        SeatValue.ROW_2_LEFT -> SeatId.REAR_LEFT
+        SeatValue.ROW_2_RIGHT -> SeatId.REAR_RIGHT
+        else -> null
     }
 }
 

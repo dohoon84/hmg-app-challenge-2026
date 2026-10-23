@@ -1,8 +1,9 @@
+import org.gradle.api.Action
 import org.gradle.api.execution.TaskExecutionGraph
 import org.gradle.api.tasks.Copy
-import org.gradle.kotlin.dsl.closureOf
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.Properties
+import java.util.zip.ZipFile
 
 plugins {
     alias(libs.plugins.android.application)
@@ -138,6 +139,15 @@ android {
     }
 }
 
+// fakeRelease would ship the in-memory cabin. The contest APK is pleos release only.
+androidComponents {
+    beforeVariants(selector().all()) { variant ->
+        if (variant.name == "fakeRelease") {
+            variant.enable = false
+        }
+    }
+}
+
 dependencies {
     val carJar = android.sdkDirectory.resolve("platforms/android-${android.compileSdk}/optional/android.car.jar")
     if (!carJar.isFile) {
@@ -179,20 +189,59 @@ val contestSigningMessage =
         "Set STORE_FILE, STORE_PASSWORD, KEY_ALIAS, and KEY_PASSWORD " +
         "in keystore.properties or the environment. Do not submit a fake or unsigned APK."
 
-// org.gradle.parallel is on, so mustRunAfter(assemblePleosRelease) still lets that
-// task's compile and package dependencies start before a sibling signing check.
-// The graph callback runs after scheduling and before any task action, and a build
-// that did not request the export never enters the branch.
-gradle.taskGraph.whenReady(closureOf<TaskExecutionGraph> {
+// org.gradle.parallel is on. assemblePleosRelease.mustRunAfter(a signing check) does not
+// order that task's compile and package children, so they can start before the check.
+// whenReady runs after the graph is assembled and before any task action.
+// A build that did not request the export never enters the branch.
+gradle.taskGraph.whenReady(Action<TaskExecutionGraph> {
     if (hasTask(":app:exportContestApk") && !hasReleaseSigning) {
         throw GradleException(contestSigningMessage)
     }
 })
 
+val forbiddenPleosReleaseNames = listOf(
+    "FakeCabinWorld",
+    "SamplePlaces",
+    "FakeVehicleRepository",
+    "FakeNavigationRepository",
+    "FakeDrivingStateRepository",
+)
+
+tasks.register("checkPleosReleaseContents") {
+    group = "verification"
+    description = "Fail the pleos release APK when it contains the fake flavor."
+    dependsOn("assemblePleosRelease")
+    doLast {
+        val apkDir = layout.buildDirectory.dir("outputs/apk/pleos/release").get().asFile
+        val apks = apkDir.listFiles().orEmpty().filter { file ->
+            file.isFile && file.name.endsWith(".apk") && !file.name.contains("unaligned")
+        }
+        if (apks.isEmpty()) {
+            throw GradleException("pleos release APK not found in $apkDir")
+        }
+        apks.forEach { apk ->
+            ZipFile(apk).use { zip ->
+                val entries = zip.entries()
+                while (entries.hasMoreElements()) {
+                    val entry = entries.nextElement()
+                    if (!entry.name.endsWith(".dex")) continue
+                    val text = zip.getInputStream(entry).use { input ->
+                        String(input.readBytes(), Charsets.ISO_8859_1)
+                    }
+                    val hit = forbiddenPleosReleaseNames.firstOrNull { name -> text.contains(name) }
+                    if (hit != null) {
+                        throw GradleException("${apk.name} contains $hit")
+                    }
+                }
+            }
+        }
+    }
+}
+
 tasks.register<Copy>("exportContestApk") {
     group = "distribution"
     description = "Copy a signed pleos release APK into apk/. Fails when release signing is not configured."
-    dependsOn("assemblePleosRelease")
+    dependsOn("checkPleosReleaseContents")
     from(layout.buildDirectory.dir("outputs/apk/pleos/release"))
     include("*-release.apk")
     exclude("*unaligned*")

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      Read permissions for Vehicle State and NaviHelper. Vehicle Control (door, HVAC,
+      window, seat, light), Pleos TextToSpeech, SpeechToText, and FusedLocation are
+      Coming Soon and are not declared. Delete any line the list published after
+      2026-10-27 does not approve. Each line below is a read, not a set/control API.
+      The fake flavor does not merge this file.
+    -->
+    <!-- Door position read. Not CONTROL_CAR_DOORS. -->
+    <uses-permission android:name="pleos.car.permission.CAR_DOORS" />
+    <!-- Window position read. Window control is Coming Soon. -->
+    <uses-permission android:name="pleos.car.permission.CAR_WINDOWS" />
+    <!-- Fuel and battery SOC read. -->
+    <uses-permission android:name="pleos.car.permission.CAR_ENERGY" />
+    <!-- Odometer read. Not drive control. -->
+    <uses-permission android:name="pleos.car.permission.CAR_DRIVE" />
+    <!-- VIN read. -->
+    <uses-permission android:name="pleos.car.permission.CAR_INFO" />
+    <!-- Seat occupancy and belt capability read. Not seat move or HVAC. -->
+    <uses-permission android:name="pleos.car.permission.CAR_SEATS" />
+    <!-- NaviHelper route read. -->
+    <uses-permission android:name="pleos.car.permission.NAVI_ROUTE" />
+    <uses-permission android:name="pleos.car.permission.NAVI_ROUTE_SEARCH" />
+    <!-- AAOS GEAR_SELECTION read. -->
+    <uses-permission android:name="android.car.permission.CAR_POWERTRAIN" />
+    <!-- Optional RANGE_REMAINING. Dangerous. Remove with the permission button if unused after 2026-10-27. -->
+    <uses-permission android:name="android.car.permission.CAR_ENERGY" />
+</manifest>
