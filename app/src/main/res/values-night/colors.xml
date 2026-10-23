@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="launcher_background">#121417</color>
+    <color name="ivi_surface_primary">#121417</color>
+    <color name="ivi_text_primary">#FFFFFF</color>
+    <color name="ivi_informative_negative">#FF4C28</color>
+    <color name="ivi_team_status_negative_legacy">#FF4C28</color>
+    <color name="ivi_driving_alert">#FF8A00</color>
+</resources>

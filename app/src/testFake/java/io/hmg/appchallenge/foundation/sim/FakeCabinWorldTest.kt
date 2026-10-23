@@ -2,13 +2,14 @@ package io.hmg.appchallenge.foundation.sim
 
 import io.hmg.appchallenge.foundation.domain.AppShell
 import io.hmg.appchallenge.foundation.domain.DoorId
-import io.hmg.appchallenge.foundation.domain.KeyboardPolicy
+import io.hmg.appchallenge.foundation.domain.UxRestrictionState
 import io.hmg.appchallenge.foundation.domain.LinkState
 import io.hmg.appchallenge.foundation.domain.Motion
 import io.hmg.appchallenge.foundation.domain.ShellPolicy
 import io.hmg.appchallenge.foundation.driving.FakeDrivingStateRepository
 import io.hmg.appchallenge.foundation.navi.FakeNavigationRepository
 import io.hmg.appchallenge.foundation.session.CabinSession
+import io.hmg.appchallenge.foundation.speech.CabinAnnouncer
 import io.hmg.appchallenge.foundation.vehicle.FakeVehicleRepository
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -41,7 +42,12 @@ class FakeCabinWorldTest {
         )
         assertEquals(
             false,
-            KeyboardPolicy.allowsKeyboard(driving.restrictionMask, driving.uxAvailable, failClosed = false),
+            UxRestrictionState.from(
+                uxAvailable = driving.uxAvailable,
+                mask = driving.restrictionMask,
+                maxRestrictedStringLength = driving.maxRestrictedStringLength,
+                failClosed = false,
+            ).keyboardAllowed,
         )
     }
 
@@ -81,7 +87,12 @@ class FakeSessionReentryTest {
         val vehicle = FakeVehicleRepository(world)
         val driving = FakeDrivingStateRepository(world)
         val navigation = FakeNavigationRepository(world)
-        val session = CabinSession(vehicle, driving, navigation)
+        val session = CabinSession(vehicle, driving, navigation, object : CabinAnnouncer {
+            override fun announce(text: String) = Unit
+            override fun stop() = Unit
+            override fun onSuspend() = Unit
+            override fun onForeground() = Unit
+        })
         val owner = object : LifecycleOwner {
             override val lifecycle: Lifecycle get() = error("unused")
         }

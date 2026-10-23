@@ -1,6 +1,7 @@
 package io.hmg.appchallenge.foundation.ui
 
 import android.util.Log
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -11,12 +12,12 @@ import io.hmg.appchallenge.foundation.domain.DestinationSnapshot
 import io.hmg.appchallenge.foundation.domain.DistractionPolicy
 import io.hmg.appchallenge.foundation.domain.DoorId
 import io.hmg.appchallenge.foundation.domain.DrivingSnapshot
-import io.hmg.appchallenge.foundation.domain.KeyboardPolicy
 import io.hmg.appchallenge.foundation.domain.LinkState
 import io.hmg.appchallenge.foundation.domain.PlaceParser
 import io.hmg.appchallenge.foundation.domain.PlaceRequest
 import io.hmg.appchallenge.foundation.domain.ShellPolicy
 import io.hmg.appchallenge.foundation.domain.TripEstimate
+import io.hmg.appchallenge.foundation.domain.UxRestrictionState
 import io.hmg.appchallenge.foundation.domain.VehicleSnapshot
 import io.hmg.appchallenge.foundation.driving.DrivingStateRepository
 import io.hmg.appchallenge.foundation.navi.NavigationRepository
@@ -38,7 +39,13 @@ data class FoundationUi(
     val vehicle: VehicleSnapshot = VehicleSnapshot(),
     val driving: DrivingSnapshot = DrivingSnapshot(),
     val shell: AppShell = AppShell.FULL,
-    val keyboardAllowed: Boolean = true,
+    val restrictions: UxRestrictionState = UxRestrictionState.from(
+        uxAvailable = false,
+        mask = 0,
+        maxRestrictedStringLength = 0,
+        failClosed = true,
+    ),
+    val keyboardAllowed: Boolean = false,
     val destination: DestinationSnapshot? = null,
     val arrival: ArrivalSnapshot? = null,
     val trip: TripEstimate? = null,
@@ -58,8 +65,9 @@ class FoundationViewModel @Inject constructor(
     private val cabinSimulator: CabinSimulator,
     private val cabinCache: CabinCache,
     private val distractionPolicy: DistractionPolicy,
+    private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
-    private val formError = MutableStateFlow<String?>(null)
+    private val formError = MutableStateFlow(savedStateHandle.get<String>(FORM_ERROR))
 
     val ui: StateFlow<FoundationUi> = combine(
         combine(
@@ -81,6 +89,12 @@ class FoundationViewModel @Inject constructor(
         cabinCache.observeVehicle(),
         formError,
     ) { vehicleSlice, navSlice, cache, error ->
+        val restrictions = UxRestrictionState.from(
+            uxAvailable = vehicleSlice.driving.uxAvailable,
+            mask = vehicleSlice.driving.restrictionMask,
+            maxRestrictedStringLength = vehicleSlice.driving.maxRestrictedStringLength,
+            failClosed = distractionPolicy.failClosed,
+        )
         FoundationUi(
             vehicleLink = vehicleSlice.link,
             navLink = navSlice.link,
@@ -91,11 +105,8 @@ class FoundationViewModel @Inject constructor(
                 uxAvailable = vehicleSlice.driving.uxAvailable,
                 failClosed = distractionPolicy.failClosed,
             ),
-            keyboardAllowed = KeyboardPolicy.allowsKeyboard(
-                mask = vehicleSlice.driving.restrictionMask,
-                uxAvailable = vehicleSlice.driving.uxAvailable,
-                failClosed = distractionPolicy.failClosed,
-            ),
+            restrictions = restrictions,
+            keyboardAllowed = restrictions.keyboardAllowed,
             destination = navSlice.destination,
             arrival = navSlice.arrival,
             trip = navSlice.trip,
@@ -159,22 +170,22 @@ class FoundationViewModel @Inject constructor(
     fun requestSampleTrip() = cabinSimulator.requestSampleTrip()
 
     fun setDestination(request: PlaceRequest) {
-        formError.value = null
+        setFormError(null)
         navigationRepository.setDestination(request)
     }
 
     fun requestTrip(request: PlaceRequest) {
-        formError.value = null
+        setFormError(null)
         navigationRepository.requestTrip(request)
     }
 
     fun submitDestination(latitude: String, longitude: String, name: String, asTrip: Boolean) {
         val request = PlaceParser.parse(latitude, longitude, name)
         if (request == null) {
-            formError.value = "위도 -90~90, 경도 -180~180 사이의 숫자여야 합니다"
+            setFormError("위도 -90~90, 경도 -180~180 사이의 숫자여야 합니다")
             return
         }
-        formError.value = null
+        setFormError(null)
         if (asTrip) navigationRepository.requestTrip(request) else navigationRepository.setDestination(request)
     }
 
@@ -184,12 +195,29 @@ class FoundationViewModel @Inject constructor(
         if (granted) vehicleRepository.refresh()
     }
 
+    private fun setFormError(value: String?) {
+        formError.value = value
+        if (value == null) {
+            savedStateHandle.remove<String>(FORM_ERROR)
+        } else {
+            savedStateHandle[FORM_ERROR] = value
+        }
+    }
+
     private fun initialUi(): FoundationUi {
         val failClosed = distractionPolicy.failClosed
+        val restrictions = UxRestrictionState.from(
+            uxAvailable = false,
+            mask = 0,
+            maxRestrictedStringLength = 0,
+            failClosed = failClosed,
+        )
         return FoundationUi(
             shell = if (failClosed) AppShell.REDUCED else AppShell.FULL,
-            keyboardAllowed = !failClosed,
+            restrictions = restrictions,
+            keyboardAllowed = restrictions.keyboardAllowed,
             simulatorEnabled = cabinSimulator.enabled,
+            formError = savedStateHandle.get<String>(FORM_ERROR),
         )
     }
 
@@ -209,5 +237,6 @@ class FoundationViewModel @Inject constructor(
 
     private companion object {
         const val TAG = "FoundationViewModel"
+        const val FORM_ERROR = "formError"
     }
 }

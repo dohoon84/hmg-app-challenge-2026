@@ -100,6 +100,7 @@ data class VehicleSnapshot(
     val rangeSource: RangeSource = RangeSource.UNAVAILABLE,
     val vin: String? = null,
     val vinReadable: Boolean = false,
+    val seats: Map<SeatId, SeatSupport> = unavailableSeats(),
     val updatedAtEpochMs: Long = 0L,
     val lastError: String? = null,
 )

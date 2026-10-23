@@ -6,23 +6,6 @@
         android:name="android.hardware.type.automotive"
         android:required="${automotiveRequired}" />
 
-    <!-- Vehicle SDK read APIs. All normal protection level. -->
-    <uses-permission android:name="pleos.car.permission.CAR_DOORS" />
-    <uses-permission android:name="pleos.car.permission.CAR_WINDOWS" />
-    <uses-permission android:name="pleos.car.permission.CAR_ENERGY" />
-    <uses-permission android:name="pleos.car.permission.CAR_DRIVE" />
-    <uses-permission android:name="pleos.car.permission.CAR_INFO" />
-
-    <!-- NaviHelper. Normal protection level. -->
-    <uses-permission android:name="pleos.car.permission.NAVI_ROUTE" />
-    <uses-permission android:name="pleos.car.permission.NAVI_ROUTE_SEARCH" />
-
-    <!-- AAOS GEAR_SELECTION. Normal. Gear is not read from Vehicle.getGear(). -->
-    <uses-permission android:name="android.car.permission.CAR_POWERTRAIN" />
-
-    <!-- Optional RANGE_REMAINING. Dangerous. The Vehicle SDK has no range getter. -->
-    <uses-permission android:name="android.car.permission.CAR_ENERGY" />
-
     <application
         android:name=".FoundationApp"
         android:allowBackup="false"
@@ -35,6 +18,17 @@
             android:name="com.android.automotive"
             android:resource="@xml/automotive_app_desc" />
 
+        <!-- CCP rotary is not used. Unknown meta-data is ignored on a phone. -->
+        <meta-data
+            android:name="com.hmg.rotary.ROTARY_SUPPORTED"
+            android:value="false" />
+
+        <!--
+          Normal activity window, not an overlay. Default size is portrait 840×1184.
+          Landscape is 1700×1184. Orientation is not locked, so a configuration change
+          recreates this activity and ViewModel, rememberSaveable, and SavedStateHandle
+          keep the form. The 840×1280 driving view stays a system area.
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"

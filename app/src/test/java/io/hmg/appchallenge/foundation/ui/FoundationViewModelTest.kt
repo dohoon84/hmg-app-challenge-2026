@@ -1,5 +1,6 @@
 package io.hmg.appchallenge.foundation.ui
 
+import androidx.lifecycle.SavedStateHandle
 import io.hmg.appchallenge.foundation.data.cache.CabinCache
 import io.hmg.appchallenge.foundation.data.local.NavCacheEntity
 import io.hmg.appchallenge.foundation.data.local.VehicleCacheEntity
@@ -15,6 +16,7 @@ import io.hmg.appchallenge.foundation.domain.PlaceRequest
 import io.hmg.appchallenge.foundation.domain.StaticDistractionPolicy
 import io.hmg.appchallenge.foundation.domain.TripEstimate
 import io.hmg.appchallenge.foundation.domain.UxRestrictionBits
+import io.hmg.appchallenge.foundation.domain.UxRestrictionState
 import io.hmg.appchallenge.foundation.domain.VehicleSnapshot
 import io.hmg.appchallenge.foundation.driving.DrivingStateRepository
 import io.hmg.appchallenge.foundation.navi.NavigationRepository
@@ -42,6 +44,15 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FoundationViewModelTest {
+    @Test
+    fun defaultUiFailsClosedWithoutBlankingShortCopy() {
+        val ui = FoundationUi()
+        assertFalse(ui.keyboardAllowed)
+        assertTrue(ui.restrictions.limitStringLength)
+        assertEquals("SOC 80%", ui.restrictions.clip("SOC 80%"))
+        assertEquals("문 열림", ui.restrictions.clip("문 열림", preserve = true))
+    }
+
     private val scheduler = TestCoroutineScheduler()
     private val dispatcher = StandardTestDispatcher(scheduler)
 
@@ -74,6 +85,15 @@ class FoundationViewModelTest {
         advanceUntilIdle()
         assertEquals(AppShell.REDUCED, viewModel.ui.value.shell)
         assertFalse(viewModel.ui.value.keyboardAllowed)
+        assertTrue(viewModel.ui.value.restrictions.noKeyboard)
+        assertTrue(viewModel.ui.value.restrictions.noVideo)
+        assertTrue(viewModel.ui.value.restrictions.limitStringLength)
+        assertEquals("긴 문장", viewModel.ui.value.restrictions.clip("긴 문장"))
+        assertEquals(
+            UxRestrictionState.UNKNOWN_MAX_STRING_LENGTH,
+            viewModel.ui.value.restrictions.maxRestrictedStringLength,
+        )
+        assertEquals("문 열림", viewModel.ui.value.restrictions.clip("문 열림", preserve = true))
 
         driving.state.value = DrivingSnapshot(
             gear = GearPosition.PARK,
@@ -84,6 +104,7 @@ class FoundationViewModelTest {
         advanceUntilIdle()
         assertEquals(AppShell.FULL, viewModel.ui.value.shell)
         assertTrue(viewModel.ui.value.keyboardAllowed)
+        assertFalse(viewModel.ui.value.restrictions.noVideo)
 
         driving.state.value = driving.state.value.copy(
             restrictionMask = UxRestrictionBits.NO_KEYBOARD,
@@ -91,6 +112,8 @@ class FoundationViewModelTest {
         advanceUntilIdle()
         assertEquals(AppShell.FULL, viewModel.ui.value.shell)
         assertFalse(viewModel.ui.value.keyboardAllowed)
+        assertFalse(viewModel.ui.value.restrictions.noVideo)
+        assertTrue(viewModel.ui.value.restrictions.noKeyboard)
         job.cancel()
     }
 
@@ -105,10 +128,28 @@ class FoundationViewModelTest {
         job.cancel()
     }
 
+    @Test
+    fun formErrorIsRestoredFromSavedState() = runTest(dispatcher) {
+        val handle = SavedStateHandle()
+        val viewModel = viewModel(IdleVehicle(), IdleDriving(), failClosed = false, handle)
+        val job = launch { viewModel.ui.collect {} }
+        viewModel.submitDestination("nope", "1", "x", asTrip = false)
+        advanceUntilIdle()
+        assertEquals("위도 -90~90, 경도 -180~180 사이의 숫자여야 합니다", handle.get<String>("formError"))
+        job.cancel()
+
+        val restored = viewModel(IdleVehicle(), IdleDriving(), failClosed = false, handle)
+        val restoredJob = launch { restored.ui.collect {} }
+        advanceUntilIdle()
+        assertEquals("위도 -90~90, 경도 -180~180 사이의 숫자여야 합니다", restored.ui.value.formError)
+        restoredJob.cancel()
+    }
+
     private fun viewModel(
         vehicle: VehicleRepository,
         driving: DrivingStateRepository,
         failClosed: Boolean,
+        savedStateHandle: SavedStateHandle = SavedStateHandle(),
     ) = FoundationViewModel(
         vehicleRepository = vehicle,
         drivingStateRepository = driving,
@@ -116,6 +157,7 @@ class FoundationViewModelTest {
         cabinSimulator = IdleSimulator,
         cabinCache = NoopCache,
         distractionPolicy = StaticDistractionPolicy(failClosed),
+        savedStateHandle = savedStateHandle,
     )
 
     private class IdleVehicle : VehicleRepository {

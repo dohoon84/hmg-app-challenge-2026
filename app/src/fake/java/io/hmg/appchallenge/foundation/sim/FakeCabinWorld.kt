@@ -12,7 +12,10 @@ import io.hmg.appchallenge.foundation.domain.MotionResolver
 import io.hmg.appchallenge.foundation.domain.PanelState
 import io.hmg.appchallenge.foundation.domain.PlaceRequest
 import io.hmg.appchallenge.foundation.domain.RangeSource
+import io.hmg.appchallenge.foundation.domain.SeatId
+import io.hmg.appchallenge.foundation.domain.SignalAccess
 import io.hmg.appchallenge.foundation.domain.TripEstimate
+import io.hmg.appchallenge.foundation.domain.seatSupport
 import io.hmg.appchallenge.foundation.domain.UxRestrictionBits
 import io.hmg.appchallenge.foundation.domain.VehicleSnapshot
 import io.hmg.appchallenge.foundation.domain.WindowId
@@ -150,6 +153,12 @@ class FakeCabinWorld @Inject constructor() : CabinSimulator {
             rangeSource = RangeSource.SIMULATED,
             vin = "FAKE-NOT-A-VIN",
             vinReadable = true,
+            seats = seatSupport(
+                occupancyAreas = setOf(SeatId.DRIVER, SeatId.PASSENGER),
+                beltAreas = setOf(SeatId.DRIVER, SeatId.PASSENGER),
+                occupancyAccess = SignalAccess.READ,
+                beltAccess = SignalAccess.READ,
+            ),
             updatedAtEpochMs = System.currentTimeMillis(),
         )
     }

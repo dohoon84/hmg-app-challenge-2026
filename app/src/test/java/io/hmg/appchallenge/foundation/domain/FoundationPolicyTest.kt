@@ -18,7 +18,17 @@ class GearSelectionCodesTest {
         assertEquals(VehicleGear.GEAR_DRIVE, GearSelectionCodes.DRIVE)
         assertEquals(VehicleGear.GEAR_FIRST, GearSelectionCodes.FIRST)
         assertEquals(VehicleGear.GEAR_NINTH, GearSelectionCodes.NINTH)
+        assertEquals(CarUxRestrictions.UX_RESTRICTIONS_BASELINE, UxRestrictionBits.BASELINE)
+        assertEquals(CarUxRestrictions.UX_RESTRICTIONS_NO_DIALPAD, UxRestrictionBits.NO_DIALPAD)
+        assertEquals(CarUxRestrictions.UX_RESTRICTIONS_NO_FILTERING, UxRestrictionBits.NO_FILTERING)
+        assertEquals(CarUxRestrictions.UX_RESTRICTIONS_LIMIT_STRING_LENGTH, UxRestrictionBits.LIMIT_STRING_LENGTH)
         assertEquals(CarUxRestrictions.UX_RESTRICTIONS_NO_KEYBOARD, UxRestrictionBits.NO_KEYBOARD)
+        assertEquals(CarUxRestrictions.UX_RESTRICTIONS_NO_VIDEO, UxRestrictionBits.NO_VIDEO)
+        assertEquals(CarUxRestrictions.UX_RESTRICTIONS_LIMIT_CONTENT, UxRestrictionBits.LIMIT_CONTENT)
+        assertEquals(CarUxRestrictions.UX_RESTRICTIONS_NO_SETUP, UxRestrictionBits.NO_SETUP)
+        assertEquals(CarUxRestrictions.UX_RESTRICTIONS_NO_TEXT_MESSAGE, UxRestrictionBits.NO_TEXT_MESSAGE)
+        assertEquals(CarUxRestrictions.UX_RESTRICTIONS_NO_VOICE_TRANSCRIPTION, UxRestrictionBits.NO_VOICE_TRANSCRIPTION)
+        assertEquals(CarUxRestrictions.UX_RESTRICTIONS_FULLY_RESTRICTED, UxRestrictionBits.FULLY_RESTRICTED)
     }
 
     @Test
@@ -105,12 +115,20 @@ class FailClosedShellTest {
     @Test
     fun keyboardFollowsNoKeyboardBit() {
         val mask = UxRestrictionBits.NO_KEYBOARD
-        assertFalse(KeyboardPolicy.allowsKeyboard(mask, uxAvailable = true, failClosed = true))
-        assertTrue(KeyboardPolicy.allowsKeyboard(0, uxAvailable = true, failClosed = true))
-        assertFalse(KeyboardPolicy.allowsKeyboard(0, uxAvailable = false, failClosed = true))
-        assertTrue(KeyboardPolicy.allowsKeyboard(0, uxAvailable = false, failClosed = false))
-        assertFalse(KeyboardPolicy.allowsKeyboard(mask, uxAvailable = true, failClosed = false))
+        assertFalse(keyboardAllowed(mask, uxAvailable = true, failClosed = true))
+        assertTrue(keyboardAllowed(0, uxAvailable = true, failClosed = true))
+        assertFalse(keyboardAllowed(0, uxAvailable = false, failClosed = true))
+        assertTrue(keyboardAllowed(0, uxAvailable = false, failClosed = false))
+        assertFalse(keyboardAllowed(mask, uxAvailable = true, failClosed = false))
     }
+
+    private fun keyboardAllowed(mask: Int, uxAvailable: Boolean, failClosed: Boolean): Boolean =
+        UxRestrictionState.from(
+            uxAvailable = uxAvailable,
+            mask = mask,
+            maxRestrictedStringLength = 0,
+            failClosed = failClosed,
+        ).keyboardAllowed
 
     @Test
     fun vinMaskKeepsLastFour() {
@@ -158,12 +176,5 @@ class CapabilityAndLayoutTest {
         assertEquals(900, GeoEstimate.etaSeconds(10_000, speedKmh = 40.0))
         val meters = GeoEstimate.haversineMeters(37.4979, 127.0276, 37.554722, 126.970833)
         assertTrue(meters in 7_000..12_000)
-    }
-
-    @Test
-    fun restrictionShortensOnlyWhenActive() {
-        assertEquals("서울역", shortenForRestriction("서울역", 2, restricted = false))
-        assertEquals("서울", shortenForRestriction("서울역", 2, restricted = true))
-        assertEquals("서울역", shortenForRestriction("서울역", 0, restricted = true))
     }
 }

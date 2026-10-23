@@ -2,6 +2,7 @@ package io.hmg.appchallenge.foundation
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
@@ -20,8 +21,20 @@ class MainActivity : ComponentActivity() {
         viewModel.onEnergyPermissionResult(granted)
     }
 
+    /**
+     * System Back at the root moves the task to the background. There is no on-screen
+     * back button. A future screen above this one must set [rootBack].isEnabled to false
+     * while it is showing, then true again when it leaves. This activity is the only screen.
+     */
+    private val rootBack = object : OnBackPressedCallback(enabled = true) {
+        override fun handleOnBackPressed() {
+            moveTaskToBack(true)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        onBackPressedDispatcher.addCallback(this, rootBack)
         setContent {
             FoundationTheme {
                 FoundationRoute(

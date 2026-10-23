@@ -11,12 +11,12 @@ class DrivingActionLayoutTest {
 
     @Test
     fun tallPaneKeepsFullWidthButtons() {
-        assertEquals(1, drivingActionColumns(8, availableHeightDp = 800, availableWidthDp = 400))
+        assertEquals(1, drivingActionColumns(8, availableHeightDp = 900, availableWidthDp = 400))
     }
 
     @Test
     fun landscapePhoneFitsEverySimulatorButton() {
-        // Half of a short landscape width, eight 88dp buttons. Three columns stay on screen.
+        // Half of a short landscape width, eight 100dp buttons. Three columns stay on screen.
         assertEquals(3, drivingActionColumns(8, availableHeightDp = 360, availableWidthDp = 320))
     }
 

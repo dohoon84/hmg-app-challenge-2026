@@ -1,6 +1,8 @@
 package io.hmg.appchallenge.foundation.ui
 
+import android.app.Activity
 import android.content.res.Configuration
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -14,18 +16,22 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -37,11 +43,15 @@ import io.hmg.appchallenge.foundation.R
 import io.hmg.appchallenge.foundation.domain.AppShell
 import io.hmg.appchallenge.foundation.domain.DoorId
 import io.hmg.appchallenge.foundation.domain.Motion
+import io.hmg.appchallenge.foundation.domain.SeatId
+import io.hmg.appchallenge.foundation.domain.SeatSupport
 import io.hmg.appchallenge.foundation.domain.PanePolicy
 import io.hmg.appchallenge.foundation.domain.RangeSource
 import io.hmg.appchallenge.foundation.domain.WindowId
 import io.hmg.appchallenge.foundation.domain.maskVin
-import io.hmg.appchallenge.foundation.domain.shortenForRestriction
+import io.hmg.appchallenge.foundation.perf.LaunchTiming
+import io.hmg.appchallenge.foundation.ui.theme.IviTheme
+import io.hmg.appchallenge.foundation.ui.theme.IviType
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -52,6 +62,10 @@ fun FoundationRoute(
     onRequestEnergyPermission: () -> Unit,
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
+    val host = LocalContext.current as? Activity
+    LaunchedEffect(host) {
+        if (host != null) LaunchTiming.onFirstDraw(host)
+    }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
         val twoPanes = PanePolicy.useTwoPanes(
@@ -119,9 +133,8 @@ private fun DrivingStatus(ui: FoundationUi) {
     val clip = clipFor(ui)
     Text(
         text = stringResource(R.string.shell_driving),
-        fontSize = 40.sp,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.secondary,
+        style = IviType.drivingMain,
+        color = IviTheme.colors.textPrimary,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
     )
@@ -138,10 +151,9 @@ private fun DrivingStatus(ui: FoundationUi) {
     val openDoors = ui.vehicle.doors.values.count { it.open }
     if (openDoors > 0) {
         Text(
-            text = clip(stringResource(R.string.door_open_alert)),
-            fontSize = 36.sp,
-            color = MaterialTheme.colorScheme.error,
-            fontWeight = FontWeight.Bold,
+            text = ui.restrictions.clip(stringResource(R.string.door_open_alert), preserve = true),
+            style = IviType.drivingMain,
+            color = IviTheme.colors.drivingAlert,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -155,7 +167,7 @@ private fun DrivingStatus(ui: FoundationUi) {
         )
         Text(
             text = clip(remainLine(ui)),
-            fontSize = 22.sp,
+            style = IviType.bodyLarge,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -163,7 +175,7 @@ private fun DrivingStatus(ui: FoundationUi) {
     ui.trip?.let { trip ->
         Text(
             text = clip(etaLine(trip.eta, trip.distance)),
-            fontSize = 22.sp,
+            style = IviType.bodyLarge,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -184,7 +196,7 @@ private fun DrivingActions(
             availableWidthDp = maxWidth.value.toInt(),
         )
         val rows = actions.chunked(columns)
-        val needed = DRIVING_BUTTON_HEIGHT * rows.size + DRIVING_BUTTON_GAP * (rows.size - 1).coerceAtLeast(0)
+        val needed = IviButtonMetrics.LARGE_DP.dp * rows.size + DRIVING_BUTTON_GAP * (rows.size - 1).coerceAtLeast(0)
         val scroll = if (needed > maxHeight && actions.size > 1) {
             Modifier.verticalScroll(rememberScrollState())
         } else {
@@ -197,7 +209,7 @@ private fun DrivingActions(
             rows.forEach { row ->
                 val labelStyle = drivingActionLabelStyle(if (row.size > 1) columns else 1)
                 if (row.size == 1) {
-                    LargeButton(row[0].label, labelStyle = labelStyle, onClick = row[0].onClick)
+                    LargeButton(row[0].label, ui.shell, labelStyle = labelStyle, onClick = row[0].onClick)
                 } else {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -206,6 +218,7 @@ private fun DrivingActions(
                         row.forEach { action ->
                             LargeButton(
                                 label = action.label,
+                                shell = ui.shell,
                                 modifier = Modifier.weight(1f),
                                 labelStyle = labelStyle,
                                 onClick = action.onClick,
@@ -249,7 +262,7 @@ internal fun drivingActionColumns(
     actionCount: Int,
     availableHeightDp: Int,
     availableWidthDp: Int,
-    buttonHeightDp: Int = 88,
+    buttonHeightDp: Int = IviButtonMetrics.LARGE_DP,
     gapDp: Int = 12,
     minButtonWidthDp: Int = 96,
 ): Int {
@@ -333,7 +346,7 @@ private fun VehiclePane(
     viewModel: FoundationViewModel,
     onRequestEnergyPermission: () -> Unit,
 ) {
-    Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineMedium)
+    Text(stringResource(R.string.app_name), style = IviType.headlineSmall)
     Text(motionLabel(ui.driving.motion), style = MaterialTheme.typography.titleLarge)
     if (ui.simulatorEnabled) {
         Text(stringResource(R.string.sim_banner), color = MaterialTheme.colorScheme.secondary)
@@ -346,6 +359,7 @@ private fun VehiclePane(
     Text("적산 ${odometer(ui)}")
     Text("주행가능거리 ${range(ui)}")
     Text("VIN ${if (ui.vehicle.vinReadable) maskVin(ui.vehicle.vin) ?: "-" else "읽기 불가"}")
+    Text(seatLine(ui.vehicle.seats))
     ui.vehicle.lastError?.let { Text("오류 $it", color = MaterialTheme.colorScheme.error) }
     DoorId.entries.forEach { id ->
         val panel = ui.vehicle.doors[id] ?: return@forEach
@@ -424,18 +438,29 @@ private fun NavPane(ui: FoundationUi, viewModel: FoundationViewModel) {
     LargeButton(stringResource(R.string.action_refresh_dest)) { viewModel.refreshDestination() }
 }
 
+/**
+ * Driving and parked actions request Large. Small is parked-only;
+ * [resolveButtonSize] promotes it while the shell is reduced. No screen passes Small yet.
+ */
 @Composable
 private fun LargeButton(
     label: String,
+    shell: AppShell = AppShell.FULL,
     modifier: Modifier = Modifier,
+    requestedSize: IviButtonSize = IviButtonSize.LARGE,
     labelStyle: DrivingLabelStyle = drivingActionLabelStyle(1),
     onClick: () -> Unit,
 ) {
+    val size = resolveButtonSize(requestedSize, shell)
+    val interaction = remember { MutableInteractionSource() }
     Button(
         onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
-            .height(DRIVING_BUTTON_HEIGHT),
+            .height(IviButtonMetrics.heightDp(size).dp)
+            .pressScale(interaction),
+        interactionSource = interaction,
+        shape = RoundedCornerShape(IviButtonMetrics.radiusDp(size).dp),
         contentPadding = if (labelStyle.maxLines > 1) {
             PaddingValues(horizontal = labelStyle.horizontalPaddingDp.dp, vertical = 4.dp)
         } else {
@@ -455,11 +480,7 @@ private fun LargeButton(
 }
 
 @Composable
-private fun clipFor(ui: FoundationUi): (String) -> String {
-    val restricted = ui.driving.requiresDistractionOptimization || ui.shell == AppShell.REDUCED
-    val maxLen = ui.driving.maxRestrictedStringLength
-    return { text -> shortenForRestriction(text, maxLen, restricted) }
-}
+private fun clipFor(ui: FoundationUi): (String) -> String = ui.restrictions::clip
 
 private fun motionLabel(motion: Motion): String = when (motion) {
     Motion.PARKED -> "정차"
@@ -497,6 +518,16 @@ private fun remainLine(ui: FoundationUi): String {
 
 private fun etaLine(eta: Int, distance: Int): String = "ETA $eta · 거리 $distance (원시값)"
 
+private fun seatLine(seats: Map<SeatId, SeatSupport>): String {
+    fun mark(id: SeatId, name: String) = "$name ${if (seats[id]?.available == true) "지원" else "미지원"}"
+    return listOf(
+        mark(SeatId.DRIVER, "운전석"),
+        mark(SeatId.PASSENGER, "조수석"),
+        mark(SeatId.REAR_LEFT, "뒷좌석 좌"),
+        mark(SeatId.REAR_RIGHT, "뒷좌석 우"),
+    ).joinToString(" · ")
+}
+
 private fun doorLabel(id: DoorId): String = when (id) {
     DoorId.ROW_1_LEFT -> "운전석"
     DoorId.ROW_1_RIGHT -> "조수석"
@@ -520,5 +551,4 @@ private fun windowLabel(id: WindowId): String = when (id) {
 }
 
 private val clock = SimpleDateFormat("HH:mm:ss", Locale.KOREA)
-private val DRIVING_BUTTON_HEIGHT = 88.dp
 private val DRIVING_BUTTON_GAP = 12.dp
