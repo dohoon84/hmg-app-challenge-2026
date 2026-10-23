@@ -8,12 +8,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -26,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -192,8 +195,9 @@ private fun DrivingActions(
             verticalArrangement = Arrangement.spacedBy(DRIVING_BUTTON_GAP),
         ) {
             rows.forEach { row ->
+                val labelStyle = drivingActionLabelStyle(if (row.size > 1) columns else 1)
                 if (row.size == 1) {
-                    LargeButton(row[0].label, onClick = row[0].onClick)
+                    LargeButton(row[0].label, labelStyle = labelStyle, onClick = row[0].onClick)
                 } else {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -203,6 +207,7 @@ private fun DrivingActions(
                             LargeButton(
                                 label = action.label,
                                 modifier = Modifier.weight(1f),
+                                labelStyle = labelStyle,
                                 onClick = action.onClick,
                             )
                         }
@@ -261,6 +266,23 @@ internal fun drivingActionColumns(
     }
     return maxByWidth
 }
+
+/**
+ * A shared column is about 97dp wide, which clips a 22sp label. Wrap those labels at 18sp.
+ * A single full-width button keeps 22sp.
+ */
+internal data class DrivingLabelStyle(
+    val fontSp: Int,
+    val maxLines: Int,
+    val horizontalPaddingDp: Int,
+)
+
+internal fun drivingActionLabelStyle(columns: Int): DrivingLabelStyle =
+    if (columns <= 1) {
+        DrivingLabelStyle(fontSp = 22, maxLines = 1, horizontalPaddingDp = 24)
+    } else {
+        DrivingLabelStyle(fontSp = 18, maxLines = 2, horizontalPaddingDp = 8)
+    }
 
 @Composable
 private fun ParkedScreen(
@@ -406,6 +428,7 @@ private fun NavPane(ui: FoundationUi, viewModel: FoundationViewModel) {
 private fun LargeButton(
     label: String,
     modifier: Modifier = Modifier,
+    labelStyle: DrivingLabelStyle = drivingActionLabelStyle(1),
     onClick: () -> Unit,
 ) {
     Button(
@@ -413,8 +436,21 @@ private fun LargeButton(
         modifier = modifier
             .fillMaxWidth()
             .height(DRIVING_BUTTON_HEIGHT),
+        contentPadding = if (labelStyle.maxLines > 1) {
+            PaddingValues(horizontal = labelStyle.horizontalPaddingDp.dp, vertical = 4.dp)
+        } else {
+            ButtonDefaults.ContentPadding
+        },
     ) {
-        Text(text = label, fontSize = 22.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(
+            text = label,
+            modifier = Modifier.fillMaxWidth(),
+            fontSize = labelStyle.fontSp.sp,
+            lineHeight = (labelStyle.fontSp + 4).sp,
+            maxLines = labelStyle.maxLines,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 

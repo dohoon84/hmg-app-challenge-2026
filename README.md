@@ -58,7 +58,7 @@ Vehicle / NaviHelper / Car 연결은 `ProcessLifecycleOwner`의 시작과 중지
 fake 화면에서 확인할 것:
 
 - 정차: 세로 1열, 가로(또는 너비 800dp 이상) 2열. 좌표 입력은 정차 화면에만 있습니다.
-- 주행: 큰 버튼(높이 88dp)만 있는 화면. 키보드 없음. 시뮬레이션 빌드의 버튼은 높이에 맞춰 1~3열로 배치되어 세로와 가로 모두에서 닿습니다. 화면이 그 열보다 낮을 때만 동작 영역이 스크롤됩니다.
+- 주행: 큰 버튼(높이 88dp)만 있는 화면. 키보드 없음. 시뮬레이션 빌드의 버튼은 높이에 맞춰 1~3열로 배치되어 세로와 가로 모두에서 닿습니다. 한 열일 때는 22sp 한 줄이고, 두 열 이상에서 버튼을 나눠 가질 때는 18sp로 두 줄까지 표시합니다. 화면이 그 열보다 낮을 때만 동작 영역이 스크롤됩니다.
 - 운전석 문 열림, SOC ±10, 도착 이벤트.
 
 주행 규제 adb (에뮬레이터):
@@ -74,13 +74,13 @@ git에는 APK를 넣지 않습니다. 아래 경로는 로컬 빌드 결과입�
 
 | 용도 | 경로 |
 |---|---|
-| 제출용 pleos release | 키스토어가 있을 때 `./gradlew exportContestApk` → `apk/placeholder-team_foundation_release.apk`. 서명이 없으면 태스크가 실패합니다 |
+| 제출용 pleos release | 키스토어가 있을 때 `./gradlew exportContestApk` → `apk/placeholder-team_foundation_release.apk` |
 | 서명된 Android Studio 산출물 | `app/build/outputs/apk/pleos/release/app-pleos-release.apk` |
 | 키스토어 없이 만든 release | `app/build/outputs/apk/pleos/release/app-pleos-release-unsigned.apk` (제출하지 않음) |
-
-제출하는 파일은 서명된 pleos release뿐입니다. fake debug APK와 unsigned release는 제출하지 않습니다.
 | 폰에서 볼 fake debug | `app/build/outputs/apk/fake/debug/app-fake-debug.apk` |
 | 에뮬레이터용 pleos debug | `app/build/outputs/apk/pleos/debug/app-pleos-debug.apk` |
+
+제출하는 파일은 서명된 pleos release뿐입니다. fake debug APK와 unsigned release는 제출하지 않습니다. 서명이 없으면 `exportContestApk`는 release 빌드를 시작하기 전에 실패합니다.
 
 ## 구성
 

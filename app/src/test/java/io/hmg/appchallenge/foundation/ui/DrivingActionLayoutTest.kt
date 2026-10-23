@@ -24,4 +24,19 @@ class DrivingActionLayoutTest {
     fun mediumHeightUsesTwoColumns() {
         assertEquals(2, drivingActionColumns(8, availableHeightDp = 500, availableWidthDp = 400))
     }
+
+    @Test
+    fun singleColumnKeepsASingleLineLabel() {
+        val style = drivingActionLabelStyle(1)
+        assertEquals(22, style.fontSp)
+        assertEquals(1, style.maxLines)
+    }
+
+    @Test
+    fun sharedColumnsWrapLabels() {
+        val style = drivingActionLabelStyle(3)
+        assertEquals(18, style.fontSp)
+        assertEquals(2, style.maxLines)
+        assertEquals(8, style.horizontalPaddingDp)
+    }
 }
