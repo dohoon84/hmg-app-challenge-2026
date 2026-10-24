@@ -40,6 +40,8 @@ fun ScenarioPanel(
     onStopAutoPlay: () -> Unit = {},
     captionsOn: Boolean = false,
     onToggleCaptions: () -> Unit = {},
+    showApply: Boolean = true,
+    showValues: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     var meters by rememberSaveable { mutableStateOf(overrides.remainMeters?.toString().orEmpty()) }
@@ -61,54 +63,58 @@ fun ScenarioPanel(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = modifier.widthIn(max = 520.dp).fillMaxWidth(),
     ) {
-        Text("데모 값", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "기어·문·방향지시등은 Virtual Console에서 바꿉니다. 이 앱은 VC를 호출하지 않습니다.",
-            style = MaterialTheme.typography.bodySmall,
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = meters,
-                onValueChange = { meters = it },
-                label = { Text("남은 m") },
-                modifier = Modifier.weight(1f),
+        if (showValues) {
+            Text("데모 값", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "기어·문·방향지시등은 Virtual Console에서 바꿉니다. 이 앱은 VC를 호출하지 않습니다.",
+                style = MaterialTheme.typography.bodySmall,
             )
-            OutlinedTextField(
-                value = seconds,
-                onValueChange = { seconds = it },
-                label = { Text("남은 초") },
-                modifier = Modifier.weight(1f),
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = returnMin,
-                onValueChange = { returnMin = it },
-                label = { Text("반납까지 분") },
-                modifier = Modifier.weight(1f),
-            )
-            OutlinedTextField(
-                value = target,
-                onValueChange = { target = it },
-                label = { Text("충전 기준 %") },
-                modifier = Modifier.weight(1f),
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = meters,
+                    onValueChange = { meters = it },
+                    label = { Text("남은 m") },
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = seconds,
+                    onValueChange = { seconds = it },
+                    label = { Text("남은 초") },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = returnMin,
+                    onValueChange = { returnMin = it },
+                    label = { Text("반납까지 분") },
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = target,
+                    onValueChange = { target = it },
+                    label = { Text("충전 기준 %") },
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.horizontalScroll(rememberScrollState()),
         ) {
-            TextButton(onClick = {
-                onChange(
-                    overrides.copy(
-                        remainMeters = meters.toIntOrNull(),
-                        remainSeconds = seconds.toIntOrNull(),
-                        returnInMinutes = returnMin.toIntOrNull(),
-                        chargeTargetPercent = target.toIntOrNull(),
-                        armNewRental = false,
-                    ),
-                )
-            }) { Text("값 적용") }
+            if (showApply) {
+                TextButton(onClick = {
+                    onChange(
+                        overrides.copy(
+                            remainMeters = meters.toIntOrNull(),
+                            remainSeconds = seconds.toIntOrNull(),
+                            returnInMinutes = returnMin.toIntOrNull(),
+                            chargeTargetPercent = target.toIntOrNull(),
+                            armNewRental = false,
+                        ),
+                    )
+                }) { Text("값 적용") }
+            }
             TextButton(onClick = { onChange(overrides.copy(pretendCharging = !overrides.pretendCharging)) }) {
                 Text(if (overrides.pretendCharging) "충전 목적지 끔" else "충전 목적지")
             }

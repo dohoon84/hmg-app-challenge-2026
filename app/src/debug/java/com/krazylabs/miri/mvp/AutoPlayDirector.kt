@@ -46,15 +46,37 @@ class AutoPlayDirector private constructor(
     }
 
     override fun play(host: DemoPlaybackHost, scope: CoroutineScope, realGear: GearPosition) {
+        begin(host, scope, realGear, fromStep = null, holdScale = 1f)
+    }
+
+    override fun playFrom(
+        host: DemoPlaybackHost,
+        scope: CoroutineScope,
+        realGear: GearPosition,
+        fromStep: String?,
+        holdScale: Float,
+    ) {
+        begin(host, scope, realGear, fromStep, holdScale)
+    }
+
+    private fun begin(
+        host: DemoPlaybackHost,
+        scope: CoroutineScope,
+        realGear: GearPosition,
+        fromStep: String?,
+        holdScale: Float,
+    ) {
         if (realGear != GearPosition.PARK) return
+        if (fromStep != null && fromStep !in AutoPlayScript.beats()) return
         stop()
         this.host = host
+        val steps = AutoPlayScript.paced(fromStep, holdScale)
         val gen = generation
         _running.value = true
         cabin.engage()
         job = scope.launch {
             try {
-                runScript(host)
+                runScript(host, steps)
             } finally {
                 if (gen == generation) cleanup(host)
             }
@@ -73,9 +95,9 @@ class AutoPlayDirector private constructor(
         _running.value = false
     }
 
-    private suspend fun runScript(host: DemoPlaybackHost) {
+    private suspend fun runScript(host: DemoPlaybackHost, steps: List<AutoStep>) {
         host.rewindToIntake()
-        for (step in AutoPlayScript.steps) {
+        for (step in steps) {
             when (step) {
                 is AutoStep.Show -> {
                     _caption.value = step.caption
@@ -206,13 +228,51 @@ object AutoPlayScript {
         AutoStep.Show("C2", "점검 끝", 6_000),
     )
 
-    fun beats(): List<String> = steps.mapNotNull { step ->
-        when (step) {
-            is AutoStep.Show -> step.beat
-            is AutoStep.Gear -> step.beat
-            else -> null
-        }
+    fun beats(): List<String> = steps.mapNotNull { beatOf(it) }
+
+    fun beatOf(step: AutoStep): String? = when (step) {
+        is AutoStep.Show -> step.beat
+        is AutoStep.Gear -> step.beat
+        else -> null
     }
 
     fun totalMs(): Long = steps.sumOf { it.ms }
+
+    /**
+     * Full script when [fromStep] is null. Steps before that beat keep their
+     * actions and drop their hold, so a jump still builds the cabin state.
+     * [holdScale] applies from the beat onward. [totalMs] stays the unscaled sum.
+     */
+    fun paced(fromStep: String?, holdScale: Float): List<AutoStep> {
+        val scale = if (holdScale.isFinite() && holdScale > 0f) holdScale else 1f
+        val start = if (fromStep == null) {
+            0
+        } else {
+            val index = steps.indexOfFirst { beatOf(it) == fromStep }
+            if (index < 0) return emptyList()
+            index
+        }
+        return steps.mapIndexed { index, step ->
+            val factor = if (index < start) 0f else scale
+            step.scaled(factor)
+        }
+    }
+}
+
+private fun AutoStep.scaled(factor: Float): AutoStep {
+    if (factor == 1f || ms == 0L) return this
+    val next = (ms.toDouble() * factor.toDouble()).toLong()
+    if (next == ms) return this
+    return when (this) {
+        is AutoStep.Show -> copy(ms = next)
+        is AutoStep.Highlight -> copy(ms = next)
+        is AutoStep.ChooseRental -> copy(ms = next)
+        is AutoStep.PickTime -> copy(ms = next)
+        is AutoStep.PickPlace -> copy(ms = next)
+        is AutoStep.Confirm -> copy(ms = next)
+        is AutoStep.Road -> copy(ms = next)
+        is AutoStep.ReturnWindow -> copy(ms = next)
+        is AutoStep.Gear -> copy(ms = next)
+        is AutoStep.Body -> copy(ms = next)
+    }
 }

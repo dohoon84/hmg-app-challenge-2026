@@ -20,5 +20,7 @@ fun ScenarioPanel(
     onStopAutoPlay: () -> Unit = {},
     captionsOn: Boolean = false,
     onToggleCaptions: () -> Unit = {},
+    showApply: Boolean = true,
+    showValues: Boolean = true,
     modifier: Modifier = Modifier,
 ) = Unit

@@ -8,8 +8,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 
 @Composable
-fun FoundationTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
+fun FoundationTheme(
+    dark: Boolean = isSystemInDarkTheme(),
+    content: @Composable () -> Unit,
+) {
     val base = LocalContext.current
     val themed = remember(base, dark) {
         val config = Configuration(base.resources.configuration)

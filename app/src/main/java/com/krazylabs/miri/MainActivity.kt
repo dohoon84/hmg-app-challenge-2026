@@ -9,6 +9,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -16,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.krazylabs.miri.mvp.FilmingChrome
 import com.krazylabs.miri.ui.FoundationRoute
 import com.krazylabs.miri.ui.FoundationViewModel
 import com.krazylabs.miri.ui.MiriRoute
@@ -45,8 +49,13 @@ class MainActivity : ComponentActivity() {
         onBackPressedDispatcher.addCallback(this, rootBack)
         setContent {
             var showFoundation by rememberSaveable { mutableStateOf(false) }
-            FoundationTheme {
-                if (showFoundation && BuildConfig.DEBUG) {
+            val ui by viewModel.ui.collectAsState()
+            val night = FilmingChrome.useDark(isSystemInDarkTheme(), ui.filming)
+            LaunchedEffect(ui.filming) {
+                if (ui.filming) showFoundation = false
+            }
+            FoundationTheme(dark = night) {
+                if (showFoundation && ui.dev.foundationOverlay) {
                     Box(Modifier.fillMaxSize()) {
                         FoundationRoute(
                             viewModel = foundationViewModel,
@@ -64,7 +73,7 @@ class MainActivity : ComponentActivity() {
                 } else {
                     MiriRoute(
                         viewModel = viewModel,
-                        onOpenFoundation = { showFoundation = true },
+                        onOpenFoundation = { if (ui.dev.foundationOverlay) showFoundation = true },
                     )
                 }
             }

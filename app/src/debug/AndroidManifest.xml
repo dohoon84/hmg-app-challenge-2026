@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!--
+          Debug only. This source set is not merged into release, so the
+          receiver is absent there. No permission: shell sends the broadcast.
+        -->
+        <receiver
+            android:name=".mvp.FilmingReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.krazylabs.miri.action.FILMING" />
+                <action android:name="com.krazylabs.miri.action.AUTOPLAY" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

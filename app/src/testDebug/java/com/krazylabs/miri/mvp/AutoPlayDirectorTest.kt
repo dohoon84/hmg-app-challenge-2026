@@ -118,6 +118,53 @@ class AutoPlayDirectorTest {
     }
 
     @Test
+    fun playFromABeatScalesTheHoldAndLeavesTheFullScriptAlone() = runTest {
+        val paced = AutoPlayScript.paced("F3", 2f)
+        val f3 = paced.indexOfFirst { it is AutoStep.Gear && it.beat == "F3" }
+        assertTrue(f3 > 0)
+        assertTrue(paced.take(f3).all { it.ms == 0L })
+        assertEquals(16_000L, paced[f3].ms)
+        assertEquals(12_000L, paced.last().ms)
+        assertEquals(90_000L, AutoPlayScript.totalMs())
+        assertEquals(7_000L, AutoPlayScript.steps.first().ms)
+        assertTrue(AutoPlayScript.paced("NOPE", 2f).isEmpty())
+
+        val waits = mutableListOf<Long>()
+        val cabin = ScriptedCabinFeed()
+        val director = AutoPlayDirector.forTest(cabin) { waits += it }
+        director.playFrom(RecordingHost(), this, GearPosition.PARK, "F3", 2f)
+        advanceUntilIdle()
+        assertEquals(paced.mapNotNull { step ->
+            when (step) {
+                is AutoStep.Show, is AutoStep.Highlight, is AutoStep.Gear, is AutoStep.Body -> step.ms
+                else -> null
+            }
+        }, waits)
+        assertFalse(cabin.engaged)
+    }
+
+    @Test
+    fun playFromOutsideParkDoesNotEngageOrStopARunningScript() = runTest {
+        val cabin = ScriptedCabinFeed()
+        val host = RecordingHost()
+        val director = AutoPlayDirector.forTest(cabin) { yield() }
+        director.playFrom(host, this, GearPosition.DRIVE, "C1", 2f)
+        advanceUntilIdle()
+        assertFalse(cabin.engaged)
+        assertEquals(0, host.rewinds)
+
+        director.play(host, this, GearPosition.PARK)
+        yield()
+        assertTrue(director.running.value)
+        director.playFrom(host, this, GearPosition.PARK, "NOPE", 2f)
+        assertTrue(director.running.value)
+        assertTrue(cabin.engaged)
+        director.stop()
+        advanceUntilIdle()
+        assertFalse(cabin.engaged)
+    }
+
+    @Test
     fun drivingRaisesTheStandInOdometer() = runTest {
         val cabin = ScriptedCabinFeed()
         val director = AutoPlayDirector.forTest(cabin) {}

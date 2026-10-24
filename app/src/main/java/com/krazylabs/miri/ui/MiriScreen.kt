@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +36,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import com.krazylabs.miri.R
 import com.krazylabs.miri.domain.TurnLamps
 import com.krazylabs.miri.mvp.DemoHighlight
+import com.krazylabs.miri.mvp.FilmingChrome
 import com.krazylabs.miri.mvp.MiriPane
 import com.krazylabs.miri.ui.design.VehicleKind
 import com.krazylabs.miri.ui.design.D1RoadScreen
@@ -59,24 +61,31 @@ fun MiriRoute(
     onOpenFoundation: () -> Unit = {},
 ) {
     val ui by viewModel.ui.collectAsState()
-    val dark = isSystemInDarkTheme()
+    val night = FilmingChrome.useDark(isSystemInDarkTheme(), ui.filming)
     var demoOpen by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(ui.filming) {
+        if (ui.filming) demoOpen = false
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .pointerInput(ui.showScenarioPanel) {
-                if (!ui.showScenarioPanel) return@pointerInput
+            .pointerInput(ui.dev.longPress) {
+                if (!ui.dev.longPress) return@pointerInput
                 detectTapGestures(onLongPress = { demoOpen = !demoOpen })
             },
     ) {
         when (ui.pane) {
-            MiriPane.ICON -> DrivingMark(dark)
+            MiriPane.ICON -> DrivingMark(night)
             MiriPane.F1 -> F1KindScreen(
-                highlighted = if (ui.demoHighlight == DemoHighlight.RENTAL) VehicleKind.RENTAL else null,
+                highlighted = if (ui.dev.highlights && ui.demoHighlight == DemoHighlight.RENTAL) {
+                    VehicleKind.RENTAL
+                } else {
+                    null
+                },
                 onOwn = viewModel::chooseOwnCar,
                 onRental = { viewModel.chooseKind(rental = true) },
                 onShare = { viewModel.chooseKind(rental = false) },
-                dark = dark,
+                dark = night,
             )
             MiriPane.F2 -> F2ReturnScreen(
                 draft = ui.draft,
@@ -95,17 +104,18 @@ fun MiriRoute(
                 onOpenSearch = viewModel::openPlaceSheet,
                 onCloseSearch = viewModel::closePlaceSheet,
             )
-            MiriPane.D1 -> D1RoadScreen(ui.card, dark, onDone = viewModel::dismissCard)
-            MiriPane.D2 -> D2ChargeScreen(ui.card, dark)
+            MiriPane.D1 -> D1RoadScreen(ui.card, night, onDone = viewModel::dismissCard)
+            MiriPane.D2 -> D2ChargeScreen(ui.card, night)
             MiriPane.F3 -> F3ReturnScreen(
                 ui.card,
-                dark,
+                night,
                 onGuide = viewModel::requestReturnGuide,
-                guideNote = ui.guideNote,
+                guideNote = if (ui.dev.returnGuide) ui.guideNote else "",
+                showReturnGuide = ui.dev.returnGuide,
             )
-            MiriPane.CHECK -> CheckPane(ui.card, dark)
+            MiriPane.CHECK -> CheckPane(ui.card, night)
         }
-        if (ui.showScenarioPanel && demoOpen) {
+        if (ui.dev.scenarioPanel && demoOpen) {
             DemoDock(
                 onClose = { demoOpen = false },
                 modifier = Modifier.align(Alignment.TopEnd),
@@ -120,12 +130,14 @@ fun MiriRoute(
                     parked = ui.placeSearchEnabled,
                     onNewRental = viewModel::requestNewRental,
                     playing = ui.demoPlaying,
-                    onAutoPlay = viewModel::startAutoPlay,
+                    onAutoPlay = { viewModel.startAutoPlay() },
                     onStopAutoPlay = viewModel::stopAutoPlay,
                     captionsOn = ui.demoCaptions,
                     onToggleCaptions = viewModel::toggleDemoCaptions,
+                    showApply = ui.dev.applyValues,
+                    showValues = ui.dev.demoValueIndicators,
                 )
-                if (ui.simulator) {
+                if (ui.simulator && ui.dev.lampRow) {
                     LampRow(
                         onLeft = { viewModel.setDemoLamps(TurnLamps(left = true)) },
                         onRight = { viewModel.setDemoLamps(TurnLamps(right = true)) },
@@ -136,8 +148,8 @@ fun MiriRoute(
             }
         }
         DemoCaption(
-            text = ui.demoCaption,
-            enabled = ui.demoCaptions,
+            text = if (ui.dev.captions) ui.demoCaption else "",
+            enabled = ui.dev.captions && ui.demoCaptions,
             modifier = Modifier.align(Alignment.BottomCenter),
         )
     }

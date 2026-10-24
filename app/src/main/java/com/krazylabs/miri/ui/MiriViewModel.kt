@@ -27,6 +27,9 @@ import com.krazylabs.miri.mvp.DriveCueEngine
 import com.krazylabs.miri.mvp.DriveCueInput
 import com.krazylabs.miri.mvp.F2Draft
 import com.krazylabs.miri.mvp.F3Face
+import com.krazylabs.miri.mvp.Filming
+import com.krazylabs.miri.mvp.FilmingChrome
+import com.krazylabs.miri.mvp.FilmingCommand
 import com.krazylabs.miri.mvp.F3Rules
 import com.krazylabs.miri.mvp.MiriPane
 import com.krazylabs.miri.mvp.RearDoorNote
@@ -114,6 +117,8 @@ data class MiriUi(
     val demoCaptions: Boolean = false,
     val demoPlaying: Boolean = false,
     val guideNote: String = "",
+    val dev: FilmingChrome = FilmingChrome(),
+    val filming: Boolean = false,
 )
 
 @HiltViewModel
@@ -131,6 +136,7 @@ class MiriViewModel @Inject constructor(
     private val demo: DemoActions,
     private val cabin: com.krazylabs.miri.vehicle.CabinOverride,
     private val playback: com.krazylabs.miri.mvp.DemoPlayback,
+    private val filming: Filming,
 ) : ViewModel() {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val player = ClipCuePlayer(context, chime, scheduler, tts, focus)
@@ -162,7 +168,17 @@ class MiriViewModel @Inject constructor(
     private var demoReturnMinutes: Int? = null
     private val lampOverride = MutableStateFlow<TurnLamps?>(null)
 
-    private val _ui = MutableStateFlow(MiriUi(simulator = simulator.enabled, showScenarioPanel = BuildConfig.DEBUG))
+    private val _ui = MutableStateFlow(
+        MiriUi(
+            simulator = simulator.enabled,
+            showScenarioPanel = BuildConfig.DEBUG,
+            dev = FilmingChrome.of(
+                filming = false,
+                debug = BuildConfig.DEBUG,
+                returnGuidance = BuildConfig.RETURN_GUIDANCE,
+            ),
+        ),
+    )
     val ui: StateFlow<MiriUi> = _ui.asStateFlow()
 
     init {
@@ -186,6 +202,23 @@ class MiriViewModel @Inject constructor(
             prefs.edit().putBoolean(KEY_ORIGIN_WAIT, false).apply()
         }
         armTicker()
+        viewModelScope.launch {
+            filming.active.collect { publish() }
+        }
+        viewModelScope.launch {
+            filming.signals.collect { applyFilmingCommands() }
+        }
+    }
+
+    private fun applyFilmingCommands() {
+        filming.drain().forEach { command ->
+            when (command) {
+                is FilmingCommand.Play -> startAutoPlay(command.step, command.holdScale)
+                is FilmingCommand.Stop -> stopAutoPlay()
+                is FilmingCommand.Set -> Unit
+                FilmingCommand.Ignore -> Unit
+            }
+        }
     }
 
     private fun armTicker() {
@@ -313,8 +346,14 @@ class MiriViewModel @Inject constructor(
         publish()
     }
 
-    fun startAutoPlay() {
-        playback.play(playbackHost, viewModelScope, drivingStateRepository.state.value.gear)
+    fun startAutoPlay(fromStep: String? = null, holdScale: Float = 1f) {
+        playback.playFrom(
+            playbackHost,
+            viewModelScope,
+            drivingStateRepository.state.value.gear,
+            fromStep,
+            holdScale,
+        )
     }
 
     fun stopAutoPlay() = playback.stop()
@@ -545,6 +584,12 @@ class MiriViewModel @Inject constructor(
                 CueKind.NONE -> play(voice)
             }
         }
+        val filmingOn = filming.active.value
+        val chrome = FilmingChrome.of(
+            filming = filmingOn,
+            debug = BuildConfig.DEBUG,
+            returnGuidance = BuildConfig.RETURN_GUIDANCE,
+        )
         _ui.value = MiriUi(
             pane = step.pane,
             draft = form.draft,
@@ -560,16 +605,18 @@ class MiriViewModel @Inject constructor(
             },
             places = placeChips(),
             scenario = scenarioInput.overrides.value,
-            showScenarioPanel = BuildConfig.DEBUG,
+            showScenarioPanel = chrome.scenarioPanel,
             placeSearchEnabled = gear == GearPosition.PARK,
             placeSheetOpen = placeSheetOpen,
             bookmarks = sheetChips(navigationRepository.bookmarks.value),
             sheetRecents = sheetChips(navigationRepository.recentPlaces.value),
-            demoHighlight = playback.highlight.value,
-            demoCaption = playback.caption.value,
-            demoCaptions = playback.captionsOn.value,
+            demoHighlight = if (chrome.highlights) playback.highlight.value else com.krazylabs.miri.mvp.DemoHighlight.NONE,
+            demoCaption = if (chrome.captions) playback.caption.value else "",
+            demoCaptions = chrome.captions && playback.captionsOn.value,
             demoPlaying = playback.running.value,
-            guideNote = guideNote,
+            guideNote = if (chrome.returnGuide) guideNote else "",
+            dev = chrome,
+            filming = filmingOn,
         )
     }
 

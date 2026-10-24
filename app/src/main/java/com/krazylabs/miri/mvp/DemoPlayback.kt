@@ -20,6 +20,23 @@ interface DemoPlayback {
 
     fun toggleCaptions()
     fun play(host: DemoPlaybackHost, scope: CoroutineScope, realGear: GearPosition = GearPosition.PARK)
+
+    /**
+     * [fromStep] is a beat id, or null to start at F1.
+     * [holdScale] multiplies each step's hold from that beat. Earlier steps
+     * still run so the cabin state is in place, with a zero hold.
+     * Real gear still has to be Park. Release uses the default, which ignores both.
+     */
+    fun playFrom(
+        host: DemoPlaybackHost,
+        scope: CoroutineScope,
+        realGear: GearPosition,
+        fromStep: String?,
+        holdScale: Float,
+    ) {
+        play(host, scope, realGear)
+    }
+
     fun onRealGear(gear: GearPosition) = Unit
     fun stop()
 }
