@@ -2,35 +2,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!--
-      Read permissions for Vehicle State and NaviHelper. Vehicle Control (door, HVAC,
-      window, seat, light), Pleos TextToSpeech, SpeechToText, and FusedLocation are
-      Coming Soon and are not declared. The approval list is published after
-      2026-10-27, so a 1:1 match cannot be confirmed yet.
-      Delete any line that list does not approve, and the same name from
-      allowedPleosReleasePermissions. Each line below is a read, not a set/control API.
-      The fake flavor does not merge this file.
+      Read permissions only. No CONTROL_*, no android CAR_ENERGY, no NAVI_ROUTE_SEARCH.
+      NAVI_ROUTE_SEARCH is declared on the pleos debug source set.
+      AAOS CAR_POWERTRAIN and CAR_INFO are unverified against the console approval list.
     -->
-    <!-- Door position read. Not CONTROL_CAR_DOORS. -->
     <uses-permission android:name="pleos.car.permission.CAR_DOORS" />
-    <!-- Window position read. Window control is Coming Soon. -->
     <uses-permission android:name="pleos.car.permission.CAR_WINDOWS" />
-    <!-- Fuel and battery SOC read. -->
     <uses-permission android:name="pleos.car.permission.CAR_ENERGY" />
-    <!-- Odometer read. Not drive control. -->
+    <uses-permission android:name="pleos.car.permission.CAR_LIGHTS" />
     <uses-permission android:name="pleos.car.permission.CAR_DRIVE" />
-    <!-- VIN read. -->
     <uses-permission android:name="pleos.car.permission.CAR_INFO" />
-    <!--
-      Seat occupancy and belt capability read (checkSeatOccupancyCapabilities,
-      checkSeatBeltBuckledCapabilities). Not seat move or HVAC. Kept because that
-      query is a state read. Drop the line only if the query is removed.
-    -->
     <uses-permission android:name="pleos.car.permission.CAR_SEATS" />
-    <!-- NaviHelper route read. -->
     <uses-permission android:name="pleos.car.permission.NAVI_ROUTE" />
-    <uses-permission android:name="pleos.car.permission.NAVI_ROUTE_SEARCH" />
-    <!-- AAOS GEAR_SELECTION read. -->
     <uses-permission android:name="android.car.permission.CAR_POWERTRAIN" />
-    <!-- Optional RANGE_REMAINING. Dangerous. Remove with the permission button if unused after 2026-10-27. -->
-    <uses-permission android:name="android.car.permission.CAR_ENERGY" />
+    <uses-permission android:name="android.car.permission.CAR_INFO" />
 </manifest>

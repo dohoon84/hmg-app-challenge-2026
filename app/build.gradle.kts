@@ -30,6 +30,40 @@ if (keystorePropertiesFile.isFile) {
     keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
 }
 
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.isFile) {
+    localPropertiesFile.inputStream().use { localProperties.load(it) }
+}
+
+fun loadSecretFile(): Properties {
+    val path = System.getenv("PLEOS_SECRETS_FILE")?.takeIf { it.isNotBlank() } ?: "secrets/pleos-miri.env"
+    val file = rootProject.file(path)
+    val props = Properties()
+    if (file.isFile) file.inputStream().use { props.load(it) }
+    return props
+}
+
+fun secret(name: String): String {
+    System.getenv(name)?.takeIf { it.isNotBlank() }?.let { return it }
+    localProperties.getProperty(name)?.takeIf { it.isNotBlank() }?.let { return it }
+    return loadSecretFile().getProperty(name)?.takeIf { it.isNotBlank() } ?: ""
+}
+
+fun javaLiteral(value: String): String {
+    val escaped = value.replace("\\", "\\\\").replace("\"", "\\\"")
+    return "\"$escaped\""
+}
+
+fun gearBackendLiteral(): String {
+    val raw = System.getenv("MIRI_GEAR_BACKEND")?.takeIf { it.isNotBlank() }
+        ?: localProperties.getProperty("MIRI_GEAR_BACKEND")?.takeIf { it.isNotBlank() }
+        ?: "AAOS"
+    return if (raw.equals("PLEOS", ignoreCase = true)) "PLEOS" else "AAOS"
+}
+
+val teamName = (findProperty("team") as? String)?.takeIf { it.isNotBlank() } ?: "krazylabs"
+
 fun signingProp(name: String): String? =
     keystoreProperties.getProperty(name)?.takeIf { it.isNotBlank() }
         ?: System.getenv(name)?.takeIf { it.isNotBlank() }
@@ -50,19 +84,19 @@ if (releaseStorePath != null && !hasReleaseSigning) {
 }
 
 android {
-    namespace = "io.hmg.appchallenge.foundation"
+    namespace = "com.krazylabs.miri"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "io.hmg.appchallenge.foundation"
+        applicationId = "com.krazylabs.miri"
         minSdk = 28
         targetSdk = 34
         versionCode = 1
-        versionName = "0.1.0-phase0"
+        versionName = "0.2.0-mvp"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    // AAOS Car API (GEAR_SELECTION, CarUxRestrictions, optional RANGE_REMAINING).
+    // AAOS Car API (GEAR_SELECTION, CarUxRestrictions, INFO_* identity).
     // Compile-only optional library. Fake builds never load these classes.
     useLibrary("android.car")
 
@@ -85,12 +119,15 @@ android {
             manifestPlaceholders["automotiveRequired"] = "false"
             buildConfigField("boolean", "USES_AAOS_CAR", "false")
             buildConfigField("String", "SDK_FLAVOR", "\"fake\"")
+            buildConfigField("String", "GEAR_BACKEND", javaLiteral(gearBackendLiteral()))
         }
         create("pleos") {
             dimension = "sdk"
             manifestPlaceholders["automotiveRequired"] = "true"
             buildConfigField("boolean", "USES_AAOS_CAR", "true")
             buildConfigField("String", "SDK_FLAVOR", "\"pleos\"")
+            buildConfigField("String", "GEAR_BACKEND", javaLiteral(gearBackendLiteral()))
+            buildConfigField("String", "PLEOS_PROJECT_ID", javaLiteral(secret("PLEOS_PROJECT_ID")))
         }
     }
 
@@ -211,6 +248,8 @@ val forbiddenPleosReleaseNames = listOf(
     "FakeVehicleRepository",
     "FakeNavigationRepository",
     "FakeDrivingStateRepository",
+    "DemoScenario",
+    "DebugDemoActions",
 )
 
 // Names the app may ship. Library merges (Vehicle binding, AndroidX receiver) are included.
@@ -223,13 +262,13 @@ val allowedPleosReleasePermissions = setOf(
     "pleos.car.permission.CAR_DOORS",
     "pleos.car.permission.CAR_WINDOWS",
     "pleos.car.permission.CAR_ENERGY",
+    "pleos.car.permission.CAR_LIGHTS",
     "pleos.car.permission.CAR_DRIVE",
     "pleos.car.permission.CAR_INFO",
     "pleos.car.permission.CAR_SEATS",
     "pleos.car.permission.NAVI_ROUTE",
-    "pleos.car.permission.NAVI_ROUTE_SEARCH",
     "android.car.permission.CAR_POWERTRAIN",
-    "android.car.permission.CAR_ENERGY",
+    "android.car.permission.CAR_INFO",
     // Merged from the Vehicle SDK AAR. Confirm against the post-2026-10-27 approval list.
     "ai.pleos.playground.service.vehicle.VEHICLE_BINDING",
     "$pleosApplicationId.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
@@ -238,7 +277,7 @@ val allowedPleosReleasePermissions = setOf(
 tasks.register("checkPleosReleaseContents") {
     group = "verification"
     description = "Fail the pleos release APK when it contains the fake flavor or an extra permission."
-    dependsOn("assemblePleosRelease")
+    dependsOn("assemblePleosRelease", "checkSecretsNotTracked")
     inputs.file(pleosReleaseMergedManifest)
     doLast {
         // Dex class-name scan is valid only while release isMinifyEnabled is false.
@@ -265,7 +304,6 @@ tasks.register("checkPleosReleaseContents") {
         val forbidden = listOf(
             "CONTROL_CAR",
             "PRIVATE_CAR_SAFETY",
-            "CAR_LIGHTS",
             "PERF_VEHICLE_SPEED",
         )
         val forbiddenHit = permissions.firstOrNull { name ->
@@ -309,5 +347,28 @@ tasks.register<Copy>("exportContestApk") {
     exclude("*unaligned*")
     exclude("*unsigned*")
     into(rootProject.layout.projectDirectory.dir("apk"))
-    rename { "placeholder-team_foundation_release.apk" }
+    rename { "${teamName}_miri_release.apk" }
+}
+
+tasks.register("checkSecretsNotTracked") {
+    group = "verification"
+    description = "Fail when local.properties, secrets/, or an env file is git-tracked."
+    doLast {
+        val root = rootProject.projectDir
+        val process = ProcessBuilder("git", "ls-files")
+            .directory(root)
+            .redirectErrorStream(true)
+            .start()
+        val tracked = process.inputStream.bufferedReader().readText()
+        val code = process.waitFor()
+        if (code != 0) throw GradleException("git ls-files failed: $tracked")
+        val bad = tracked.lineSequence().filter { line ->
+            line == "local.properties" ||
+                line == "secrets" ||
+                line.startsWith("secrets/") ||
+                line.endsWith(".env") ||
+                line.contains("/.env")
+        }.toList()
+        if (bad.isNotEmpty()) throw GradleException("secret files are tracked: $bad")
+    }
 }
