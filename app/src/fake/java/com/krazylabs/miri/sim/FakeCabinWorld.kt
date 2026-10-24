@@ -3,6 +3,7 @@ package com.krazylabs.miri.sim
 import com.krazylabs.miri.domain.ArrivalSnapshot
 import com.krazylabs.miri.domain.DestinationSnapshot
 import com.krazylabs.miri.domain.CarFacts
+import com.krazylabs.miri.domain.ConnectorCodes
 import com.krazylabs.miri.domain.DoorId
 import com.krazylabs.miri.domain.DrivingSnapshot
 import com.krazylabs.miri.domain.GearPosition
@@ -158,7 +159,7 @@ class FakeCabinWorld @Inject constructor() : CabinSimulator {
                 fuelTypes = intArrayOf(CarFacts.FUEL_ELECTRIC),
                 fuelDoor = null,
                 evPort = CarFacts.PORT_REAR_RIGHT,
-                connector = intArrayOf(CarFacts.CONNECTOR_COMBO_2),
+                connector = intArrayOf(ConnectorCodes.VHAL_IEC_TYPE_1_CCS_DC),
             ),
             seats = seatSupport(
                 occupancyAreas = setOf(SeatId.DRIVER, SeatId.PASSENGER),
