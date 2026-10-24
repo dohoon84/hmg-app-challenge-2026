@@ -15,15 +15,30 @@ data class D2Face(
 )
 
 /**
+ * One key for the D2 card and for D2-b. Empty when both parts are blank, and
+ * nothing may be recorded in that case. The separator keeps "A"+"BC" distinct
+ * from "AB"+"C".
+ */
+object RouteKey {
+    fun of(destinationName: String?, routeId: String?): String {
+        val name = destinationName?.trim().orEmpty()
+        val route = routeId?.trim().orEmpty()
+        if (name.isEmpty() && route.isEmpty()) return ""
+        return "$name+$route"
+    }
+}
+
+object CarSpec {
+    /** No reviewed spec pack is shipped. CAR_INFO is the only source, so it agrees with itself. */
+    fun agrees(identity: CarIdentity): Boolean = true
+}
+
+/**
  * D2 common conditions. An empty fuel type or an empty port drops the whole card.
  * An unknown connector drops only the connector sentence and chip.
  * A missing port clip, including a center port or a multi-fuel car, keeps the card
  * and drops every D2-a and D2-b sentence together.
  */
-object CarSpec {
-    /** No reviewed spec pack is shipped. CAR_INFO is the only source, so it agrees with itself. */
-    fun agrees(identity: CarIdentity): Boolean = true
-}
 object D2Rules {
     fun offer(
         identity: CarIdentity,

@@ -44,4 +44,9 @@ class MainActivity : ComponentActivity() {
         viewModel.onHostPause()
         super.onPause()
     }
+
+    override fun onStop() {
+        viewModel.onHostStop()
+        super.onStop()
+    }
 }

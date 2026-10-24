@@ -11,13 +11,20 @@ import java.util.concurrent.atomic.AtomicBoolean
  * [SpeechEngine.warmUp] starts before the first gap. The leading silence counts
  * toward [FocusedAnnouncer.ENGINE_READY_WAIT_MS], the same cap as [FocusedAnnouncer].
  * A missing engine, or one that is still not ready when that cap is reached,
- * plays the chime for that sentence. Later sentences in the same cue do not
- * wait another cap. The turn-signal prompt uses [chime] only.
+ * rings the chime once for the whole batch. Later sentences in the same cue do
+ * not wait another cap and do not ring again. A later real clip in that batch
+ * still plays. The turn-signal prompt uses [chime] only, one ring per call.
+ *
+ * [SpeechFocus.requestMayDuck] asks for
+ * [android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK] before any
+ * clip, speech, or chime, and [SpeechFocus.abandon] runs when the batch ends
+ * or [stop] runs. Any focus loss stops the clip and TTS.
  */
 class ClipCuePlayer(
     private val chime: ChimePlayer,
     private val scheduler: SpeechScheduler,
     private val tts: SpeechEngine,
+    private val focus: SpeechFocus,
     private val clipId: (String) -> Int,
     private val openClip: (Int) -> ChimePlayer,
 ) {
@@ -26,10 +33,12 @@ class ClipCuePlayer(
         chime: ChimePlayer,
         scheduler: SpeechScheduler,
         tts: SpeechEngine,
+        focus: SpeechFocus,
     ) : this(
         chime,
         scheduler,
         tts,
+        focus,
         clipId = { key -> context.resources.getIdentifier(key, "raw", context.packageName) },
         openClip = { id -> RawClipPlayer(context, id) },
     )
@@ -38,6 +47,8 @@ class ClipCuePlayer(
     private var ticket: SpeechTicket? = null
     private var readyTicket: SpeechTicket? = null
     private var clip: ChimePlayer? = null
+    private var holdingFocus = false
+    private var batchChimed = false
 
     fun stop() {
         generation += 1
@@ -49,16 +60,21 @@ class ClipCuePlayer(
         clip = null
         tts.stop()
         chime.stop()
+        releaseFocus()
     }
 
     fun chime() {
         stop()
-        chime.play {}
+        val gen = generation
+        if (!acquire(gen)) return
+        chime.play { release(gen) }
     }
 
     fun clips(keys: List<String>) {
         stop()
+        batchChimed = false
         val gen = generation
+        if (!acquire(gen)) return
         val steps = ArrayList<Step>(keys.size)
         for (key in keys) {
             val id = clipId(key)
@@ -72,11 +88,48 @@ class ClipCuePlayer(
             }
         }
         if (steps.isEmpty()) {
-            chime.play {}
+            chime.play { release(gen) }
             return
         }
         tts.warmUp()
         enqueue(steps, 0, leading = true, waitedMs = 0L, gen = gen)
+    }
+
+    private fun acquire(gen: Int): Boolean {
+        holdingFocus = true
+        val granted = focus.requestMayDuck {
+            if (gen != generation) return@requestMayDuck
+            stop()
+        }
+        if (gen != generation) return false
+        if (!granted) {
+            releaseFocus()
+            return false
+        }
+        return true
+    }
+
+    private fun release(gen: Int) {
+        if (gen != generation) return
+        releaseFocus()
+    }
+
+    private fun releaseFocus() {
+        if (!holdingFocus) return
+        holdingFocus = false
+        focus.abandon()
+    }
+
+    /** At most one chime in the current [clips] batch. The queue still continues. */
+    private fun ringOnce(gen: Int, onFinished: () -> Unit) {
+        if (batchChimed) {
+            if (gen == generation) onFinished()
+            return
+        }
+        batchChimed = true
+        chime.play {
+            if (gen == generation) onFinished()
+        }
     }
 
     private fun enqueue(
@@ -86,7 +139,11 @@ class ClipCuePlayer(
         waitedMs: Long,
         gen: Int,
     ) {
-        if (gen != generation || index >= steps.size) return
+        if (gen != generation) return
+        if (index >= steps.size) {
+            release(gen)
+            return
+        }
         val delay = if (leading) FocusedAnnouncer.LEADING_SILENCE_MS else GAP_MS
         ticket = scheduler.post(delay) {
             if (gen != generation) return@post
@@ -146,9 +203,7 @@ class ClipCuePlayer(
         if (gen != generation) return
         if (!tts.ready) {
             if (VoiceFallback.whenEngineUnavailable() != VoicePath.CHIME) return
-            chime.play {
-                if (gen == generation) onFinished()
-            }
+            ringOnce(gen) { onFinished() }
             return
         }
         try {
@@ -156,16 +211,14 @@ class ClipCuePlayer(
                 text,
                 onDone = { if (gen == generation) onFinished() },
                 onError = {
-                    if (gen == generation) {
-                        chime.play { if (gen == generation) onFinished() }
-                    }
+                    if (gen == generation) ringOnce(gen) { onFinished() }
                 },
                 onStop = { },
             )
         } catch (error: Throwable) {
             tts.stop()
             if (gen != generation) return
-            chime.play { if (gen == generation) onFinished() }
+            ringOnce(gen) { onFinished() }
         }
     }
 

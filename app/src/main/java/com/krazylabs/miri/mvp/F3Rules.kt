@@ -45,12 +45,13 @@ object F3Rules {
             lines += "${clock(depart, zone)}쯤 출발하면 여유 있게 도착해요."
         } else {
             val remainMs = (returnAtMs - nowMs).coerceAtLeast(0)
-            val minutes = ((remainMs + 59_999L) / 60_000L).toInt()
-            val left = if (minutes >= 60) {
-                val hours = (minutes + 59) / 60
-                "${hours}시간"
-            } else {
-                "${minutes}분"
+            val totalMinutes = (remainMs / 60_000L).toInt()
+            val hours = totalMinutes / 60
+            val minutes = totalMinutes % 60
+            val left = when {
+                hours > 0 && minutes > 0 -> "${hours}시간 ${minutes}분"
+                hours > 0 -> "${hours}시간"
+                else -> "${minutes}분"
             }
             lines += "반납 ${clock(returnAtMs, zone)}까지 ${left} 남았어요."
         }

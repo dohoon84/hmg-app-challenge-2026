@@ -172,7 +172,7 @@ class CardSession {
         held = id
         heldAt = input.nowMs
         if (id == CardId.D1) input.d1?.routeId?.let { toldRoutes += it }
-        if (id == CardId.D2) input.d2?.routeKey?.let { toldD2 += it }
+        if (id == CardId.D2) input.d2?.routeKey?.takeIf { it.isNotEmpty() }?.let { toldD2 += it }
         if (id == CardId.F3) input.f3?.let { shownF3 += F3Rules.coveredBy(it.key) }
         if (id == CardId.CHECK) checkShows += 1
         if (id == deferred) {
