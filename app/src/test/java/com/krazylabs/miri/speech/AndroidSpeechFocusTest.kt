@@ -64,4 +64,19 @@ class AndroidSpeechFocusTest {
         assertEquals(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION, attributes.usage)
         assertEquals(AudioAttributes.CONTENT_TYPE_SPEECH, attributes.contentType)
     }
+
+    @Test
+    fun speechUsageCanSwitchToNavigationGuidance() {
+        val previous = SpeechUsage.mode
+        try {
+            SpeechUsage.apply(SpeechUsage.NAVIGATION_GUIDANCE)
+            assertEquals(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE, speechAudioAttributes().usage)
+            SpeechUsage.apply(SpeechUsage.SONIFICATION)
+            assertEquals(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION, speechAudioAttributes().usage)
+            SpeechUsage.apply("anything-else")
+            assertEquals(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION, speechAudioAttributes().usage)
+        } finally {
+            SpeechUsage.apply(previous)
+        }
+    }
 }

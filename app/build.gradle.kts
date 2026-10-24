@@ -94,6 +94,8 @@ android {
         versionCode = 1
         versionName = "0.2.0-mvp"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // M6 can flip this to NAVIGATION_GUIDANCE. The debug panel overrides it at runtime.
+        buildConfigField("String", "SPEECH_USAGE", "\"SONIFICATION\"")
     }
 
     // AAOS Car API (GEAR_SELECTION, CarUxRestrictions, INFO_* identity).

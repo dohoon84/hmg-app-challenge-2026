@@ -1,8 +1,10 @@
 package com.krazylabs.miri.mvp
 
 import com.krazylabs.miri.domain.CarIdentity
+import com.krazylabs.miri.domain.DestinationSnapshot
 import com.krazylabs.miri.domain.FuelKind
 import com.krazylabs.miri.domain.PortSide
+import java.util.Locale
 
 data class D2Face(
     val title: String,
@@ -15,15 +17,32 @@ data class D2Face(
 )
 
 /**
+ * One key for the D2 card and for D2-b.
+ * A destination is its name plus lat/lon rounded to 4 decimals, so a cleared
+ * routeId or a reroute does not change the key. [routeId] is used only when
+ * there is no destination. An empty result is not recorded in the route set.
+ */
+object RouteKey {
+    fun of(destination: DestinationSnapshot?, routeId: String?): String {
+        if (destination == null) return routeId?.trim().orEmpty()
+        val name = destination.name.trim()
+        val lat = "%.4f".format(Locale.US, destination.latitude)
+        val lon = "%.4f".format(Locale.US, destination.longitude)
+        return "$name@$lat,$lon"
+    }
+}
+
+object CarSpec {
+    /** No reviewed spec pack is shipped. CAR_INFO is the only source, so it agrees with itself. */
+    fun agrees(identity: CarIdentity): Boolean = true
+}
+
+/**
  * D2 common conditions. An empty fuel type or an empty port drops the whole card.
  * An unknown connector drops only the connector sentence and chip.
  * A missing port clip, including a center port or a multi-fuel car, keeps the card
  * and drops every D2-a and D2-b sentence together.
  */
-object CarSpec {
-    /** No reviewed spec pack is shipped. CAR_INFO is the only source, so it agrees with itself. */
-    fun agrees(identity: CarIdentity): Boolean = true
-}
 object D2Rules {
     fun offer(
         identity: CarIdentity,

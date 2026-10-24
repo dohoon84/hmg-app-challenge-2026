@@ -1,9 +1,10 @@
 package com.krazylabs.miri.domain
 
 /**
- * AAOS INFO_* integers (API 34 [android.car.EvConnectorType], [android.car.PortLocationType]).
+ * AAOS INFO_* integers (API 34 fuel type and [android.car.PortLocationType]).
  * Empty or unknown values stay empty.
- * DC combo is COMBO_1 (4, CCS1) and COMBO_2 (5, CCS2). CHAdeMO is 3. 6 is TESLA_ROADSTER.
+ * Connector integers are VHAL / [android.car.hardware.property.EvChargingConnectorType]
+ * because the card reads them from CarPropertyManager. See [ConnectorCodes].
  */
 enum class FuelKind {
     GASOLINE,
@@ -45,11 +46,11 @@ object CarFacts {
     const val PORT_REAR_LEFT = 4
     const val PORT_FRONT = 5
     const val PORT_REAR = 6
-    const val CONNECTOR_CHADEMO = 3
-    const val CONNECTOR_COMBO_1 = 4
-    const val CONNECTOR_COMBO_2 = 5
-    const val CONNECTOR_TESLA_ROADSTER = 6
 
+    /**
+     * [connector] is the raw CarPropertyManager array ([ConnectorCodes.DC_COMBO] is {5, 6}).
+     * CCS1 and CCS2 set [CarIdentity.connectorDcCombo]. CHAdeMO (4), AC (1–3), Tesla (7), and unknown do not.
+     */
     fun from(
         fuelTypes: IntArray,
         fuelDoor: Int?,
@@ -59,7 +60,7 @@ object CarFacts {
         fuels = fuelTypes.toList().mapNotNull(::fuel).distinct(),
         fuelDoor = fuelDoor?.let(::port),
         evPort = evPort?.let(::port),
-        connectorDcCombo = connector.any { it == CONNECTOR_COMBO_1 || it == CONNECTOR_COMBO_2 },
+        connectorDcCombo = ConnectorCodes.dcCombo(connector),
     )
 
     fun fuel(code: Int): FuelKind? = when (code) {

@@ -131,6 +131,10 @@ class PleosCarClient internal constructor(
         override fun unbind() {
             unregisterManagers()
         }
+
+        override fun attachCar(car: Car) {
+            ConnectorDebug.attach(car)
+        }
     }
 
     fun start() {
@@ -237,12 +241,27 @@ class PleosCarClient internal constructor(
     }
 
     private fun readIdentity(port: PropertyPort) {
+        val connector = readInts(port, VehiclePropertyIds.INFO_EV_CONNECTOR_TYPE)
         _identity.value = AaosIdentity(
             fuelTypes = readInts(port, VehiclePropertyIds.INFO_FUEL_TYPE),
             fuelDoor = readInt(port, VehiclePropertyIds.INFO_FUEL_DOOR_LOCATION),
             evPort = readInt(port, VehiclePropertyIds.INFO_EV_PORT_LOCATION),
-            connector = readInts(port, VehiclePropertyIds.INFO_EV_CONNECTOR_TYPE),
+            connector = connector,
         )
+        ConnectorDebug.log(connector)
+    }
+
+    /**
+     * Debug builds re-read the connector and log tag `MiriConnector`:
+     * CarPropertyManager, CarInfoManager.getEvConnectorTypes(), and the Pleos enum name.
+     * Release builds return null and do not log.
+     */
+    fun debugProbeConnectors(): String? {
+        checkMainThread()
+        val port = propertyPort ?: return null
+        return ConnectorDebug.probe {
+            readInts(port, VehiclePropertyIds.INFO_EV_CONNECTOR_TYPE)
+        }
     }
 
     internal fun readInt(port: PropertyPort, propertyId: Int): Int? =
@@ -294,6 +313,7 @@ class PleosCarClient internal constructor(
     }
 
     private fun disconnect() {
+        ConnectorDebug.clear()
         // Bump the generation before releasing so a listener re-entered from disconnect is stale.
         connectGen.incrementAndGet()
         unregisterManagers()
@@ -389,6 +409,9 @@ internal interface CarHost {
     fun bindProperties(port: PropertyPort)
     fun bindUx(car: Car)
     fun unbind()
+
+    /** Kept for the debug connector probe. Production bind does not require it. */
+    fun attachCar(car: Car) {}
 }
 
 /** One Car session. [disconnect] is safe to call again while a release is already in progress. */
@@ -430,6 +453,7 @@ private class AndroidCarLink(
 
     override fun bindSignals() {
         val manager = car.getCarManager(Car.PROPERTY_SERVICE) as? CarPropertyManager
+        host.attachCar(car)
         if (manager != null) {
             host.bindProperties(CarPropertyPort(manager))
         }

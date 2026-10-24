@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.krazylabs.miri.BuildConfig
+import com.krazylabs.miri.mvp.CardVoiceGate
 import com.krazylabs.miri.domain.GearPosition
 import com.krazylabs.miri.domain.PlaceRequest
 import com.krazylabs.miri.domain.TripEstimate
@@ -27,6 +28,7 @@ import com.krazylabs.miri.mvp.F3Rules
 import com.krazylabs.miri.mvp.MiriPane
 import com.krazylabs.miri.mvp.RearDoorNote
 import com.krazylabs.miri.mvp.RentalArm
+import com.krazylabs.miri.mvp.RouteKey
 import com.krazylabs.miri.mvp.ReturnForm
 import com.krazylabs.miri.mvp.ScenarioInput
 import com.krazylabs.miri.mvp.ScenarioOverrides
@@ -41,10 +43,13 @@ import com.krazylabs.miri.speech.ChimePlayer
 import com.krazylabs.miri.speech.ClipCuePlayer
 import com.krazylabs.miri.speech.SpeechEngine
 import com.krazylabs.miri.speech.SpeechFocus
+import com.krazylabs.miri.speech.SpeechHalt
 import com.krazylabs.miri.speech.SpeechScheduler
+import com.krazylabs.miri.speech.SpeechUsage
 import com.krazylabs.miri.vehicle.VehicleRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -102,8 +107,11 @@ class MiriViewModel @Inject constructor(
     private val demo: DemoActions,
 ) : ViewModel() {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    private val player = ClipCuePlayer(context, chime, scheduler, tts)
+    private val player = ClipCuePlayer(context, chime, scheduler, tts, focus)
     private val speechFocus = focus
+    private val speechHalt = SpeechHalt()
+    private val cardVoice = CardVoiceGate()
+    private var ticker: Job? = null
     private val driveCue = DriveCueEngine()
     private val form = ReturnForm()
     private val session = CardSession()
@@ -142,9 +150,14 @@ class MiriViewModel @Inject constructor(
                 today,
             )
         }
-        viewModelScope.launch {
-            while (isActive) {
-                if (hostVisible) publish()
+        armTicker()
+    }
+
+    private fun armTicker() {
+        if (ticker?.isActive == true) return
+        ticker = viewModelScope.launch {
+            while (isActive && hostVisible) {
+                publish()
                 delay(250)
             }
         }
@@ -154,6 +167,9 @@ class MiriViewModel @Inject constructor(
         edgesOpen = false
         edgesAtMs = 0L
         hostVisible = false
+        ticker?.cancel()
+        ticker = null
+        player.stop()
         publish()
     }
 
@@ -164,6 +180,12 @@ class MiriViewModel @Inject constructor(
         session.onResume()
         vehicleRepository.refresh()
         navigationRepository.refreshRoute()
+        armTicker()
+    }
+
+    /** The activity is no longer visible. Stop clip and TTS even if pause already did. */
+    fun onHostStop() {
+        player.stop()
     }
 
     fun chooseOwnCar() {
@@ -238,6 +260,7 @@ class MiriViewModel @Inject constructor(
         val now = System.currentTimeMillis()
         if (!edgesOpen && edgesAtMs != 0L && now >= edgesAtMs) edgesOpen = true
         val scenario = scenarioInput.overrides.value
+        SpeechUsage.apply(scenario.speechUsage.ifBlank { BuildConfig.SPEECH_USAGE })
         val gear = drivingStateRepository.state.value.gear
         val moving = gear == GearPosition.DRIVE || gear == GearPosition.REVERSE
         if (moving && !wasMoving) {
@@ -274,7 +297,8 @@ class MiriViewModel @Inject constructor(
             else -> DestinationRole.OTHER
         }
         val identity = snapshot.identity
-        val routeKey = road.routeId.ifEmpty { destination?.name.orEmpty() }
+        val routeKey = RouteKey.of(destination, road.routeId)
+        val navVoice = speechFocus.navigationOrAssistantActive()
         val d2 = D2Rules.offer(identity, role, specAgrees = CarSpec.agrees(identity), routeKey = routeKey)
         val remainMeters = scenario.remainMeters ?: destination?.remainDistance
         val remainSeconds = scenario.remainSeconds ?: destination?.remainTime
@@ -283,10 +307,10 @@ class MiriViewModel @Inject constructor(
                 nowMs = now,
                 driveGear = gear == GearPosition.DRIVE,
                 lamps = lamps,
-                navVoice = speechFocus.navigationOrAssistantActive(),
+                navVoice = navVoice,
                 holdMs = scenario.turnMs,
                 acceptEdges = edgesOpen,
-                routeId = road.routeId.ifEmpty { destination?.name.orEmpty() },
+                routeId = routeKey,
                 d2bEligible = d2 != null && d2.arrivalClips.isNotEmpty(),
                 remainMeters = remainMeters,
                 remainSeconds = remainSeconds,
@@ -373,10 +397,21 @@ class MiriViewModel @Inject constructor(
                 showGuide = scenario.showReturnGuide,
             ),
         )
-        when (cue.kind) {
-            CueKind.CHIME -> player.chime()
-            CueKind.CLIPS -> player.clips(cue.clips)
-            CueKind.NONE -> play(step.voice)
+        val cardOpen = hostVisible && step.card != null && cue.kind == CueKind.NONE
+        val voice = cardVoice.decide(
+            offered = if (cardOpen) step.voice else VoicePlay.None,
+            cardOpen = cardOpen,
+            moving = moving || !hostVisible,
+            navSpeaking = navVoice,
+            nowMs = now,
+        )
+        if (speechHalt.shouldStop(hostVisible, gear, navVoice)) player.stop()
+        if (hostVisible) {
+            when (cue.kind) {
+                CueKind.CHIME -> player.chime()
+                CueKind.CLIPS -> player.clips(cue.clips)
+                CueKind.NONE -> play(voice)
+            }
         }
         _ui.value = MiriUi(
             pane = step.pane,

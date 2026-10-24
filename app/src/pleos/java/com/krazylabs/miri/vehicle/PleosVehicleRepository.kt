@@ -81,6 +81,11 @@ class PleosVehicleRepository @Inject constructor(
     private val rereads = CopyOnWriteArrayList<() -> Unit>()
     private val hazardDetector = HazardDetector()
 
+    /** Written on [scope] (main). Volatile so a late callback cannot publish a stale pair. */
+    @Volatile private var seatOccupancy: Pair<SignalAccess, Set<SeatId>>? = null
+
+    @Volatile private var seatBelt: Pair<SignalAccess, Set<SeatId>>? = null
+
     private val _link = MutableStateFlow(LinkState.IDLE)
     override val link: StateFlow<LinkState> = _link
 
@@ -156,6 +161,8 @@ class PleosVehicleRepository @Inject constructor(
         identityJob?.cancel()
         identityJob = null
         rereads.clear()
+        seatOccupancy = null
+        seatBelt = null
         listeners.close()
         sessionToken = 0
         val current = vehicle
@@ -495,33 +502,40 @@ class PleosVehicleRepository @Inject constructor(
         }
     }
 
+    private fun publishSeats(token: Int) {
+        val occ = seatOccupancy ?: return
+        val bel = seatBelt ?: return
+        if (!live(token)) return
+        _snapshot.update { snapshot ->
+            snapshot.copy(
+                seats = seatSupport(occ.second, bel.second, occ.first, bel.first),
+                updatedAtEpochMs = System.currentTimeMillis(),
+            )
+        }
+    }
+
+    private fun onMain(token: Int, block: () -> Unit) {
+        scope.launch {
+            if (!live(token)) return@launch
+            block()
+        }
+    }
+
     private fun subscribeSeats() {
         val token = sessionToken
         val current = vehicle ?: return
         val seat = VehicleDomains.seat(current)
-        var occupancy: Pair<SignalAccess, Set<SeatId>>? = null
-        var belt: Pair<SignalAccess, Set<SeatId>>? = null
-        fun publish() {
-            val occ = occupancy ?: return
-            val bel = belt ?: return
-            if (!live(token)) return
-            _snapshot.update { snapshot ->
-                snapshot.copy(
-                    seats = seatSupport(occ.second, bel.second, occ.first, bel.first),
-                    updatedAtEpochMs = System.currentTimeMillis(),
-                )
-            }
-        }
         try {
         seat.checkSeatOccupancyCapabilities(
             { config, areas ->
+                onMain(token) {
                 val ids = areas.mapNotNull { it.toSeatId() }.toSet()
-                occupancy = config.accessType.toSignal() to ids
-                publish()
-                if (!live(token) || !config.accessType.toSignal().allowsRead()) {
-                    return@checkSeatOccupancyCapabilities
+                seatOccupancy = config.accessType.toSignal() to ids
+                publishSeats(token)
+                if (!config.accessType.toSignal().allowsRead()) {
+                    return@onMain
                 }
-                val driver = areas.firstOrNull { it.toSeatId() == SeatId.DRIVER } ?: return@checkSeatOccupancyCapabilities
+                val driver = areas.firstOrNull { it.toSeatId() == SeatId.DRIVER } ?: return@onMain
                 val listener = object : SeatOccupancyListener {
                     override fun onSeatOccupancyUpdated(occupancy: Boolean?) {
                         if (live(token)) updateOccupied(occupancy)
@@ -546,22 +560,29 @@ class PleosVehicleRepository @Inject constructor(
                 } catch (error: Throwable) {
                     note(error)
                 }
+                }
             },
             { error ->
-                occupancy = SignalAccess.NONE to emptySet()
-                if (live(token)) note(error)
-                publish()
+                onMain(token) {
+                    seatOccupancy = SignalAccess.NONE to emptySet()
+                    note(error)
+                    publishSeats(token)
+                }
             },
         )
         seat.checkSeatBeltBuckledCapabilities(
             { config, areas ->
-                belt = config.accessType.toSignal() to areas.mapNotNull { it.toSeatId() }.toSet()
-                publish()
+                onMain(token) {
+                    seatBelt = config.accessType.toSignal() to areas.mapNotNull { it.toSeatId() }.toSet()
+                    publishSeats(token)
+                }
             },
             { error ->
-                belt = SignalAccess.NONE to emptySet()
-                if (live(token)) note(error)
-                publish()
+                onMain(token) {
+                    seatBelt = SignalAccess.NONE to emptySet()
+                    note(error)
+                    publishSeats(token)
+                }
             },
         )
         } catch (error: Throwable) {
