@@ -17,7 +17,7 @@ fun FoundationTheme(content: @Composable () -> Unit) {
         config.uiMode = (config.uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or night
         base.createConfigurationContext(config)
     }
-    val colors = iviColors(themed)
+    val colors = remember(themed) { iviColors(themed) }
     ProvideIviColors(colors) {
         MaterialTheme(
             colorScheme = iviMaterialColors(colors, dark),

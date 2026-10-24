@@ -79,8 +79,18 @@ data class IviColors(
      * and icons clear 4.5:1. Dark stays the driving-alert red.
      */
     val statusError: Color,
-    /** ivi_driving_alert. Pleos driving alert is #FF8A00 in light and dark. */
+    /** ivi_driving_alert. Official Pleos driving alert, #FF8A00 in light and dark. */
     val drivingAlert: Color,
+    /**
+     * Fill behind the door-open warning. Light is [drivingAlert]. Dark matches
+     * the surface so the screen color does not change.
+     */
+    val drivingAlertContainer: Color,
+    /**
+     * Text on [drivingAlertContainer]. Light is #121417. Dark is [drivingAlert],
+     * so the warning stays orange text.
+     */
+    val onDrivingAlert: Color,
     /**
      * ivi_informative_negative. App-defined, not an official Pleos token.
      * The official guide has no red informative color. Light and dark differ.
@@ -113,6 +123,8 @@ fun iviColors(context: Context): IviColors {
         statusCautionIcon = color(R.color.ivi_status_caution_icon),
         statusError = color(R.color.ivi_status_error),
         drivingAlert = color(R.color.ivi_driving_alert),
+        drivingAlertContainer = color(R.color.ivi_driving_alert_container),
+        onDrivingAlert = color(R.color.ivi_on_driving_alert),
         informativeNegative = color(R.color.ivi_informative_negative),
         statusNeutral = text.copy(alpha = TEXT_TERTIARY),
     )

@@ -14,4 +14,8 @@
     <color name="ivi_informative_negative">#FF4C28</color>
     <color name="ivi_status_error">@color/ivi_informative_negative</color>
     <color name="ivi_driving_alert">#FF8A00</color>
+    <!-- Matches the dark surface so the fill does not change the screen. -->
+    <color name="ivi_driving_alert_container">@color/ivi_surface_primary</color>
+    <!-- Dark warning text stays the official alert orange. -->
+    <color name="ivi_on_driving_alert">@color/ivi_driving_alert</color>
 </resources>

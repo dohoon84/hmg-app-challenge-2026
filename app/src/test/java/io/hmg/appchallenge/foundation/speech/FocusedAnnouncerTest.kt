@@ -100,9 +100,29 @@ class FocusedAnnouncerTest {
         assertEquals(0, harness.tts.speaks)
         assertEquals(0, harness.chime.plays)
         harness.tts.becomeReady()
-        harness.scheduler.fire()
         assertEquals(1, harness.tts.speaks)
         assertEquals("안녕", harness.tts.last)
+        harness.scheduler.fire()
+        assertEquals(1, harness.tts.speaks)
+        assertEquals(0, harness.chime.plays)
+    }
+
+    @Test
+    fun engineReadyAt300msSpeaksWithin400ms() = onMain {
+        val harness = Harness(pending = true)
+        harness.announcer.announce("안녕")
+        harness.scheduler.fire()
+        assertEquals(FocusedAnnouncer.LEADING_SILENCE_MS, harness.scheduler.now)
+        assertEquals(0, harness.tts.speaks)
+        harness.scheduler.elapse(300L - harness.scheduler.now)
+        assertEquals(300L, harness.scheduler.now)
+        harness.tts.becomeReady()
+        assertEquals(1, harness.tts.speaks)
+        assertEquals("안녕", harness.tts.last)
+        assertTrue(harness.scheduler.now <= 400L)
+        assertEquals(0, harness.chime.plays)
+        harness.scheduler.fire()
+        assertEquals(1, harness.tts.speaks)
         assertEquals(0, harness.chime.plays)
     }
 
@@ -226,14 +246,27 @@ class FocusedAnnouncerTest {
         private var onDone: (() -> Unit)? = null
         private var onError: (() -> Unit)? = null
         private var onStopCallback: (() -> Unit)? = null
+        private val readyListeners = mutableListOf<() -> Unit>()
 
         override fun warmUp() {
             warmUps += 1
             if (mode == Readiness.READY) ready = true
         }
 
+        override fun whenReady(onReady: () -> Unit): SpeechTicket {
+            if (ready) {
+                onReady()
+                return SpeechTicket {}
+            }
+            readyListeners += onReady
+            return SpeechTicket { readyListeners.remove(onReady) }
+        }
+
         fun becomeReady() {
             ready = true
+            val listeners = readyListeners.toList()
+            readyListeners.clear()
+            listeners.forEach { it() }
         }
 
         override fun speak(
@@ -269,6 +302,7 @@ class FocusedAnnouncerTest {
 
         override fun shutdown() {
             shutdowns += 1
+            readyListeners.clear()
             stop()
             ready = false
         }
@@ -322,6 +356,7 @@ class FocusedAnnouncerTest {
     private class ManualScheduler : SpeechScheduler {
         var pending: (() -> Unit)? = null
         var delayMs: Long = -1
+        var now: Long = 0
 
         override fun post(delayMs: Long, block: () -> Unit): SpeechTicket {
             this.delayMs = delayMs
@@ -332,9 +367,15 @@ class FocusedAnnouncerTest {
         }
 
         fun fire() {
-            val block = pending
+            val block = pending ?: return
+            if (delayMs >= 0) now += delayMs
             pending = null
-            block?.invoke()
+            delayMs = -1
+            block()
+        }
+
+        fun elapse(ms: Long) {
+            now += ms
         }
     }
 

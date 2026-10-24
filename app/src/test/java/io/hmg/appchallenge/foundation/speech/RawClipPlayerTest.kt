@@ -34,7 +34,7 @@ class RawClipPlayerTest {
     @Test
     fun completionInvokesOnFinishedOnce() {
         val shadow = playChime()
-        var finished = finishedCount
+        val finished = finishedCount
         shadow.invokeCompletionListener()
         assertEquals(finished + 1, finishedCount)
         shadow.invokeCompletionListener()

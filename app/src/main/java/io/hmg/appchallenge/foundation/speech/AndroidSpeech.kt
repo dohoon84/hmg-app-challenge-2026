@@ -8,6 +8,7 @@ import android.media.MediaPlayer
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import androidx.annotation.MainThread
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import io.hmg.appchallenge.foundation.R
@@ -97,11 +98,31 @@ class AndroidTtsEngine internal constructor(
     private var client: TtsClient? = null
     private var pendingClient: TtsClient? = null
     private var pendingStatus: Int = STATUS_UNKNOWN
+    private val readyCallbacks = mutableListOf<() -> Unit>()
 
+    @MainThread
     override fun warmUp() {
         engine()
     }
 
+    @MainThread
+    override fun whenReady(onReady: () -> Unit): SpeechTicket {
+        checkMainThread()
+        val alreadyReady = synchronized(lock) {
+            if (ready) {
+                true
+            } else {
+                readyCallbacks += onReady
+                false
+            }
+        }
+        if (alreadyReady) onReady()
+        return SpeechTicket {
+            synchronized(lock) { readyCallbacks.remove(onReady) }
+        }
+    }
+
+    @MainThread
     override fun speak(
         text: String,
         onDone: () -> Unit,
@@ -133,11 +154,15 @@ class AndroidTtsEngine internal constructor(
         }
     }
 
+    @MainThread
     override fun stop() {
+        checkMainThread()
         synchronized(lock) { client }?.stop()
     }
 
+    @MainThread
     override fun shutdown() {
+        checkMainThread()
         val current = synchronized(lock) {
             session.incrementAndGet()
             val current = client
@@ -145,19 +170,33 @@ class AndroidTtsEngine internal constructor(
             ready = false
             pendingClient = null
             pendingStatus = STATUS_UNKNOWN
+            readyCallbacks.clear()
             current
         }
         current?.stop()
         current?.shutdown()
     }
 
+    /**
+     * Binds on the main thread. [session] is sampled around [TtsClientFactory.create]
+     * so a [shutdown] that runs from the init callback cannot be assigned afterwards.
+     */
+    @MainThread
     private fun engine(): TtsClient {
+        checkMainThread()
         synchronized(lock) { client }?.let { return it }
+        val sessionAtStart = session.get()
         val created = clientFactory.create(appContext) { createdClient, status ->
             onInit(createdClient, status)
         }
         synchronized(lock) {
-            if (client == null) {
+            if (session.get() != sessionAtStart) {
+                created.shutdown()
+                if (pendingClient === created) {
+                    pendingClient = null
+                    pendingStatus = STATUS_UNKNOWN
+                }
+            } else if (client == null) {
                 client = created
                 if (pendingClient === created) {
                     applyInit(created, pendingStatus)
@@ -187,6 +226,8 @@ class AndroidTtsEngine internal constructor(
     }
 
     private fun applyInit(engine: TtsClient, status: Int) {
+        val sessionAtReady = session.get()
+        val listeners = mutableListOf<() -> Unit>()
         if (status == TextToSpeech.SUCCESS) {
             try {
                 engine.setAudioAttributes(attributes)
@@ -194,8 +235,21 @@ class AndroidTtsEngine internal constructor(
                 // Some engines reject attributes before the binding is usable. Ready still stands.
             }
             ready = true
+            listeners += readyCallbacks
+            readyCallbacks.clear()
         } else {
             ready = false
+        }
+        if (listeners.isEmpty()) return
+        mainHandler.post {
+            if (sessionAtReady != session.get()) return@post
+            listeners.forEach { it() }
+        }
+    }
+
+    private fun checkMainThread() {
+        check(Looper.myLooper() == Looper.getMainLooper()) {
+            "AndroidTtsEngine runs only on the main thread"
         }
     }
 

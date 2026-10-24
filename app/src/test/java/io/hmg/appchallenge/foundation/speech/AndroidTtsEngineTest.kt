@@ -3,6 +3,7 @@ package io.hmg.appchallenge.foundation.speech
 import android.content.Context
 import android.media.AudioAttributes
 import android.os.Bundle
+import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
@@ -16,6 +17,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows
 import org.robolectric.annotation.Config
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], manifest = Config.NONE)
@@ -23,7 +27,7 @@ class AndroidTtsEngineTest {
     private val app = RuntimeEnvironment.getApplication()
 
     @Test
-    fun warmUpCreatesTheClientOnce() {
+    fun warmUpCreatesTheClientOnce() = onMain {
         val factory = FakeFactory()
         val engine = AndroidTtsEngine(app, factory)
         assertEquals(0, factory.created)
@@ -35,7 +39,7 @@ class AndroidTtsEngineTest {
     }
 
     @Test
-    fun successInitMarksReadyAndSetsAttributes() {
+    fun successInitMarksReadyAndSetsAttributes() = onMain {
         val factory = FakeFactory()
         val engine = AndroidTtsEngine(app, factory)
         engine.warmUp()
@@ -45,7 +49,7 @@ class AndroidTtsEngineTest {
     }
 
     @Test
-    fun syncInitDuringCreateIsAppliedAfterTheClientIsAssigned() {
+    fun syncInitDuringCreateIsAppliedAfterTheClientIsAssigned() = onMain {
         val factory = FakeFactory(syncStatus = TextToSpeech.SUCCESS)
         val engine = AndroidTtsEngine(app, factory)
         engine.warmUp()
@@ -54,7 +58,7 @@ class AndroidTtsEngineTest {
     }
 
     @Test
-    fun failedInitStaysNotReady() {
+    fun failedInitStaysNotReady() = onMain {
         val factory = FakeFactory(syncStatus = TextToSpeech.ERROR)
         val engine = AndroidTtsEngine(app, factory)
         engine.warmUp()
@@ -65,7 +69,7 @@ class AndroidTtsEngineTest {
     }
 
     @Test
-    fun wrongUtteranceIdIsIgnoredAndTheMatchingIdCompletes() {
+    fun wrongUtteranceIdIsIgnoredAndTheMatchingIdCompletes() = onMain {
         val factory = FakeFactory(syncStatus = TextToSpeech.SUCCESS)
         val engine = AndroidTtsEngine(app, factory)
         engine.warmUp()
@@ -81,7 +85,7 @@ class AndroidTtsEngineTest {
     }
 
     @Test
-    fun shutdownIgnoresALateCallbackAndDropsReady() {
+    fun shutdownIgnoresALateCallbackAndDropsReady() = onMain {
         val factory = FakeFactory(syncStatus = TextToSpeech.SUCCESS)
         val engine = AndroidTtsEngine(app, factory)
         engine.warmUp()
@@ -97,7 +101,7 @@ class AndroidTtsEngineTest {
     }
 
     @Test
-    fun lateInitOfTheOldClientDoesNotReadyTheNextEngine() {
+    fun lateInitOfTheOldClientDoesNotReadyTheNextEngine() = onMain {
         val factory = FakeFactory()
         val engine = AndroidTtsEngine(app, factory)
         engine.warmUp()
@@ -114,12 +118,48 @@ class AndroidTtsEngineTest {
         assertEquals(0, first.attributeSets)
     }
 
+    @Test
+    fun shutdownDuringCreateDoesNotAssignTheClient() = onMain {
+        lateinit var engine: AndroidTtsEngine
+        val factory = FakeFactory(duringCreate = { engine.shutdown() })
+        engine = AndroidTtsEngine(app, factory)
+        engine.warmUp()
+        assertFalse(engine.ready)
+        assertEquals(1, factory.latest.shutdowns)
+        engine.warmUp()
+        assertEquals(2, factory.created)
+        assertFalse(engine.ready)
+    }
+
     private fun idleMain() {
         Shadows.shadowOf(Looper.getMainLooper()).idle()
     }
 
+    private fun onMain(block: () -> Unit) {
+        val main = Looper.getMainLooper()
+        if (Looper.myLooper() == main) {
+            block()
+            return
+        }
+        val failure = AtomicReference<Throwable>()
+        val latch = CountDownLatch(1)
+        Handler(main).post {
+            try {
+                block()
+            } catch (error: Throwable) {
+                failure.set(error)
+            } finally {
+                latch.countDown()
+            }
+        }
+        Shadows.shadowOf(main).idle()
+        assertTrue(latch.await(5, TimeUnit.SECONDS))
+        failure.get()?.let { throw it }
+    }
+
     private class FakeFactory(
         private val syncStatus: Int? = null,
+        private val duringCreate: (() -> Unit)? = null,
     ) : TtsClientFactory {
         val clients = mutableListOf<FakeClient>()
         val created: Int get() = clients.size
@@ -128,6 +168,7 @@ class AndroidTtsEngineTest {
         override fun create(context: Context, onInit: (TtsClient, Int) -> Unit): TtsClient {
             val client = FakeClient(onInit)
             clients += client
+            duringCreate?.invoke()
             syncStatus?.let { status -> onInit(client, status) }
             return client
         }
@@ -137,6 +178,7 @@ class AndroidTtsEngineTest {
         private val onInit: (TtsClient, Int) -> Unit,
     ) : TtsClient {
         var attributeSets = 0
+        var shutdowns = 0
         var lastUtteranceId: String? = null
         lateinit var listener: UtteranceProgressListener
 
@@ -159,6 +201,8 @@ class AndroidTtsEngineTest {
 
         override fun stop() = Unit
 
-        override fun shutdown() = Unit
+        override fun shutdown() {
+            shutdowns += 1
+        }
     }
 }

@@ -56,6 +56,11 @@ class IviColorTokenTest {
             assertTrue(ratio < 4.5)
         }
         assertEquals(0xFFFF8A00.toInt(), colors.drivingAlert.toArgb())
+        assertEquals(0xFFFF8A00.toInt(), colors.drivingAlertContainer.toArgb())
+        assertEquals(0xFF121417.toInt(), colors.onDrivingAlert.toArgb())
+        assertFalse(bannedOnLight.contains(colors.onDrivingAlert.toArgb()))
+        val onAlert = contrastRatio(colors.onDrivingAlert.toArgb(), colors.drivingAlertContainer.toArgb())
+        assertTrue("door warning text on the alert fill is $onAlert", onAlert >= 4.5)
     }
 
     @Test
@@ -70,6 +75,10 @@ class IviColorTokenTest {
         assertEquals(0xFFFF8A00.toInt(), colors.statusCautionIcon.toArgb())
         assertEquals(0xFFFF8A00.toInt(), colors.drivingAlert.toArgb())
         assertEquals(0xFF121417.toInt(), colors.surfacePrimary.toArgb())
+        assertEquals(colors.surfacePrimary.toArgb(), colors.drivingAlertContainer.toArgb())
+        assertEquals(0xFFFF8A00.toInt(), colors.onDrivingAlert.toArgb())
+        val onAlert = contrastRatio(colors.onDrivingAlert.toArgb(), colors.drivingAlertContainer.toArgb())
+        assertTrue("dark door warning text on its fill is $onAlert", onAlert >= 4.5)
     }
 
     private fun contrastRatio(foreground: Int, background: Int): Double {

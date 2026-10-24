@@ -2,6 +2,7 @@ package io.hmg.appchallenge.foundation.ui
 
 import android.app.Activity
 import android.content.res.Configuration
+import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -153,9 +154,15 @@ private fun DrivingStatus(ui: FoundationUi) {
         Text(
             text = ui.restrictions.clip(stringResource(R.string.door_open_alert), preserve = true),
             style = IviType.drivingMain,
-            // Driving-alert exception: #FF8A00 in both themes, including light.
-            // Light status text and icons do not use this orange.
-            color = IviTheme.colors.drivingAlert,
+            // Light fills ivi_driving_alert (#FF8A00) and draws #121417 on it.
+            // Dark fill matches the surface, and the text stays #FF8A00.
+            color = IviTheme.colors.onDrivingAlert,
+            modifier = Modifier
+                .background(
+                    IviTheme.colors.drivingAlertContainer,
+                    RoundedCornerShape(12.dp),
+                )
+                .padding(horizontal = 12.dp, vertical = 4.dp),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )

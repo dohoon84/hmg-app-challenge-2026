@@ -16,10 +16,13 @@
     <!--
       App-defined, not an official Pleos token. The guide has no red informative color.
       Light is red/700 so text and icons clear 4.5:1. Do not use #FF8A00 or #FF4C28
-      for light text or icons. ivi_driving_alert is the driving-alert exception.
+      for light text or icons. The driving-alert orange is a light fill, not light text.
     -->
     <color name="ivi_informative_negative">#BE250A</color>
     <color name="ivi_status_error">@color/ivi_informative_negative</color>
-    <!-- Driving alert. Same in light and dark. Not a light status text color. -->
+    <!-- Official driving alert. Same in light and dark. Light uses it as a fill. -->
     <color name="ivi_driving_alert">#FF8A00</color>
+    <color name="ivi_driving_alert_container">@color/ivi_driving_alert</color>
+    <!-- Text on the driving-alert fill. -->
+    <color name="ivi_on_driving_alert">#121417</color>
 </resources>

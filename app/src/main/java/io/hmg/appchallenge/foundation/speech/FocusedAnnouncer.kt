@@ -7,8 +7,9 @@ import androidx.annotation.MainThread
  * Asks for transient ducking focus, waits [LEADING_SILENCE_MS], then speaks.
  * A ready [SpeechEngine] is preferred. The engine is warmed on [onForeground] and
  * again at the start of [announce], so binding overlaps the focus request and the
- * leading silence. If it is still not ready, this waits until [ENGINE_READY_WAIT_MS]
- * from the focus grant (the silence counts toward that cap) and then falls back to
+ * leading silence. After that silence, [SpeechEngine.whenReady] races the remaining
+ * time until [ENGINE_READY_WAIT_MS] from the focus grant (the silence counts toward
+ * that cap). Ready speech starts immediately. The cap still falls back to
  * [ChimePlayer]. Init failure, a synchronous speak error, or an async utterance
  * error also falls back to the chime. Both paths share this focus and the leading
  * gap. Focus is released when speech or the chime finishes, and also on stop,
@@ -27,6 +28,7 @@ class FocusedAnnouncer(
     private var outputToken = 0
     private var suspended = false
     private var ticket: SpeechTicket? = null
+    private var readyTicket: SpeechTicket? = null
     private var holdingFocus = false
 
     @MainThread
@@ -88,23 +90,36 @@ class FocusedAnnouncer(
 
     /**
      * [waitedMs] is time since the focus grant. The leading silence is the first slice.
-     * One extra delay covers the rest of [ENGINE_READY_WAIT_MS]. A leading silence
-     * already past that cap chimes immediately.
+     * After that, [SpeechEngine.whenReady] and the remaining time until
+     * [ENGINE_READY_WAIT_MS] race. A leading silence already past that cap chimes now.
      */
     private fun playWhenReady(text: String, gen: Int, waitedMs: Long) {
-        if (!tts.ready && waitedMs < ENGINE_READY_WAIT_MS) {
-            val remaining = ENGINE_READY_WAIT_MS - waitedMs
-            ticket = scheduler.post(remaining) {
-                if (gen != generation || suspended) return@post
-                if (focus.navigationOrAssistantActive()) {
-                    endTurn()
-                    return@post
-                }
-                playWhenReady(text, gen, waitedMs = waitedMs + remaining)
-            }
+        if (tts.ready || waitedMs >= ENGINE_READY_WAIT_MS) {
+            playSelected(text, gen)
             return
         }
-        playSelected(text, gen)
+        val remaining = ENGINE_READY_WAIT_MS - waitedMs
+        val timeout = scheduler.post(remaining) {
+            readyTicket?.cancel()
+            readyTicket = null
+            if (gen != generation || suspended) return@post
+            if (focus.navigationOrAssistantActive()) {
+                endTurn()
+                return@post
+            }
+            playSelected(text, gen)
+        }
+        ticket = timeout
+        readyTicket = tts.whenReady {
+            if (gen != generation || suspended) return@whenReady
+            timeout.cancel()
+            if (ticket === timeout) ticket = null
+            if (focus.navigationOrAssistantActive()) {
+                endTurn()
+                return@whenReady
+            }
+            playSelected(text, gen)
+        }
     }
 
     private fun playSelected(text: String, gen: Int) {
@@ -148,6 +163,8 @@ class FocusedAnnouncer(
     private fun endTurn() {
         generation += 1
         outputToken += 1
+        readyTicket?.cancel()
+        readyTicket = null
         ticket?.cancel()
         ticket = null
         releaseFocus()
@@ -174,7 +191,8 @@ class FocusedAnnouncer(
          * Bound on waiting for [SpeechEngine.ready], measured from the focus grant.
          * 1500ms is the product cap (about 1.5s). It includes [LEADING_SILENCE_MS].
          * It is not 1500ms added after the silence. A ready engine speaks when the
-         * silence ends. A slow engine gets one more delay of the remainder, then the chime.
+         * silence ends. If it becomes ready later, speech starts then. The chime
+         * runs only when the cap is reached first.
          */
         const val ENGINE_READY_WAIT_MS = 1_500L
     }
