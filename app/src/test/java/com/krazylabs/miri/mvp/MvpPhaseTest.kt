@@ -421,6 +421,28 @@ class MvpPhaseTest {
     }
 
     @Test
+    fun filmingHoldsTheClosedDoorBeforeTheDoneScreen() {
+        val session = CardSession()
+        val open = baseInput(GearPosition.PARK).copy(
+            kind = "rental",
+            returnSaved = true,
+            checkItems = listOf(doorItem()),
+            checkHoldMs = FilmingChrome.CHECKED_HOLD_MS,
+        )
+        val shown = session.step(open)
+        assertEquals(CheckRules.TITLE, shown.card?.title)
+        assertEquals(false, shown.card?.checks?.first()?.settled)
+        val closed = session.step(open.copy(checkItems = emptyList(), nowMs = 10))
+        assertEquals(CheckRules.TITLE, closed.card?.title)
+        assertEquals(true, closed.card?.checks?.first()?.settled)
+        assertEquals(false, closed.card?.lines?.any { it.contains("점검 끝") })
+        val still = session.step(open.copy(checkItems = emptyList(), nowMs = 1_509))
+        assertEquals(CheckRules.TITLE, still.card?.title)
+        val done = session.step(open.copy(checkItems = emptyList(), nowMs = 1_510))
+        assertEquals(true, done.card?.lines?.any { it.contains(CheckRules.DONE) })
+    }
+
+    @Test
     fun newRentalOnTheFinishedCheckReturnsToF1() {
         val session = CardSession()
         val door = baseInput(GearPosition.PARK).copy(
@@ -783,6 +805,7 @@ class MvpPhaseTest {
         assertNull(cleared.remainMeters)
         assertNull(cleared.remainSeconds)
         assertNull(cleared.returnInMinutes)
+        assertFalse(cleared.fixedReturn)
         assertNull(cleared.chargeTargetPercent)
         assertFalse(cleared.pretendCharging)
         assertNull(cleared.pretendTolls)

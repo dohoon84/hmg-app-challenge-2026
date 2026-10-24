@@ -18,6 +18,13 @@ object F3Rules {
     fun departAtMs(returnAtMs: Long, etaSeconds: Int): Long =
         returnAtMs - etaSeconds * 1000L - DEPART_BUFFER_MS
 
+    /** The F2 chip as an absolute instant. Filming F3 uses this, not the wall clock. */
+    fun savedReturnAtMs(epochDay: Long, minuteOfDay: Int, zone: ZoneId): Long {
+        val date = java.time.LocalDate.ofEpochDay(epochDay)
+        val time = java.time.LocalTime.of(minuteOfDay / 60, minuteOfDay % 60)
+        return date.atTime(time).atZone(zone).toInstant().toEpochMilli()
+    }
+
     fun dueKey(kind: String?, minutesLeft: Long, shown: Set<String>): String? {
         if (minutesLeft < 0) return null
         if (kind == "share" && minutesLeft <= 60 && "share-1h" !in shown) return "share-1h"

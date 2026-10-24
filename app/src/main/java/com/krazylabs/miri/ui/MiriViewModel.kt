@@ -470,7 +470,7 @@ class MiriViewModel @Inject constructor(
         val playing = playback.running.value
         val realCharging = navigationRepository.chargingStation.value ||
             (destination != null && destinationRole(destination.name) == DestinationRole.CHARGING)
-        val formAt = if (playing && scenario.returnInMinutes == null) {
+        val formAt = if (playing && scenario.returnInMinutes == null && !scenario.fixedReturn) {
             demoReturnMinutes = null
             demoReturnAt = null
             null
@@ -492,6 +492,7 @@ class MiriViewModel @Inject constructor(
             realRemainMeters = destination?.remainDistance,
             realRemainSeconds = destination?.remainTime,
             formMinutesLeft = formAt?.let { (it - now) / 60_000L },
+            fixedReturn = playing && scenario.fixedReturn,
         )
         val role = when {
             feed.charging -> DestinationRole.CHARGING
@@ -612,6 +613,7 @@ class MiriViewModel @Inject constructor(
                 cardMs = scenario.cardMs,
                 showGuide = scenario.showReturnGuide,
                 epilogue = epilogue,
+                checkHoldMs = if (filming.active.value) FilmingChrome.CHECKED_HOLD_MS else 0L,
             ),
         )
         val f3Now = step.pane == MiriPane.F3 && step.card != null
@@ -725,6 +727,11 @@ class MiriViewModel @Inject constructor(
     }
 
     private fun returnAtMs(now: Long, scenario: ScenarioOverrides): Long? {
+        if (scenario.fixedReturn) {
+            demoReturnMinutes = null
+            demoReturnAt = null
+            return savedReturnAt()
+        }
         val minutes = scenario.returnInMinutes
         if (minutes != null) {
             if (demoReturnMinutes != minutes || demoReturnAt == null) {
@@ -735,10 +742,12 @@ class MiriViewModel @Inject constructor(
         }
         demoReturnMinutes = null
         demoReturnAt = null
+        return savedReturnAt()
+    }
+
+    private fun savedReturnAt(): Long? {
         val saved = form.saved ?: return null
-        val date = LocalDate.ofEpochDay(saved.epochDay)
-        val time = LocalTime.of(saved.minuteOfDay / 60, saved.minuteOfDay % 60)
-        return date.atTime(time).atZone(zone).toInstant().toEpochMilli()
+        return F3Rules.savedReturnAtMs(saved.epochDay, saved.minuteOfDay, zone)
     }
 
     private fun returnPlace(): PlaceRequest? {

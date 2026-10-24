@@ -7,7 +7,12 @@ import com.krazylabs.miri.domain.WindowId
 
 enum class CheckKind { DOOR, WINDOW, LIGHT, CHARGE, FUEL }
 
-data class CheckItem(val kind: CheckKind, val text: String)
+data class CheckItem(
+    val kind: CheckKind,
+    val text: String,
+    /** Filming keeps a just-closed door on screen. The product list never sets this. */
+    val settled: Boolean = false,
+)
 
 object CheckRules {
     const val FOOTER = "다 끝나면 알려 드릴게요."
@@ -56,10 +61,14 @@ object CheckRules {
         return CheckItem(kind, "$word $level% · 반납 기준 $target%")
     }
 
-    fun statusBadge(kind: CheckKind): String = when (kind) {
-        CheckKind.DOOR, CheckKind.WINDOW -> "열림"
-        CheckKind.LIGHT -> "켜짐"
-        CheckKind.CHARGE, CheckKind.FUEL -> "부족"
+    fun statusBadge(kind: CheckKind, settled: Boolean = false): String = when {
+        settled && (kind == CheckKind.DOOR || kind == CheckKind.WINDOW) -> "닫힘"
+        settled -> "확인"
+        else -> when (kind) {
+            CheckKind.DOOR, CheckKind.WINDOW -> "열림"
+            CheckKind.LIGHT -> "켜짐"
+            CheckKind.CHARGE, CheckKind.FUEL -> "부족"
+        }
     }
 
     fun badge(count: Int): String = "아직 ${count}개"

@@ -27,6 +27,9 @@ object AutoPlayFeed {
     const val RETURN_DAY = 2
     const val RETURN_MINUTE = 12 * 60
 
+    /** Opens filming F3. The displayed return time is the saved chip, not this window. */
+    const val FIXED_F3_MINUTES = 120L
+
     fun resolve(
         playing: Boolean,
         pretendCharging: Boolean,
@@ -42,6 +45,7 @@ object AutoPlayFeed {
         realRemainMeters: Int?,
         realRemainSeconds: Int?,
         formMinutesLeft: Long?,
+        fixedReturn: Boolean = false,
     ): AutoPlayNav {
         if (!playing) {
             return AutoPlayNav(
@@ -65,7 +69,8 @@ object AutoPlayFeed {
             routing = false,
             remainMeters = scenarioRemainMeters,
             remainSeconds = scenarioRemainSeconds,
-            f3MinutesLeft = returnInMinutes?.toLong(),
+            // The 120 only opens the card. The clock is the saved F2 chip.
+            f3MinutesLeft = if (fixedReturn) FIXED_F3_MINUTES else returnInMinutes?.toLong(),
         )
     }
 

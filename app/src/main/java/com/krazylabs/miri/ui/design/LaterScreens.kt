@@ -204,7 +204,7 @@ fun C1CheckScreen(card: ShownCard?, dark: Boolean) {
         CheckItem(CheckKind.LIGHT, "실내등"),
         CheckItem(CheckKind.LIGHT, "뒤쪽 왼쪽 독서등"),
     )
-    val doorOpen = items.any { opensTheBody(it.text) }
+    val doorOpen = items.any { !it.settled && opensTheBody(it.text) }
     val car = when {
         doorOpen && dark -> R.drawable.miri_car_rear_door_open_dark
         doorOpen -> R.drawable.miri_car_rear_door_open_light
@@ -214,6 +214,7 @@ fun C1CheckScreen(card: ShownCard?, dark: Boolean) {
     SpecFrame {
         Image(painterResource(car), null, Modifier.figma(110f, 40f, 620f, 1128f), contentScale = ContentScale.Crop)
         items.forEachIndexed { index, item ->
+            if (item.settled) return@forEachIndexed
             val mark = bodyMark(item.text) ?: return@forEachIndexed
             NumberBadge(mark.first, mark.second, "${index + 1}")
         }
@@ -231,7 +232,7 @@ fun C1CheckScreen(card: ShownCard?, dark: Boolean) {
             } else {
                 SpecText(shortItem(line), 944f, y, MiriType.titleMediumStrong(), colors.frameInk)
             }
-            StatusBadge(1558f, y, CheckRules.statusBadge(item.kind))
+            StatusBadge(1558f, y, CheckRules.statusBadge(item.kind, item.settled))
             if (line.contains("실내등")) {
                 SpecText("켜 둔 채 내리면 배터리가 약해질 수 있어요.", 944f, 558f, MiriType.bodySmallNormal(), colors.frameTertiary)
             }

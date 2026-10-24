@@ -22,6 +22,9 @@ class ScriptedCabinFeed @Inject constructor() : CabinOverride {
     @Volatile var soc: Int = 90
     @Volatile var odometerKm: Float = START_KM
 
+    /** Storyboard reads EvBatteryStateOfCharge when the car has reported one. */
+    @Volatile var followEvSoc: Boolean = false
+
     val engaged: Boolean get() = gate.get()
 
     fun engage(gear: GearPosition = GearPosition.PARK, soc: Int = 90) {
@@ -29,6 +32,7 @@ class ScriptedCabinFeed @Inject constructor() : CabinOverride {
         this.soc = soc
         odometerKm = START_KM
         rearDoorOpen = false
+        followEvSoc = false
         gate.set(true)
     }
 
@@ -38,6 +42,7 @@ class ScriptedCabinFeed @Inject constructor() : CabinOverride {
 
     fun release() {
         gate.set(false)
+        followEvSoc = false
         rearDoorOpen = false
     }
 
@@ -49,10 +54,16 @@ class ScriptedCabinFeed @Inject constructor() : CabinOverride {
         val doors = DoorId.entries.associateWith { id ->
             if (rearDoorOpen && id == DoorId.ROW_2_RIGHT) PanelState(position = 1, readable = true) else closed
         }
+        val shownSoc = if (followEvSoc && live.socFromEv && live.socPercent != null) {
+            live.socPercent
+        } else {
+            soc
+        }
         return live.copy(
             doors = doors,
-            socPercent = soc,
+            socPercent = shownSoc,
             socReadable = true,
+            socFromEv = live.socFromEv && followEvSoc,
             odometerKm = odometerKm,
             odometerReadable = true,
         )

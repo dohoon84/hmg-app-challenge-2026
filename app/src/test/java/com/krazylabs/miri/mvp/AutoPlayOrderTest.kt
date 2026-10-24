@@ -129,6 +129,34 @@ class AutoPlayOrderTest {
     }
 
     @Test
+    fun filmingF3UsesTheSameReturnChipAsF2() {
+        val zone = ZoneId.of("Asia/Seoul")
+        val today = java.time.LocalDate.of(2026, 10, 24)
+        val summary = com.krazylabs.miri.ui.design.returnSummary(today, 2, null, 12 * 60)
+        assertEquals("10/26 12:00", summary)
+        val at = F3Rules.savedReturnAtMs(today.plusDays(2).toEpochDay(), 12 * 60, zone)
+        val now = java.time.ZonedDateTime.of(2026, 10, 24, 22, 47, 0, 0, zone).toInstant().toEpochMilli()
+        val lines = F3Rules.lines(
+            ev = true,
+            level = 80,
+            target = 80,
+            returnAtMs = at,
+            nowMs = now,
+            etaSeconds = F3Rules.DEMO_ETA_SECONDS,
+            zone = zone,
+        )
+        val model = f3Model(lines)
+        assertEquals("12:00", model.leftValue)
+        assertEquals("11:03", model.hero)
+        assertEquals("약 42분", model.rightValue)
+        assertEquals("반납", model.leftLabel)
+        assertFalse(model.hero == "22:47")
+        assertFalse(model.leftValue == "00:47")
+        val depart = F3Rules.departAtMs(at, F3Rules.DEMO_ETA_SECONDS)
+        assertEquals(at - 42 * 60_000L - F3Rules.DEPART_BUFFER_MS, depart)
+    }
+
+    @Test
     fun aMissingTripUsesTheFallbackCopy() {
         val zone = ZoneId.of("Asia/Seoul")
         val back = ZonedDateTime.of(2026, 10, 24, 20, 0, 0, 0, zone).toInstant().toEpochMilli()

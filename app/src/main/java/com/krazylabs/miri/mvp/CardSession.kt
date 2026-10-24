@@ -61,6 +61,11 @@ data class DeckInput(
      * screen. Null keeps the product done screen, distance line included.
      */
     val epilogue: String? = null,
+    /**
+     * Filming only. After the last check item clears, keep that row in the
+     * closed state for this long. Zero finishes on the same tick.
+     */
+    val checkHoldMs: Long = 0L,
 )
 
 /**
@@ -114,6 +119,10 @@ class CardSession {
     private var deferFromPrior = false
     private var deferUsed = false
     private var completion = false
+    private var lastChecks: List<CheckItem> = emptyList()
+    private var checkedUntil = 0L
+    private var checkedFace: CardFace? = null
+    private var closedChimed = false
 
     fun onResume() {
         cameraCover = false
@@ -143,6 +152,10 @@ class CardSession {
         completion = false
         held = null
         voiceStamp = null
+        lastChecks = emptyList()
+        checkedUntil = 0L
+        checkedFace = null
+        closedChimed = false
     }
 
     /** D1's 다음 closes the card the way the timer does. */
@@ -203,6 +216,10 @@ class CardSession {
             doorCloseChimed = false
             voiceStamp = null
             f3ReadyThisPark = input.f3 != null
+            lastChecks = emptyList()
+            checkedUntil = 0L
+            checkedFace = null
+            closedChimed = false
         }
         // 새 대여 on C2 is the same park with the kind cleared. Leave the
         // finished check and open F1, as an open F2 already does.
@@ -247,20 +264,42 @@ class CardSession {
             held = null
             return DeckStep(MiriPane.ICON, null, VoicePlay.None)
         }
-        val face = face(id, input) ?: run {
+        val raw = face(id, input)
+        val holdingClosed = raw == null && id == CardId.CHECK && latchClosedDoor(input)
+        val face = if (holdingClosed) checkedFace else raw
+        if (face == null) {
             if (id == CardId.CHECK) {
                 completion = true
                 held = null
-                val voice = checkChime(input.nowMs, once("check-done", VoicePlay.Chime))
+                val voice = if (checkedUntil > 0L) {
+                    VoicePlay.None
+                } else {
+                    checkChime(input.nowMs, once("check-done", VoicePlay.Chime))
+                }
+                checkedUntil = 0L
+                checkedFace = null
                 return DeckStep(MiriPane.CHECK, closingFace(input), voice)
             }
             spent = true
             held = null
             return DeckStep(MiriPane.ICON, null, VoicePlay.None)
         }
+        if (holdingClosed) {
+            val voice = if (closedChimed) {
+                VoicePlay.None
+            } else {
+                closedChimed = true
+                checkChime(input.nowMs, VoicePlay.Chime)
+            }
+            return DeckStep(MiriPane.CHECK, face, voice)
+        }
         var voice: VoicePlay = VoicePlay.None
         var closeHandled = false
         if (id == CardId.CHECK) {
+            lastChecks = input.checkItems + listOfNotNull(input.f4)
+            checkedUntil = 0L
+            checkedFace = null
+            closedChimed = false
             val count = input.checkItems.size
             if (checkCount >= 0 && count < checkCount) {
                 voice = checkChime(input.nowMs, VoicePlay.Chime)
@@ -347,6 +386,32 @@ class CardSession {
         CardId.D2 -> input.d2 != null
         CardId.F3 -> input.f3 != null
         CardId.D1, null -> false
+    }
+
+    /**
+     * Starts the closed-door hold once. Later ticks stay on that face until
+     * the window ends. A zero hold, or a check that never had a row, falls
+     * through to the product done screen.
+     */
+    private fun latchClosedDoor(input: DeckInput): Boolean {
+        if (input.checkHoldMs <= 0L || completion || lastChecks.isEmpty()) return false
+        if (checkedUntil == 0L) {
+            checkedUntil = input.nowMs + input.checkHoldMs
+            checkedFace = settledFace(lastChecks, input)
+        }
+        return input.nowMs < checkedUntil && checkedFace != null
+    }
+
+    private fun settledFace(items: List<CheckItem>, input: DeckInput): CardFace {
+        val settled = items.map { it.copy(settled = true) }
+        return CardFace(
+            pane = MiriPane.CHECK,
+            title = input.checkTitle,
+            lines = settled.map { it.text },
+            footer = CheckRules.FOOTER,
+            note = input.checkNote,
+            checks = settled,
+        )
     }
 
     private fun doneLines(input: DeckInput): List<String> =

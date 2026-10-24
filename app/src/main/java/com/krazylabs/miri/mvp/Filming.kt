@@ -67,6 +67,12 @@ data class FilmingChrome(
 
         /** Release packages the build flag as false, so the mode is not in that APK. */
         fun ships(releaseFlag: Boolean): Boolean = releaseFlag
+
+        /**
+         * After the rear door closes during filming, C1 stays on the closed
+         * door before the done screen. Zero on the product path.
+         */
+        const val CHECKED_HOLD_MS = 1_500L
     }
 }
 

@@ -405,7 +405,7 @@ class PleosVehicleRepository @Inject constructor(
             { config ->
                 if (!live(token)) return@checkEvBatteryStateOfChargeCapabilities
                 if (!config.accessType.toSignal().allowsRead()) {
-                    _snapshot.update { it.copy(socReadable = false, socPercent = null) }
+                    _snapshot.update { it.copy(socReadable = false, socPercent = null, socFromEv = false) }
                     return@checkEvBatteryStateOfChargeCapabilities
                 }
                 try {
@@ -425,12 +425,12 @@ class PleosVehicleRepository @Inject constructor(
             },
             { error ->
                 if (!live(token)) return@checkEvBatteryStateOfChargeCapabilities
-                _snapshot.update { it.copy(socReadable = false, socPercent = null) }
+                _snapshot.update { it.copy(socReadable = false, socPercent = null, socFromEv = false) }
                 note(error)
             },
         )
         } catch (error: Throwable) {
-            _snapshot.update { it.copy(socReadable = false, socPercent = null) }
+            _snapshot.update { it.copy(socReadable = false, socPercent = null, socFromEv = false) }
             note(error)
         }
     }
@@ -534,7 +534,12 @@ class PleosVehicleRepository @Inject constructor(
 
     private fun updateSoc(value: Int?) {
         _snapshot.update {
-            it.copy(socPercent = value, socReadable = true, updatedAtEpochMs = System.currentTimeMillis())
+            it.copy(
+                socPercent = value,
+                socReadable = true,
+                socFromEv = value != null,
+                updatedAtEpochMs = System.currentTimeMillis(),
+            )
         }
     }
 

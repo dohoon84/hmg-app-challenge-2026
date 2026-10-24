@@ -94,7 +94,8 @@ class AutoPlayDirector private constructor(
         }
         val gen = generation
         _running.value = true
-        cabin.engage(soc = if (storyboard) StoryboardScript.SOC_OPEN else 90)
+        cabin.engage(soc = if (storyboard) StoryboardScript.SOC_CARD else 90)
+        cabin.followEvSoc = storyboard
         job = scope.launch {
             try {
                 runScript(host, steps)
@@ -159,7 +160,8 @@ class AutoPlayDirector private constructor(
                             pretendCharging = false,
                             pretendTolls = null,
                             pretendHighways = null,
-                            returnInMinutes = 120,
+                            returnInMinutes = if (step.fixedClock) null else 120,
+                            fixedReturn = step.fixedClock,
                             chargeTargetPercent = 80,
                             remainSeconds = F3Rules.DEMO_ETA_SECONDS,
                             armNewRental = false,
@@ -216,7 +218,7 @@ sealed interface AutoStep {
         val charging: Boolean,
         override val ms: Long = 0,
     ) : AutoStep
-    data class ReturnWindow(override val ms: Long = 0) : AutoStep
+    data class ReturnWindow(val fixedClock: Boolean = false, override val ms: Long = 0) : AutoStep
     data class Gear(val gear: GearPosition, val caption: String, val beat: String? = null, override val ms: Long) : AutoStep
     data class Body(val rearDoorOpen: Boolean, val soc: Int, override val ms: Long = 0) : AutoStep
     data class Epilogue(val which: String, override val ms: Long = 0) : AutoStep
@@ -282,12 +284,13 @@ object AutoPlayScript {
 
 /**
  * CF cut table. The rehearsal script stays on [AutoPlayScript].
- * SOC stays at 60 until the return window, then 85. The distance line is the
- * odometer difference. There is no 다녀왔어요 beat and no in-app caption.
+ * Visible cards use [SOC_CARD]. [SOC_CHARGE] is the charging cut's fallback
+ * and is not itself a card. F3 uses the F2 chip. The rear door closes and
+ * stays checked before C2. There is no 다녀왔어요 beat and no in-app caption.
  */
 object StoryboardScript {
-    const val SOC_OPEN = 60
-    const val SOC_RETURN = 85
+    const val SOC_CARD = 80
+    const val SOC_CHARGE = 60
 
     val steps: List<AutoStep> = listOf(
         AutoStep.Show("F1", "", 5_000),
@@ -303,13 +306,14 @@ object StoryboardScript {
         AutoStep.Gear(GearPosition.DRIVE, "", beat = "DRIVE1", ms = 6_000),
         AutoStep.Gear(GearPosition.PARK, "", beat = "D2", ms = 7_000),
         AutoStep.Gear(GearPosition.DRIVE, "", beat = "DRIVE2", ms = 3_000),
-        AutoStep.Body(rearDoorOpen = false, soc = SOC_RETURN),
-        AutoStep.ReturnWindow(),
+        AutoStep.Body(rearDoorOpen = false, soc = SOC_CHARGE, ms = 0),
+        AutoStep.Body(rearDoorOpen = false, soc = SOC_CARD),
+        AutoStep.ReturnWindow(fixedClock = true),
         AutoStep.Gear(GearPosition.PARK, "", beat = "F3", ms = 9_000),
         AutoStep.Gear(GearPosition.DRIVE, "", ms = 0),
-        AutoStep.Body(rearDoorOpen = true, soc = SOC_RETURN),
+        AutoStep.Body(rearDoorOpen = true, soc = SOC_CARD),
         AutoStep.Gear(GearPosition.PARK, "", beat = "C1", ms = 6_000),
-        AutoStep.Body(rearDoorOpen = false, soc = SOC_RETURN, ms = 1_000),
+        AutoStep.Body(rearDoorOpen = false, soc = SOC_CARD, ms = FilmingChrome.CHECKED_HOLD_MS),
         AutoStep.Show("C2", "", 4_000),
         AutoStep.Rewind(),
     )

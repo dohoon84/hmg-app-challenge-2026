@@ -10,6 +10,11 @@ data class ScenarioOverrides(
     val remainMeters: Int? = null,
     val remainSeconds: Int? = null,
     val returnInMinutes: Int? = null,
+    /**
+     * Filming profile only. F3 uses the saved F2 return chip instead of
+     * now plus [returnInMinutes]. The product path leaves this false.
+     */
+    val fixedReturn: Boolean = false,
     val chargeTargetPercent: Int? = null,
     val pretendCharging: Boolean = false,
     val pretendTolls: Int? = null,
@@ -30,6 +35,7 @@ data class ScenarioOverrides(
         remainMeters = null,
         remainSeconds = null,
         returnInMinutes = null,
+        fixedReturn = false,
         chargeTargetPercent = null,
         pretendCharging = false,
         pretendTolls = null,

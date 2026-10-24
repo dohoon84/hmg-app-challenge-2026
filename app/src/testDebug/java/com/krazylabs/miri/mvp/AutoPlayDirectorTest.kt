@@ -193,9 +193,9 @@ class AutoPlayDirectorTest {
         assertEquals(7_000L, StoryboardScript.holdMs("D2"))
         assertEquals(3_000L, StoryboardScript.holdMs("DRIVE2"))
         assertEquals(9_000L, StoryboardScript.holdMs("F3"))
-        assertEquals(7_000L, StoryboardScript.holdMs("C1"))
+        assertEquals(7_500L, StoryboardScript.holdMs("C1"))
         assertEquals(4_000L, StoryboardScript.holdMs("C2"))
-        assertEquals(54_000L, StoryboardScript.steps.sumOf { it.ms })
+        assertEquals(54_500L, StoryboardScript.steps.sumOf { it.ms })
         assertFalse(StoryboardScript.beats().contains("C3"))
         assertTrue(StoryboardScript.steps.none { it is AutoStep.Epilogue })
         assertTrue(StoryboardScript.steps.filterIsInstance<AutoStep.Show>().all { it.caption.isEmpty() })
@@ -208,9 +208,20 @@ class AutoPlayDirectorTest {
         val close = StoryboardScript.steps.filterIsInstance<AutoStep.Body>().last()
         assertEquals(6_000L, open.ms)
         assertTrue(StoryboardScript.steps.filterIsInstance<AutoStep.Body>().any { it.rearDoorOpen })
-        assertEquals(1_000L, close.ms)
+        assertEquals(FilmingChrome.CHECKED_HOLD_MS, close.ms)
         assertFalse(close.rearDoorOpen)
-        assertEquals(StoryboardScript.SOC_RETURN, close.soc)
+        assertEquals(StoryboardScript.SOC_CARD, close.soc)
+        val bodies = StoryboardScript.steps.filterIsInstance<AutoStep.Body>()
+        assertTrue(bodies.all { it.soc == StoryboardScript.SOC_CARD || it.soc == StoryboardScript.SOC_CHARGE })
+        assertEquals(1, bodies.count { it.soc == StoryboardScript.SOC_CHARGE && it.ms == 0L })
+        assertEquals(
+            listOf("F1", "F2", "D1", "D2", "F3", "C1", "C2"),
+            StoryboardScript.beats().filter { it != "DRIVE1" && it != "DRIVE2" },
+        )
+        assertEquals(
+            listOf("F1", "F2", "D1", "D2", "F3", "C1", "C3", "C2"),
+            AutoPlayScript.beats(),
+        )
         val paced = StoryboardScript.paced("D1", 1f, null)
         val d1 = paced.indexOfFirst { it is AutoStep.Gear && it.beat == "D1" }
         assertTrue(paced.take(d1).all { it.ms == 0L })
@@ -230,6 +241,7 @@ class AutoPlayDirectorTest {
         val samples = mutableListOf<Sample>()
         val host = RecordingHost()
         val director = AutoPlayDirector.forTest(cabin) { ms ->
+            assertTrue(cabin.followEvSoc)
             samples += Sample(cabin.soc, cabin.rearDoorOpen, cabin.gear, ms)
         }
         director.playCut(
@@ -242,12 +254,13 @@ class AutoPlayDirectorTest {
             null,
         )
         advanceUntilIdle()
-        assertEquals(StoryboardScript.SOC_OPEN, samples.first().soc)
-        assertEquals(60, samples.first { it.ms == 7_000L && it.gear == GearPosition.PARK }.soc)
-        assertTrue(samples.any { it.ms == 6_000L && it.gear == GearPosition.DRIVE && it.soc == 60 && !it.door })
-        assertTrue(samples.any { it.ms == 9_000L && it.soc == 85 && !it.door })
-        assertTrue(samples.any { it.ms == 6_000L && it.soc == 85 && it.door && it.gear == GearPosition.PARK })
-        assertTrue(samples.any { it.ms == 1_000L && it.soc == 85 && !it.door })
+        assertEquals(StoryboardScript.SOC_CARD, samples.first().soc)
+        assertTrue(samples.all { it.soc == StoryboardScript.SOC_CARD })
+        assertEquals(80, samples.first { it.ms == 7_000L && it.gear == GearPosition.PARK }.soc)
+        assertTrue(samples.any { it.ms == 6_000L && it.gear == GearPosition.DRIVE && it.soc == 80 && !it.door })
+        assertTrue(samples.any { it.ms == 9_000L && it.soc == 80 && !it.door })
+        assertTrue(samples.any { it.ms == 6_000L && it.soc == 80 && it.door && it.gear == GearPosition.PARK })
+        assertTrue(samples.any { it.ms == 1_500L && it.soc == 80 && !it.door })
         val drives = StoryboardScript.steps.filterIsInstance<AutoStep.Gear>().count { it.gear == GearPosition.DRIVE }
         assertEquals(4, drives)
         val km = (cabin.odometerKm - ScriptedCabinFeed.START_KM).roundToInt()
@@ -257,10 +270,29 @@ class AutoPlayDirectorTest {
             "이번 대여에서 ${km}km를 달렸어요. 수고하셨어요.",
         )
         assertFalse(cabin.engaged)
-        val window = host.applied.last { it.returnInMinutes == 120 }
+        assertFalse(cabin.followEvSoc)
+        val window = host.applied.last { it.fixedReturn }
+        assertEquals(null, window.returnInMinutes)
         assertEquals(80, window.chargeTargetPercent)
         assertEquals(F3Rules.DEMO_ETA_SECONDS, window.remainSeconds)
         assertEquals(2, host.applied.first { it.pretendTolls != null }.pretendTolls)
+    }
+
+    @Test
+    fun storyboardReadsEvSocAndFallsBackToTheCardValue() {
+        val cabin = ScriptedCabinFeed()
+        cabin.engage(soc = StoryboardScript.SOC_CARD)
+        cabin.followEvSoc = true
+        val unread = VehicleSnapshot(
+            socPercent = 62,
+            socReadable = true,
+            identity = CarIdentity(fuels = listOf(FuelKind.ELECTRIC)),
+        )
+        assertEquals(StoryboardScript.SOC_CARD, cabin.overlay(unread).socPercent)
+        assertEquals(60, cabin.overlay(unread.copy(socPercent = 60, socFromEv = true)).socPercent)
+        assertEquals(80, cabin.overlay(unread.copy(socPercent = 80, socFromEv = true)).socPercent)
+        cabin.followEvSoc = false
+        assertEquals(StoryboardScript.SOC_CARD, cabin.overlay(unread.copy(socPercent = 60, socFromEv = true)).socPercent)
     }
 
     @Test

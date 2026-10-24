@@ -13,6 +13,9 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.unit.dp
+import com.krazylabs.miri.mvp.CheckItem
+import com.krazylabs.miri.mvp.CheckKind
+import com.krazylabs.miri.ui.ShownCard
 import com.krazylabs.miri.ui.theme.FoundationTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -74,6 +77,29 @@ class DashedGuideButtonTest {
         rule.onNodeWithText("반납 장소로 안내").assertExists()
         rule.onNodeWithText("20:00").assertExists()
         rule.onNodeWithText("약 42분").assertExists()
+    }
+
+    @Test
+    fun aSettledRearDoorReadsClosed() {
+        rule.setContent {
+            FoundationTheme {
+                Box(Modifier.requiredSize(1682.dp, 1210.dp)) {
+                    C1CheckScreen(
+                        card = ShownCard(
+                            title = "반납 전 점검",
+                            lines = listOf("오른쪽 뒷문이 열려 있어요."),
+                            checks = listOf(
+                                CheckItem(CheckKind.DOOR, "오른쪽 뒷문이 열려 있어요.", settled = true),
+                            ),
+                        ),
+                        dark = false,
+                    )
+                }
+            }
+        }
+        rule.onNodeWithText("닫힘").assertExists()
+        rule.onNodeWithText("오른쪽 뒷문", substring = true).assertExists()
+        rule.onAllNodesWithText("열림").assertCountEquals(0)
     }
 
     @Test
