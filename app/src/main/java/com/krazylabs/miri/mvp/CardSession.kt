@@ -82,6 +82,13 @@ class CardSession {
      * does not open again until the car leaves Park.
      */
     private var parkD2Told = false
+    /**
+     * D2 key last seen in Park. A drive consumes a key only when it differs
+     * from this one, which is a destination chosen or changed while moving.
+     * That park card is skipped and D2-b remains the driving cue. A charging
+     * route set in Park and not yet shown keeps this key and opens at the next Park.
+     */
+    private var d2KeyInPark = ""
     private var deferred: CardId? = null
     private var deferFromPrior = false
     private var deferUsed = false
@@ -97,6 +104,7 @@ class CardSession {
         toldD2.clear()
         toldUnkeyedD2 = false
         parkD2Told = false
+        d2KeyInPark = ""
         shownF3.clear()
         checkShows = 0
         deferred = null
@@ -111,7 +119,9 @@ class CardSession {
         if (input.gear != GearPosition.PARK) parkD2Told = false
         if (input.gear == GearPosition.REVERSE) cameraCover = true
         if (moving) {
-            input.d2?.routeKey?.takeIf { it.isNotEmpty() }?.let { toldD2 += it }
+            val drivingKey = input.d2?.routeKey?.takeIf { it.isNotEmpty() }.orEmpty()
+            if (drivingKey.isNotEmpty() && drivingKey != d2KeyInPark) toldD2 += drivingKey
+            if (drivingKey.isNotEmpty()) d2KeyInPark = drivingKey
             if (deferFromPrior && held != deferred) {
                 deferred = null
                 deferUsed = true
@@ -125,8 +135,9 @@ class CardSession {
             completion = false
             return DeckStep(MiriPane.ICON, null, VoicePlay.None)
         }
-        if (input.gear == GearPosition.PARK && parkD2Told) {
-            input.d2?.routeKey?.takeIf { it.isNotEmpty() }?.let { toldD2 += it }
+        if (input.gear == GearPosition.PARK) {
+            d2KeyInPark = input.d2?.routeKey?.takeIf { it.isNotEmpty() }.orEmpty()
+            if (parkD2Told && d2KeyInPark.isNotEmpty()) toldD2 += d2KeyInPark
         }
         if (input.gear != GearPosition.PARK || cameraCover || !input.edgesOpen) {
             return DeckStep(MiriPane.ICON, null, VoicePlay.None)
@@ -209,8 +220,6 @@ class CardSession {
             deferred = null
             deferUsed = true
         }
-        val skipped = input.d1
-        if (id != CardId.D1 && skipped != null) toldRoutes += skipped.routeId
     }
 
     private fun rememberMiss(input: DeckInput) {
