@@ -50,11 +50,11 @@ if (releaseStorePath != null && !hasReleaseSigning) {
 }
 
 android {
-    namespace = "io.hmg.appchallenge.foundation"
+    namespace = "com.krazylabs.miri"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "io.hmg.appchallenge.foundation"
+        applicationId = "com.krazylabs.miri"
         minSdk = 28
         targetSdk = 34
         versionCode = 1

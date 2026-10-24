@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Foundation</string>
+    <string name="app_name">미리</string>
+    <string name="developer_name">크레이지랩스</string>
     <string name="shell_parked">정차</string>
     <string name="shell_driving">주행 중</string>
     <string name="shell_unknown">상태 확인 중</string>

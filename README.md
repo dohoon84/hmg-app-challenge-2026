@@ -1,6 +1,6 @@
-# Foundation (가칭)
+# 미리 (Miri)
 
-현대차그룹 차량용 앱 개발 공모전(Pleos Connect / AAOS) Phase 0 공통 기반입니다. 앱 아이디어는 2026-10-27에 확정할 예정이므로, 화면과 저장소는 특정 기획에 묶여 있지 않습니다. 표시 이름 `Foundation`과 패키지 `io.hmg.appchallenge.foundation`은 자리표시자이며, 제출 전에 팀명과 앱 이름으로 바꿉니다.
+현대차그룹 차량용 앱 개발 공모전(Pleos Connect / AAOS)용 앱입니다. 표시 이름은 미리, 영어는 Miri, 패키지는 `com.krazylabs.miri`입니다. 개발사는 크레이지랩스입니다.
 
 - 공모전: https://appdevchallenge.auto-hmg.io (마감 2026-11-15 23:59 KST)
 - Vehicle SDK `ai.pleos.playground:Vehicle:2.3.2`
@@ -11,8 +11,8 @@
 
 | 항목 | 현재 값 | 제출 전 |
 |---|---|---|
-| 표시 이름 | Foundation | 확정된 앱 이름 |
-| applicationId | `io.hmg.appchallenge.foundation` | 팀 패키지 |
+| 표시 이름 | 미리 (Miri) | 확정 |
+| applicationId | `com.krazylabs.miri` | 팀 패키지 |
 | 제출 APK 파일명 | 빌드 후 `apk/placeholder-team_foundation_release.apk` (git에는 없음) | `apk/팀명_앱이름_release.apk` |
 
 ## 실행 방법
@@ -89,10 +89,10 @@ git에는 APK를 넣지 않습니다. 아래 경로는 로컬 빌드 결과입�
 ```bash
 adb shell dumpsys cpuinfo
 adb shell top -n 1
-adb shell dumpsys meminfo io.hmg.appchallenge.foundation
-adb shell am start -W -n io.hmg.appchallenge.foundation/.MainActivity
-adb shell am start -W -n io.hmg.appchallenge.foundation.fake/io.hmg.appchallenge.foundation.MainActivity
-adb shell dumpsys gfxinfo io.hmg.appchallenge.foundation
+adb shell dumpsys meminfo com.krazylabs.miri
+adb shell am start -W -n com.krazylabs.miri/.MainActivity
+adb shell am start -W -n com.krazylabs.miri.fake/com.krazylabs.miri.MainActivity
+adb shell dumpsys gfxinfo com.krazylabs.miri
 ```
 
 ## 구성
