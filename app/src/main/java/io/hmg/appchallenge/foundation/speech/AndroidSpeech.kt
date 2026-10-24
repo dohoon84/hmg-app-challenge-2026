@@ -5,8 +5,10 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaPlayer
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import androidx.annotation.MainThread
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import io.hmg.appchallenge.foundation.R
@@ -23,24 +25,104 @@ internal fun speechAudioAttributes(): AudioAttributes = AudioAttributes.Builder(
     .build()
 
 /**
- * Creates [TextToSpeech] on the first [speak]. [shutdown] drops the binding.
- * The next [speak] creates it again. Nothing constructs the engine at process start.
+ * Client around [TextToSpeech] so tests can supply a fake binding.
+ * The platform factory is the default. [AndroidTtsEngine]'s public constructor
+ * keeps that default so Hilt still calls `AndroidTtsEngine(context)`.
  */
-class AndroidTtsEngine(
+internal interface TtsClient {
+    fun setAudioAttributes(attributes: AudioAttributes)
+    fun setOnUtteranceProgressListener(listener: UtteranceProgressListener?)
+    fun speak(text: String, queueMode: Int, params: Bundle?, utteranceId: String): Int
+    fun stop()
+    fun shutdown()
+}
+
+internal fun interface TtsClientFactory {
+    fun create(context: Context, onInit: (TtsClient, Int) -> Unit): TtsClient
+}
+
+private class PlatformTtsClient(
     context: Context,
+    onInit: (TtsClient, Int) -> Unit,
+) : TtsClient {
+    private val engine: TextToSpeech = TextToSpeech(context) { status -> onInit(this, status) }
+
+    override fun setAudioAttributes(attributes: AudioAttributes) {
+        engine.setAudioAttributes(attributes)
+    }
+
+    override fun setOnUtteranceProgressListener(listener: UtteranceProgressListener?) {
+        engine.setOnUtteranceProgressListener(listener)
+    }
+
+    override fun speak(text: String, queueMode: Int, params: Bundle?, utteranceId: String): Int =
+        engine.speak(text, queueMode, params, utteranceId)
+
+    override fun stop() {
+        engine.stop()
+    }
+
+    override fun shutdown() {
+        engine.shutdown()
+    }
+}
+
+private object PlatformTtsClientFactory : TtsClientFactory {
+    override fun create(context: Context, onInit: (TtsClient, Int) -> Unit): TtsClient =
+        PlatformTtsClient(context, onInit)
+}
+
+/**
+ * [warmUp] binds [TextToSpeech] once and does not speak. [speak] before [ready]
+ * fails so the announcer can wait a bounded time and fall back to the chime.
+ * [shutdown] drops the binding. A late [onInit] or utterance callback from that
+ * client cannot mark a later client ready or finish its utterance.
+ * Nothing constructs the engine at process start.
+ */
+class AndroidTtsEngine internal constructor(
+    context: Context,
+    private val clientFactory: TtsClientFactory,
 ) : SpeechEngine {
+    constructor(context: Context) : this(context, PlatformTtsClientFactory)
+
     private val appContext = context.applicationContext
     private val mainHandler = Handler(Looper.getMainLooper())
     private val attributes = speechAudioAttributes()
     private val lock = Any()
     private val utterance = AtomicInteger(0)
+    private val session = AtomicInteger(0)
 
     @Volatile override var ready: Boolean = false
         private set
 
-    @Volatile private var initStatus: Int = STATUS_UNKNOWN
-    private var tts: TextToSpeech? = null
+    private var client: TtsClient? = null
+    private var pendingClient: TtsClient? = null
+    private var pendingStatus: Int = STATUS_UNKNOWN
+    private val readyCallbacks = mutableListOf<() -> Unit>()
 
+    @MainThread
+    override fun warmUp() {
+        engine()
+    }
+
+    @MainThread
+    override fun whenReady(onReady: () -> Unit): SpeechTicket {
+        checkMainThread()
+        val alreadyReady = synchronized(lock) {
+            if (ready) {
+                true
+            } else {
+                readyCallbacks += onReady
+                false
+            }
+        }
+        if (alreadyReady) onReady()
+        return SpeechTicket {
+            synchronized(lock) { readyCallbacks.remove(onReady) }
+        }
+    }
+
+    @MainThread
     override fun speak(
         text: String,
         onDone: () -> Unit,
@@ -49,18 +131,21 @@ class AndroidTtsEngine(
     ) {
         val engine = engine()
         if (!ready) error("TextToSpeech is not ready")
+        val sessionAtSpeak = session.get()
         val id = "foundation-announce-${utterance.incrementAndGet()}"
         engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) = Unit
 
-            override fun onDone(utteranceId: String?) = deliver(utteranceId, id, onDone)
+            override fun onDone(utteranceId: String?) = deliver(utteranceId, id, sessionAtSpeak, onDone)
 
             @Deprecated("Deprecated in Java")
-            override fun onError(utteranceId: String?) = deliver(utteranceId, id, onError)
+            override fun onError(utteranceId: String?) = deliver(utteranceId, id, sessionAtSpeak, onError)
 
-            override fun onError(utteranceId: String?, errorCode: Int) = deliver(utteranceId, id, onError)
+            override fun onError(utteranceId: String?, errorCode: Int) =
+                deliver(utteranceId, id, sessionAtSpeak, onError)
 
-            override fun onStop(utteranceId: String?, interrupted: Boolean) = deliver(utteranceId, id, onStop)
+            override fun onStop(utteranceId: String?, interrupted: Boolean) =
+                deliver(utteranceId, id, sessionAtSpeak, onStop)
         })
         val result = engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, id)
         if (result == TextToSpeech.ERROR) {
@@ -69,46 +154,80 @@ class AndroidTtsEngine(
         }
     }
 
+    @MainThread
     override fun stop() {
-        synchronized(lock) { tts }?.stop()
+        checkMainThread()
+        synchronized(lock) { client }?.stop()
     }
 
+    @MainThread
     override fun shutdown() {
+        checkMainThread()
         val current = synchronized(lock) {
-            val current = tts
-            tts = null
+            session.incrementAndGet()
+            val current = client
+            client = null
             ready = false
-            initStatus = STATUS_UNKNOWN
+            pendingClient = null
+            pendingStatus = STATUS_UNKNOWN
+            readyCallbacks.clear()
             current
         }
         current?.stop()
         current?.shutdown()
     }
 
-    private fun engine(): TextToSpeech {
-        synchronized(lock) { tts }?.let { return it }
-        val created = TextToSpeech(appContext) { status -> onInit(status) }
+    /**
+     * Binds on the main thread. [session] is sampled around [TtsClientFactory.create]
+     * so a [shutdown] that runs from the init callback cannot be assigned afterwards.
+     */
+    @MainThread
+    private fun engine(): TtsClient {
+        checkMainThread()
+        synchronized(lock) { client }?.let { return it }
+        val sessionAtStart = session.get()
+        val created = clientFactory.create(appContext) { createdClient, status ->
+            onInit(createdClient, status)
+        }
         synchronized(lock) {
-            if (tts == null) {
-                tts = created
-                val status = initStatus
-                if (status != STATUS_UNKNOWN) applyInit(created, status)
+            if (session.get() != sessionAtStart) {
+                created.shutdown()
+                if (pendingClient === created) {
+                    pendingClient = null
+                    pendingStatus = STATUS_UNKNOWN
+                }
+            } else if (client == null) {
+                client = created
+                if (pendingClient === created) {
+                    applyInit(created, pendingStatus)
+                    pendingClient = null
+                    pendingStatus = STATUS_UNKNOWN
+                }
             } else {
                 created.shutdown()
             }
         }
-        return synchronized(lock) { tts ?: created }
+        return synchronized(lock) { client ?: created }
     }
 
-    private fun onInit(status: Int) {
+    private fun onInit(createdClient: TtsClient, status: Int) {
         synchronized(lock) {
-            initStatus = status
-            val current = tts ?: return
+            val current = client
+            if (current == null) {
+                // TextToSpeech can call this from its constructor, before [engine] assigns [client].
+                pendingClient = createdClient
+                pendingStatus = status
+                return
+            }
+            // A shutdown client, or the previous client after a new warmUp, must not flip ready.
+            if (current !== createdClient) return
             applyInit(current, status)
         }
     }
 
-    private fun applyInit(engine: TextToSpeech, status: Int) {
+    private fun applyInit(engine: TtsClient, status: Int) {
+        val sessionAtReady = session.get()
+        val listeners = mutableListOf<() -> Unit>()
         if (status == TextToSpeech.SUCCESS) {
             try {
                 engine.setAudioAttributes(attributes)
@@ -116,14 +235,31 @@ class AndroidTtsEngine(
                 // Some engines reject attributes before the binding is usable. Ready still stands.
             }
             ready = true
+            listeners += readyCallbacks
+            readyCallbacks.clear()
         } else {
             ready = false
         }
+        if (listeners.isEmpty()) return
+        mainHandler.post {
+            if (sessionAtReady != session.get()) return@post
+            listeners.forEach { it() }
+        }
     }
 
-    private fun deliver(utteranceId: String?, expected: String, block: () -> Unit) {
+    private fun checkMainThread() {
+        check(Looper.myLooper() == Looper.getMainLooper()) {
+            "AndroidTtsEngine runs only on the main thread"
+        }
+    }
+
+    private fun deliver(utteranceId: String?, expected: String, sessionAtSpeak: Int, block: () -> Unit) {
         if (utteranceId != expected) return
-        mainHandler.post(block)
+        if (sessionAtSpeak != session.get()) return
+        mainHandler.post {
+            if (sessionAtSpeak != session.get()) return@post
+            block()
+        }
     }
 
     private companion object {

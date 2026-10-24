@@ -497,8 +497,8 @@ class PleosVehicleRepository @Inject constructor(
             },
         )
         } catch (error: Throwable) {
-            note(error)
             if (live(token)) {
+                note(error)
                 _snapshot.update { it.copy(seats = unavailableSeats()) }
             }
         }

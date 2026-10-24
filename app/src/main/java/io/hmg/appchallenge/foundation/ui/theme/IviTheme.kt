@@ -2,6 +2,8 @@
 
 package io.hmg.appchallenge.foundation.ui.theme
 
+import android.content.Context
+import androidx.annotation.ColorRes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -22,6 +24,9 @@ import io.hmg.appchallenge.foundation.R
  * The notice is in assets/asta-sans/OFL.txt. Weights 400, 700, and 800 are the wght axis.
  * The three previous static files were really those weights (OS/2 400/700/800) and almost
  * the same size because each carried the full Hangul repertoire.
+ * The file's default wght is 300, so an XML `@font/asta_sans` reference without
+ * `fontVariationSettings` renders Light. Compose sets 400, 700, and 800 below.
+ * A View that uses this file needs a font-family XML with `fontVariationSettings`.
  *
  * TODO(after 2026-10-27): do not export the 42 official icons yet. See Figma "Official Icons (Pleos)".
  */
@@ -45,9 +50,10 @@ val AstaSans = FontFamily(
 
 /**
  * Named like the design-token code syntax: ivi_ + snake_case.
- * Text on a surface uses [IviColors.textPrimary]. Status colors are for icons and containers.
- * Official ivi_basic steps are not in a library this project can import, so the neutral
- * surfaces follow the published white 100/84/64/32% text rule.
+ * Hex values live only in `res/values/colors.xml` and `res/values-night/colors.xml`.
+ * [iviColors] reads that resource set. Text secondary, tertiary, disabled, and neutral
+ * are [textPrimary] at 84% / 64% / 32% / 64%. That alpha rule is not a second hex.
+ * Official ivi_basic steps are not in a library this project can import.
  */
 @Immutable
 data class IviColors(
@@ -60,60 +66,69 @@ data class IviColors(
     val buttonBasic: Color,
     val buttonOnBasic: Color,
     val statusSuccess: Color,
+    /** Text and icons. Light stays the darker caution. Dark is the driving orange. */
     val statusCaution: Color,
     val statusCautionContainer: Color,
-    /** ivi_driving_alert. Pleos driving alert is #FF8A00 in light and dark. */
+    /**
+     * Icon only. Never text. Light is the app-adjusted orange that stays at icon
+     * contrast. Dark matches [statusCaution].
+     */
+    val statusCautionIcon: Color,
+    /**
+     * Same value as [informativeNegative]. Light is the app-adjusted red so text
+     * and icons clear 4.5:1. Dark stays the driving-alert red.
+     */
+    val statusError: Color,
+    /** ivi_driving_alert. Official Pleos driving alert, #FF8A00 in light and dark. */
     val drivingAlert: Color,
     /**
+     * Fill behind the door-open warning. Light is [drivingAlert]. Dark matches
+     * the surface so the screen color does not change.
+     */
+    val drivingAlertContainer: Color,
+    /**
+     * Text on [drivingAlertContainer]. Light is #121417. Dark is [drivingAlert],
+     * so the warning stays orange text.
+     */
+    val onDrivingAlert: Color,
+    /**
      * ivi_informative_negative. App-defined, not an official Pleos token.
-     * The official guide has no red informative color. Same value in light and dark.
-     * This is the error red going forward.
+     * The official guide has no red informative color. Light and dark differ.
+     * This is the error red. The legacy team status/negative token was removed.
      */
     val informativeNegative: Color,
-    /**
-     * ivi_team_status_negative_legacy. Previous team status/negative.
-     * Light stays #FE3D16 and dark stays #FF4C28. Not used for error red.
-     */
-    val teamStatusNegativeLegacy: Color,
     val statusNeutral: Color,
 )
 
-val IviDarkColors = IviColors(
-    surfacePrimary = Color(0xFF121417),
-    surfaceHigh = Color(0xFF1C2128),
-    textPrimary = Color.White,
-    textSecondary = Color.White.copy(alpha = 0.84f),
-    textTertiary = Color.White.copy(alpha = 0.64f),
-    textDisabled = Color.White.copy(alpha = 0.32f),
-    buttonBasic = Color(0xFFF2F3F5),
-    buttonOnBasic = Color(0xFF121417),
-    statusSuccess = Color(0xFF00E074),
-    statusCaution = Color(0xFFFF8A00),
-    statusCautionContainer = Color(0xFF3A2200),
-    drivingAlert = Color(0xFFFF8A00),
-    informativeNegative = Color(0xFFFF4C28),
-    teamStatusNegativeLegacy = Color(0xFFFF4C28),
-    statusNeutral = Color.White.copy(alpha = 0.64f),
-)
+private const val TEXT_SECONDARY = 0.84f
+private const val TEXT_TERTIARY = 0.64f
+private const val TEXT_DISABLED = 0.32f
 
-val IviLightColors = IviColors(
-    surfacePrimary = Color.White,
-    surfaceHigh = Color(0xFFF2F3F5),
-    textPrimary = Color(0xFF121417),
-    textSecondary = Color(0xFF121417).copy(alpha = 0.84f),
-    textTertiary = Color(0xFF121417).copy(alpha = 0.64f),
-    textDisabled = Color(0xFF121417).copy(alpha = 0.32f),
-    buttonBasic = Color(0xFF121417),
-    buttonOnBasic = Color.White,
-    statusSuccess = Color(0xFF02C265),
-    // Non-driving caution on white. Driving alerts use [IviColors.drivingAlert] in both themes.
-    statusCaution = Color(0xFF9A4A00),
-    statusCautionContainer = Color(0xFFFFF0DE),
-    drivingAlert = Color(0xFFFF8A00),
-    informativeNegative = Color(0xFFFF4C28),
-    teamStatusNegativeLegacy = Color(0xFFFE3D16),
-    statusNeutral = Color(0xFF121417).copy(alpha = 0.64f),
-)
+/** Reads the night mode already selected on [context]. Does not look at the system theme itself. */
+fun iviColors(context: Context): IviColors {
+    fun color(@ColorRes id: Int) = Color(context.getColor(id))
+    val text = color(R.color.ivi_text_primary)
+    return IviColors(
+        surfacePrimary = color(R.color.ivi_surface_primary),
+        surfaceHigh = color(R.color.ivi_surface_high),
+        textPrimary = text,
+        textSecondary = text.copy(alpha = TEXT_SECONDARY),
+        textTertiary = text.copy(alpha = TEXT_TERTIARY),
+        textDisabled = text.copy(alpha = TEXT_DISABLED),
+        buttonBasic = color(R.color.ivi_button_basic),
+        buttonOnBasic = color(R.color.ivi_button_on_basic),
+        statusSuccess = color(R.color.ivi_status_success),
+        statusCaution = color(R.color.ivi_status_caution),
+        statusCautionContainer = color(R.color.ivi_status_caution_container),
+        statusCautionIcon = color(R.color.ivi_status_caution_icon),
+        statusError = color(R.color.ivi_status_error),
+        drivingAlert = color(R.color.ivi_driving_alert),
+        drivingAlertContainer = color(R.color.ivi_driving_alert_container),
+        onDrivingAlert = color(R.color.ivi_on_driving_alert),
+        informativeNegative = color(R.color.ivi_informative_negative),
+        statusNeutral = text.copy(alpha = TEXT_TERTIARY),
+    )
+}
 
 /**
  * ivi_headline_small, ivi_title_large, ivi_title_medium, ivi_body_large, ivi_label_medium,
@@ -154,7 +169,9 @@ fun iviTypography(): Typography = Typography(
     labelSmall = IviType.minimum,
 )
 
-private val LocalIviColors = staticCompositionLocalOf { IviDarkColors }
+private val LocalIviColors = staticCompositionLocalOf<IviColors> {
+    error("IviColors is provided by FoundationTheme")
+}
 
 object IviTheme {
     val colors: IviColors
