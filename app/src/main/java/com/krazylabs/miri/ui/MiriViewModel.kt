@@ -19,7 +19,6 @@ import com.krazylabs.miri.mvp.DemoActions
 import com.krazylabs.miri.mvp.CheckItem
 import com.krazylabs.miri.mvp.CheckRules
 import com.krazylabs.miri.mvp.CueKind
-import com.krazylabs.miri.mvp.D1Face
 import com.krazylabs.miri.mvp.D2Rules
 import com.krazylabs.miri.mvp.DeckInput
 import com.krazylabs.miri.mvp.DestinationRole
@@ -311,7 +310,9 @@ class MiriViewModel @Inject constructor(
         publish()
     }
 
-    fun startAutoPlay() = playback.play(playbackHost, viewModelScope)
+    fun startAutoPlay() {
+        playback.play(playbackHost, viewModelScope, drivingStateRepository.state.value.gear)
+    }
 
     fun stopAutoPlay() = playback.stop()
 
@@ -347,6 +348,7 @@ class MiriViewModel @Inject constructor(
 
     private fun publish() {
         val now = System.currentTimeMillis()
+        playback.onRealGear(drivingStateRepository.state.value.gear)
         if (!edgesOpen && edgesAtMs != 0L && now >= edgesAtMs) edgesOpen = true
         var scenario = scenarioInput.overrides.value
         SpeechUsage.apply(scenario.speechUsage.ifBlank { BuildConfig.SPEECH_USAGE })
@@ -423,18 +425,15 @@ class MiriViewModel @Inject constructor(
                 d2bClips = d2?.arrivalClips ?: emptyList(),
             ),
         )
-        val tolls = scenario.pretendTolls ?: road.tolls
-        val highways = scenario.pretendHighways ?: road.highways
-        val pretendRoad = scenario.pretendTolls != null || scenario.pretendHighways != null
-        val routeId = when {
-            road.routeId.isNotEmpty() -> road.routeId
-            pretendRoad -> "pretend"
-            else -> ""
-        }
-        val guiding = (road.routing || pretendRoad) && routeId.isNotEmpty()
-        val d1Clip = TodayRoad.voiceKey(tolls, highways, parked = true)
-        val d1 = if (guiding && role == DestinationRole.OTHER && d1Clip != null) {
-            D1Face(routeId, d1Lines(tolls, highways), d1Clip)
+        val d1 = if (role == DestinationRole.OTHER) {
+            TodayRoad.face(
+                routeId = road.routeId,
+                routing = road.routing,
+                tolls = road.tolls,
+                highways = road.highways,
+                pretendTolls = scenario.pretendTolls,
+                pretendHighways = scenario.pretendHighways,
+            )
         } else {
             null
         }
@@ -655,20 +654,20 @@ class MiriViewModel @Inject constructor(
             prefs.edit().putBoolean(KEY_ORIGIN_WAIT, false).apply()
         }
         if (!origin.pending || !parked) return
-        val here = navigationRepository.here.value ?: return
+        val fix = navigationRepository.originFix.value ?: return
         val next = origin.arrive(
             navigationRepository.hereSerial.value,
-            here.latitude,
-            here.longitude,
-            here.address,
+            fix.latitude,
+            fix.longitude,
+            fix.address,
             parked = true,
         )
         if (next.pending || next == origin) return
         origin = next
         prefs.edit()
-            .putString(KEY_LAT, here.latitude.toString())
-            .putString(KEY_LON, here.longitude.toString())
-            .putString(KEY_ADDR, here.address)
+            .putString(KEY_LAT, fix.latitude.toString())
+            .putString(KEY_LON, fix.longitude.toString())
+            .putString(KEY_ADDR, fix.address)
             .putBoolean(KEY_ORIGIN_WAIT, false)
             .apply()
     }
@@ -799,13 +798,6 @@ class MiriViewModel @Inject constructor(
             label = label,
             caption = place.address.trim().takeIf { it.isNotEmpty() && it != label },
         )
-    }
-
-    private fun d1Lines(tolls: Int, highways: Int): List<String> {
-        val lines = mutableListOf<String>()
-        if (tolls > 0) lines += "톨게이트 ${tolls}곳"
-        if (highways > 0) lines += "고속도로 진입 ${highways}번"
-        return lines
     }
 
     private fun CardFace.toShown(): ShownCard = ShownCard(

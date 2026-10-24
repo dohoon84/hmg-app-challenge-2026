@@ -375,19 +375,13 @@ class AndroidSpeechFocus(
         // guidance-usage clip we are playing is not "nav started".
         // Whether activePlaybackConfigurations actually reports them is unverified on device.
         val self = android.os.Process.myUid()
+        val guidanceMode = SpeechUsage.mode == SpeechUsage.NAVIGATION_GUIDANCE
         return audio.activePlaybackConfigurations.any { config ->
             val usage = config.audioAttributes.usage
             val uid = hiddenClientUid(config)
-            if (uid != null) {
-                foreignNavOrAssistant(usage, uid, self)
-            } else {
-                val nav = usage == AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE ||
-                    usage == AudioAttributes.USAGE_ASSISTANT
-                // No uid: sonification is a different usage, so a real nav stream still
-                // counts. Guidance mode shares that usage, so ignore it rather than
-                // stopping our own clip.
-                nav && SpeechUsage.mode != SpeechUsage.NAVIGATION_GUIDANCE
-            }
+            // uid <= 0 is the platform's anonymized client, not the nav app.
+            // It takes the same fallback as a missing getClientUid.
+            playbackIsNavApp(usage, uid, self, guidanceMode)
         }
     }
 }

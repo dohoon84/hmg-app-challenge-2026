@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Debug route button only. Absent from the pleos release manifest. -->
-    <uses-permission android:name="pleos.car.permission.NAVI_ROUTE_SEARCH" />
+    <!-- NAVI_ROUTE_SEARCH stays off this manifest. The console lists it as Coming Soon. -->
 </manifest>

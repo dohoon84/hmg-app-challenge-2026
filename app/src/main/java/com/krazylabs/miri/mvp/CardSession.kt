@@ -155,10 +155,15 @@ class CardSession {
         if (moving) {
             val driving = input.d2
             val drivingKey = driving?.routeKey?.takeIf { it.isNotEmpty() }.orEmpty()
-            val sameRoute = promotedRoute(driving)
-            if (drivingKey.isNotEmpty() && drivingKey != d2KeyInPark && !sameRoute) toldD2 += drivingKey
-            if (drivingKey.isNotEmpty()) d2KeyInPark = drivingKey
             val routeId = driving?.routeId.orEmpty()
+            val sameRoute = promotedRoute(driving)
+            // The park already had a route id and this fix has none. That is
+            // not a new destination; recording the key would consume D2.
+            val routeIdDropped = routeId.isEmpty() && d2RouteInPark.isNotEmpty()
+            if (!routeIdDropped && drivingKey.isNotEmpty() && drivingKey != d2KeyInPark && !sameRoute) {
+                toldD2 += drivingKey
+            }
+            if (routeId.isNotEmpty() && drivingKey.isNotEmpty()) d2KeyInPark = drivingKey
             if (routeId.isNotEmpty()) d2RouteInPark = routeId
             if (deferFromPrior && held != deferred) {
                 deferred = null

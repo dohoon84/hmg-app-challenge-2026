@@ -3,7 +3,7 @@
 
     <!--
       Read permissions only. No CONTROL_*, no android CAR_ENERGY, no NAVI_ROUTE_SEARCH.
-      NAVI_ROUTE_SEARCH is declared on the pleos debug source set.
+      NAVI_ROUTE_SEARCH is not declared. The console lists it as Coming Soon.
       AAOS CAR_POWERTRAIN and CAR_INFO are unverified against the console approval list.
     -->
     <uses-permission android:name="pleos.car.permission.CAR_DOORS" />

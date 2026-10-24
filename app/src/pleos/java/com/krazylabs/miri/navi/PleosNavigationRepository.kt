@@ -72,11 +72,10 @@ class PleosNavigationRepository @Inject constructor(
     override val recentPlaces: StateFlow<List<PlaceRequest>> = _recents
     private val _bookmarks = MutableStateFlow<List<PlaceRequest>>(emptyList())
     override val bookmarks: StateFlow<List<PlaceRequest>> = _bookmarks
-    private val _here = MutableStateFlow<HereFix?>(null)
-    override val here: StateFlow<HereFix?> = _here
-    private val _hereSerial = MutableStateFlow(0L)
-    override val hereSerial: StateFlow<Long> = _hereSerial
-    private val locationGate = LocationRequestGate()
+    private val locations = TrackedLocation()
+    override val here: StateFlow<HereFix?> = locations.here
+    override val hereSerial: StateFlow<Long> = locations.hereSerial
+    override val originFix: StateFlow<HereFix?> = locations.originFix
     /** A resume or reconnect still needs getDestinationInfo after the link is READY. */
     private val destinationAfterReady = AtomicBoolean(false)
     private val tbt = TbtGuard()
@@ -129,6 +128,7 @@ class PleosNavigationRepository @Inject constructor(
         override fun onRouteCancelled() {
             routing = false
             tbt.clear()
+            locations.clearRoute()
             _road.value = RoadCounts()
             _destination.value = null
             _charging.value = false
@@ -150,12 +150,14 @@ class PleosNavigationRepository @Inject constructor(
         }
 
         override fun onCurrentLocationInfo(info: ai.pleos.playground.navi.data.CurrentLocationInfo) {
-            val id = info.routeId
-            _road.update { it.copy(routeId = id) }
-            if (!locationGate.acceptCallback()) return
-            if (!usableFix(info.latitude, info.longitude)) return
-            _here.value = HereFix(info.latitude, info.longitude, info.address.orEmpty())
-            _hereSerial.value = _hereSerial.value + 1
+            if (!started.get()) return
+            locations.onCurrentLocation(
+                routeId = info.routeId,
+                latitude = info.latitude,
+                longitude = info.longitude,
+                address = info.address.orEmpty(),
+            ) ?: return
+            _road.update { it.copy(routeId = locations.road.value.routeId) }
         }
 
         override fun onRecentDestinationInfo(list: List<ai.pleos.playground.navi.data.RecentDestinationInfo>) {
@@ -226,10 +228,11 @@ class PleosNavigationRepository @Inject constructor(
                 {
                     if (!started.get() || helper !== created) return@initialize
                     _link.value = LinkState.READY
-                    locationGate.markReady(System.currentTimeMillis())
+                    locations.markReady(System.currentTimeMillis())
                     readDestination(created)
                     if (destinationAfterReady.getAndSet(false)) readDestination(created)
                     readBookmarks(created)
+                    readCurrentLocation(created)
                 },
                 { error ->
                     if (!started.get() || helper !== created) return@initialize
@@ -259,6 +262,7 @@ class PleosNavigationRepository @Inject constructor(
                 _status.value = error.message
             }
         }
+        locations.abandonInflight()
         _link.value = LinkState.IDLE
     }
 
@@ -340,20 +344,22 @@ class PleosNavigationRepository @Inject constructor(
                 _status.value = error.message ?: error.javaClass.simpleName
             }
         }
+        readCurrentLocation(current)
     }
 
     override fun requestCurrentLocation() {
-        locationGate.request()
+        locations.requestOrigin()
     }
 
     override fun pollLocation(nowMs: Long) {
-        if (!locationGate.shouldIssue(nowMs)) return
+        if (!locations.shouldIssueOrigin(nowMs)) return
         val current = helper ?: return
         if (!started.get() || helper !== current || _link.value != LinkState.READY) return
-        locationGate.markIssued()
+        locations.markOriginIssued()
         try {
             current.getCurrentLocationInfo()
         } catch (error: Throwable) {
+            locations.abandonInflight()
             _status.value = error.message ?: error.javaClass.simpleName
         }
     }
@@ -377,6 +383,17 @@ class PleosNavigationRepository @Inject constructor(
         try {
             target.getDestinationInfo()
         } catch (error: Throwable) {
+            _status.value = error.message ?: error.javaClass.simpleName
+        }
+    }
+
+    private fun readCurrentLocation(target: NaviHelper) {
+        if (!started.get() || helper !== target || _link.value != LinkState.READY) return
+        if (!locations.beginRouteRead()) return
+        try {
+            target.getCurrentLocationInfo()
+        } catch (error: Throwable) {
+            locations.abandonInflight()
             _status.value = error.message ?: error.javaClass.simpleName
         }
     }

@@ -45,7 +45,8 @@ class AutoPlayDirector private constructor(
         _captionsOn.value = !_captionsOn.value
     }
 
-    override fun play(host: DemoPlaybackHost, scope: CoroutineScope) {
+    override fun play(host: DemoPlaybackHost, scope: CoroutineScope, realGear: GearPosition) {
+        if (realGear != GearPosition.PARK) return
         stop()
         this.host = host
         val gen = generation
@@ -58,6 +59,10 @@ class AutoPlayDirector private constructor(
                 if (gen == generation) cleanup(host)
             }
         }
+    }
+
+    override fun onRealGear(gear: GearPosition) {
+        if (gear != GearPosition.PARK && _running.value) stop()
     }
 
     override fun stop() {

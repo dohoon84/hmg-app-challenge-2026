@@ -75,7 +75,7 @@ class AutoPlayDirectorTest {
                 yield()
             }
         }
-        director.play(host, this)
+        director.play(host, this, GearPosition.PARK)
         advanceUntilIdle()
         assertFalse(cabin.engaged)
         assertFalse(director.running.value)
@@ -84,12 +84,35 @@ class AutoPlayDirectorTest {
 
         val clearsAfterStop = host.clears
         stopAt = seen + 12
-        director.play(host, this)
+        director.play(host, this, GearPosition.PARK)
         advanceUntilIdle()
         assertTrue(host.rewinds >= 2)
         assertFalse(cabin.engaged)
         assertTrue(host.clears > clearsAfterStop)
         assertTrue(host.applied.all { !it.armNewRental })
+    }
+
+    @Test
+    fun autoPlayStartsOnlyInRealParkAndStopsWhenItLeaves() = runTest {
+        val cabin = ScriptedCabinFeed()
+        val host = RecordingHost()
+        val director = AutoPlayDirector.forTest(cabin) { yield() }
+        director.play(host, this, GearPosition.DRIVE)
+        advanceUntilIdle()
+        assertFalse(cabin.engaged)
+        assertFalse(director.running.value)
+        assertEquals(0, host.rewinds)
+        assertEquals(0, host.clears)
+
+        director.play(host, this, GearPosition.PARK)
+        yield()
+        assertTrue(cabin.engaged)
+        assertTrue(director.running.value)
+        director.onRealGear(GearPosition.REVERSE)
+        advanceUntilIdle()
+        assertFalse(cabin.engaged)
+        assertFalse(director.running.value)
+        assertTrue(host.clears >= 1)
     }
 
     private class RecordingHost : DemoPlaybackHost {

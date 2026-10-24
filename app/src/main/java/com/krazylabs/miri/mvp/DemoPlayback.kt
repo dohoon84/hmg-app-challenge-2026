@@ -1,5 +1,6 @@
 package com.krazylabs.miri.mvp
 
+import com.krazylabs.miri.domain.GearPosition
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,7 +19,8 @@ interface DemoPlayback {
     val highlight: StateFlow<DemoHighlight>
 
     fun toggleCaptions()
-    fun play(host: DemoPlaybackHost, scope: CoroutineScope)
+    fun play(host: DemoPlaybackHost, scope: CoroutineScope, realGear: GearPosition = GearPosition.PARK)
+    fun onRealGear(gear: GearPosition) = Unit
     fun stop()
 }
 
@@ -42,6 +44,6 @@ class IdlePlayback @Inject constructor() : DemoPlayback {
     override val captionsOn: StateFlow<Boolean> = MutableStateFlow(false)
     override val highlight: StateFlow<DemoHighlight> = MutableStateFlow(DemoHighlight.NONE)
     override fun toggleCaptions() = Unit
-    override fun play(host: DemoPlaybackHost, scope: CoroutineScope) = Unit
+    override fun play(host: DemoPlaybackHost, scope: CoroutineScope, realGear: GearPosition) = Unit
     override fun stop() = Unit
 }

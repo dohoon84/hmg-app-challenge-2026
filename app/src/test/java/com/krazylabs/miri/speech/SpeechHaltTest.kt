@@ -61,6 +61,28 @@ class SpeechHaltTest {
     }
 
     @Test
+    fun anonymizedGuidanceUidUsesTheFallbackAndDoesNotStopOurVoice() {
+        val self = 10
+        val guidance = AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE
+        val assistant = AudioAttributes.USAGE_ASSISTANT
+        assertFalse(playbackIsNavApp(guidance, clientUid = -1, selfUid = self, guidanceMode = true))
+        assertFalse(playbackIsNavApp(guidance, clientUid = 0, selfUid = self, guidanceMode = true))
+        assertFalse(playbackIsNavApp(assistant, clientUid = null, selfUid = self, guidanceMode = true))
+        assertTrue(playbackIsNavApp(guidance, clientUid = -1, selfUid = self, guidanceMode = false))
+        assertTrue(playbackIsNavApp(guidance, clientUid = 20, selfUid = self, guidanceMode = true))
+        assertFalse(playbackIsNavApp(guidance, clientUid = self, selfUid = self, guidanceMode = true))
+
+        val halt = SpeechHalt()
+        assertFalse(
+            halt.shouldStop(
+                visible = true,
+                gear = GearPosition.PARK,
+                navGuidance = playbackIsNavApp(guidance, clientUid = -1, selfUid = self, guidanceMode = true),
+            ),
+        )
+    }
+
+    @Test
     fun aHiddenScreenStops() {
         val halt = SpeechHalt()
         assertTrue(halt.shouldStop(visible = false, gear = GearPosition.PARK, navGuidance = false))

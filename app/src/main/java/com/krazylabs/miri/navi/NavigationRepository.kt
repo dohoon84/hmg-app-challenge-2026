@@ -44,9 +44,16 @@ interface NavigationRepository {
     val here: StateFlow<HereFix?>
         get() = NavIdle.here
 
-    /** Increments each time [here] is replaced by a new location callback. */
+    /** Increments each time the rental-origin request stores a fix. Route refreshes do not. */
     val hereSerial: StateFlow<Long>
         get() = NavIdle.hereSerial
+
+    /**
+     * The fix accepted for the rental-origin request.
+     * Route refreshes update [here] and must not replace this.
+     */
+    val originFix: StateFlow<HereFix?>
+        get() = NavIdle.originFix
     val bookmarks: StateFlow<List<PlaceRequest>>
         get() = NavIdle.bookmarks
 
@@ -81,5 +88,6 @@ private object NavIdle {
     val recents: StateFlow<List<PlaceRequest>> = MutableStateFlow(emptyList())
     val here: StateFlow<HereFix?> = MutableStateFlow(null)
     val hereSerial: StateFlow<Long> = MutableStateFlow(0L)
+    val originFix: StateFlow<HereFix?> = MutableStateFlow(null)
     val bookmarks: StateFlow<List<PlaceRequest>> = MutableStateFlow(emptyList())
 }
