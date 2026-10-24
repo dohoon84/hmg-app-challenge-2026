@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 /**
- * Plays F1 through C2 on the real card session by swapping in [ScriptedCabinFeed]
+ * Plays F1, F2, D1, D2, F3, C1, C3, and C2 by swapping in [ScriptedCabinFeed]
  * and demo route numbers. It does not open the navigation app or write vehicle
  * properties. Release builds do not contain this class.
  */
@@ -113,13 +113,8 @@ class AutoPlayDirector private constructor(
                 }
                 is AutoStep.ChooseRental -> host.chooseRental()
                 is AutoStep.PickTime -> {
-                    val minute = host.defaultReturnMinute()
-                    if (minute < 0) {
-                        host.selectReturnDay(1)
-                        host.selectReturnMinute(0)
-                    } else {
-                        host.selectReturnMinute(minute)
-                    }
+                    host.selectReturnDay(AutoPlayFeed.RETURN_DAY)
+                    host.selectReturnMinute(AutoPlayFeed.RETURN_MINUTE)
                 }
                 is AutoStep.PickPlace -> host.selectReturnPlace(F2Draft.PLACE_PICKUP)
                 is AutoStep.Confirm -> host.confirmReturn()
@@ -143,6 +138,7 @@ class AutoPlayDirector private constructor(
                             pretendHighways = null,
                             returnInMinutes = 120,
                             chargeTargetPercent = 80,
+                            remainSeconds = F3Rules.DEMO_ETA_SECONDS,
                             armNewRental = false,
                         ),
                     )
@@ -160,6 +156,8 @@ class AutoPlayDirector private constructor(
                     host.refresh()
                     wait(step.ms)
                 }
+                is AutoStep.Epilogue -> host.setEpilogue(step.which)
+                is AutoStep.Rewind -> host.rewindToIntake()
             }
         }
     }
@@ -169,6 +167,7 @@ class AutoPlayDirector private constructor(
         _highlight.value = DemoHighlight.NONE
         _caption.value = ""
         _running.value = false
+        host.setEpilogue(null)
         host.clearDemo()
         host.refresh()
     }
@@ -192,6 +191,8 @@ sealed interface AutoStep {
     data class ReturnWindow(override val ms: Long = 0) : AutoStep
     data class Gear(val gear: GearPosition, val caption: String, val beat: String? = null, override val ms: Long) : AutoStep
     data class Body(val rearDoorOpen: Boolean, val soc: Int, override val ms: Long = 0) : AutoStep
+    data class Epilogue(val which: String, override val ms: Long = 0) : AutoStep
+    data class Rewind(override val ms: Long = 0) : AutoStep
 }
 
 object AutoPlayScript {
@@ -210,7 +211,6 @@ object AutoPlayScript {
         AutoStep.Highlight(DemoHighlight.RETURN_PLACE),
         AutoStep.Highlight(DemoHighlight.CONFIRM),
         AutoStep.Confirm(),
-        AutoStep.Show("F2_DONE", "반납 시각을 정했어요", 4_000),
         AutoStep.Road(tolls = 2, highways = 1, charging = false),
         AutoStep.Gear(GearPosition.DRIVE, "주행 후 정차", ms = DRIVE_MS),
         AutoStep.Gear(GearPosition.PARK, "D → P", beat = "D1", ms = CARD_MS),
@@ -224,8 +224,12 @@ object AutoPlayScript {
         AutoStep.Body(rearDoorOpen = true, soc = 60),
         AutoStep.Gear(GearPosition.PARK, "반납 장소 도착", beat = "C1", ms = 8_000),
         AutoStep.Body(rearDoorOpen = false, soc = 60, ms = 1_000),
+        AutoStep.Epilogue("C3"),
         AutoStep.Body(rearDoorOpen = false, soc = 90),
-        AutoStep.Show("C2", "점검 끝", 6_000),
+        AutoStep.Show("C3", "다녀왔어요", 7_000),
+        AutoStep.Epilogue("C2"),
+        AutoStep.Show("C2", "점검 끝", 3_000),
+        AutoStep.Rewind(),
     )
 
     fun beats(): List<String> = steps.mapNotNull { beatOf(it) }
@@ -274,5 +278,7 @@ private fun AutoStep.scaled(factor: Float): AutoStep {
         is AutoStep.ReturnWindow -> copy(ms = next)
         is AutoStep.Gear -> copy(ms = next)
         is AutoStep.Body -> copy(ms = next)
+        is AutoStep.Epilogue -> copy(ms = next)
+        is AutoStep.Rewind -> copy(ms = next)
     }
 }

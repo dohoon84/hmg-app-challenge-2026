@@ -56,6 +56,11 @@ data class DeckInput(
     val showGuide: Boolean,
     /** Return-card distance. Null hides the sentence. */
     val tripLine: String? = null,
+    /**
+     * Auto-play only. "C3" is 다녀왔어요 with [tripLine]. "C2" is the done
+     * screen. Null keeps the product done screen, distance line included.
+     */
+    val epilogue: String? = null,
 )
 
 /**
@@ -207,11 +212,7 @@ class CardSession {
             voiceStamp = null
         }
         if (completion) {
-            return DeckStep(
-                MiriPane.CHECK,
-                CardFace(MiriPane.CHECK, input.checkTitle, doneLines(input)),
-                VoicePlay.None,
-            )
+            return DeckStep(MiriPane.CHECK, closingFace(input), VoicePlay.None)
         }
         if (spent) return DeckStep(MiriPane.ICON, null, VoicePlay.None)
         // F1 and F2 are the intake. Choosing a kind while parked opens F2
@@ -251,11 +252,7 @@ class CardSession {
                 completion = true
                 held = null
                 val voice = checkChime(input.nowMs, once("check-done", VoicePlay.Chime))
-                return DeckStep(
-                    MiriPane.CHECK,
-                    CardFace(MiriPane.CHECK, input.checkTitle, doneLines(input)),
-                    voice,
-                )
+                return DeckStep(MiriPane.CHECK, closingFace(input), voice)
             }
             spent = true
             held = null
@@ -354,6 +351,13 @@ class CardSession {
 
     private fun doneLines(input: DeckInput): List<String> =
         listOf(CheckRules.DONE) + listOfNotNull(input.tripLine)
+
+    private fun closingFace(input: DeckInput): CardFace {
+        if (input.epilogue == "C3") {
+            return CardFace(MiriPane.CHECK, "다녀왔어요", listOfNotNull(input.tripLine))
+        }
+        return CardFace(MiriPane.CHECK, input.checkTitle, doneLines(input))
+    }
 
     private fun face(id: CardId, input: DeckInput): CardFace? = when (id) {
         CardId.CHECK -> {

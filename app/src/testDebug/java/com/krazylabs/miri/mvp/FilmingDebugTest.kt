@@ -3,7 +3,6 @@ package com.krazylabs.miri.mvp
 import android.content.Intent
 import com.krazylabs.miri.BuildConfig
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -22,7 +21,7 @@ class FilmingDebugTest {
     @Test
     fun stepIdsMatchTheAutoPlayBeats() {
         assertEquals(FilmingCommands.steps, AutoPlayScript.beats())
-        assertFalse(AutoPlayScript.beats().contains("C3"))
+        assertTrue(AutoPlayScript.beats().contains("C3"))
     }
 
     @Test
@@ -32,7 +31,7 @@ class FilmingDebugTest {
             .putExtra(FilmingCommands.EXTRA_STEP, "C3")
             .putExtra(FilmingCommands.EXTRA_HOLD, 1.5f)
         assertEquals(
-            FilmingCommand.Play("C2", 1.5f),
+            FilmingCommand.Play("C3", 1.5f),
             FilmingCommands.parse(intent.action, extrasOf(intent)),
         )
 

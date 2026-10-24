@@ -18,14 +18,14 @@
 | --- | --- |
 | `F1` | 차 종류 |
 | `F2` | 반납 시각 |
-| `F2_DONE` | 반납 시각을 정한 뒤 |
 | `D1` | 오늘 길 |
 | `D2` | 충전 |
 | `F3` | 반납 준비 |
 | `C1` | 반납 점검 |
+| `C3` | 다녀왔어요 |
 | `C2` | 점검 끝 |
 
-`C3`는 점검 끝 화면의 다른 이름입니다. 브로드캐스트에서는 `C2`와 같습니다. 모르는 id는 재생을 시작하지 않습니다.
+`C3`는 주행거리를 보여주는 반납 화면입니다. `C2`는 그 다음의 점검 끝입니다. 모르는 id는 재생을 시작하지 않습니다.
 
 `hold`는 그 스텝부터의 대기 시간 배수입니다. 없거나 0 이하이면 1입니다. 고른 스텝 앞의 동작은 대기 없이 적용되어 차량 상태를 맞춘 뒤, 그 스텝부터 배수가 적용됩니다.
 
@@ -67,10 +67,10 @@ C1부터, 대기를 1.5배:
 adb shell am broadcast -n com.krazylabs.miri/.mvp.FilmingReceiver -a com.krazylabs.miri.action.AUTOPLAY --ez start true --es step C1 --ef hold 1.5
 ```
 
-C3(점검 끝, 스크립트 id는 C2):
+C3(다녀왔어요):
 
 ```
 adb shell am broadcast -n com.krazylabs.miri/.mvp.FilmingReceiver -a com.krazylabs.miri.action.AUTOPLAY --ez start true --es step C3
 ```
 
-다른 스텝도 같은 형식입니다. `step`에 `F1`, `F2`, `F2_DONE`, `D1`, `D2`, `F3`, `C1`, `C2` 중 하나를 넣습니다.
+다른 스텝도 같은 형식입니다. `step`에 `F1`, `F2`, `D1`, `D2`, `F3`, `C1`, `C3`, `C2` 중 하나를 넣습니다.

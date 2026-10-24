@@ -13,6 +13,7 @@ import com.krazylabs.miri.domain.PlaceRequest
 import com.krazylabs.miri.domain.TripEstimate
 import com.krazylabs.miri.domain.TurnLamps
 import com.krazylabs.miri.driving.DrivingStateRepository
+import com.krazylabs.miri.mvp.AutoPlayFeed
 import com.krazylabs.miri.mvp.CardFace
 import com.krazylabs.miri.mvp.CardSession
 import com.krazylabs.miri.mvp.CarSpec
@@ -31,6 +32,7 @@ import com.krazylabs.miri.mvp.Filming
 import com.krazylabs.miri.mvp.FilmingChrome
 import com.krazylabs.miri.mvp.FilmingCommand
 import com.krazylabs.miri.mvp.F3Rules
+import com.krazylabs.miri.mvp.GuideNote
 import com.krazylabs.miri.mvp.MiriPane
 import com.krazylabs.miri.mvp.RearDoorNote
 import com.krazylabs.miri.mvp.ReturnGuidanceFeature
@@ -158,6 +160,11 @@ class MiriViewModel @Inject constructor(
     private var rentalOdometerKm: Float? = readOdometerStart()
     private var placeSheetOpen = false
     private var guideNote = ""
+    private var guideNoteAt = 0L
+    private var guideNoteCard = ""
+    private var f3Visit = 0
+    private var onF3 = false
+    private var epilogue: String? = null
     private var edgesOpen = true
     private var edgesAtMs = 0L
     private var hostVisible = true
@@ -380,6 +387,8 @@ class MiriViewModel @Inject constructor(
         guideNote = ReturnGuidanceFeature.offer(returnPlace()) { place ->
             demo.requestReturnGuide(place)
         }
+        guideNoteAt = System.currentTimeMillis()
+        guideNoteCard = ""
         publish()
     }
 
@@ -445,20 +454,50 @@ class MiriViewModel @Inject constructor(
         val lamps = lampOverride.value ?: snapshot.turnLamps
         val destination = navigationRepository.destination.value
         val road = navigationRepository.road.value
+        val playing = playback.running.value
+        val realCharging = navigationRepository.chargingStation.value ||
+            (destination != null && destinationRole(destination.name) == DestinationRole.CHARGING)
+        val formAt = if (playing && scenario.returnInMinutes == null) {
+            demoReturnMinutes = null
+            demoReturnAt = null
+            null
+        } else {
+            returnAtMs(now, scenario)
+        }
+        val feed = AutoPlayFeed.resolve(
+            playing = playing,
+            pretendCharging = scenario.pretendCharging,
+            returnInMinutes = scenario.returnInMinutes,
+            scenarioRemainMeters = scenario.remainMeters,
+            scenarioRemainSeconds = scenario.remainSeconds,
+            realCharging = realCharging,
+            realRouteId = road.routeId,
+            realRouteKey = RouteKey.of(destination, road.routeId),
+            realTolls = road.tolls,
+            realHighways = road.highways,
+            realRouting = road.routing,
+            realRemainMeters = destination?.remainDistance,
+            realRemainSeconds = destination?.remainTime,
+            formMinutesLeft = formAt?.let { (it - now) / 60_000L },
+        )
         val role = when {
-            scenario.pretendCharging || navigationRepository.chargingStation.value -> DestinationRole.CHARGING
-            destination != null -> destinationRole(destination.name)
+            feed.charging -> DestinationRole.CHARGING
+            !playing && destination != null -> destinationRole(destination.name)
             else -> DestinationRole.OTHER
         }
         val identity = snapshot.identity
-        val routeKey = RouteKey.of(destination, road.routeId)
         // Our own guidance-usage playback is in the active configurations.
         // Count it as navigation only when it is someone else.
         val navVoice = speechFocus.navigationOrAssistantActive()
-        val d2 = D2Rules.offer(identity, role, specAgrees = CarSpec.agrees(identity), routeKey = routeKey)
-            ?.copy(routeId = road.routeId)
-        val remainMeters = scenario.remainMeters ?: destination?.remainDistance
-        val remainSeconds = scenario.remainSeconds ?: destination?.remainTime
+        val offered = D2Rules.offer(
+            identity,
+            role,
+            specAgrees = CarSpec.agrees(identity),
+            routeKey = feed.routeKey,
+        )?.copy(routeId = feed.routeId)
+        val d2 = AutoPlayFeed.cardD2(playing, gear, offered)
+        val remainMeters = feed.remainMeters
+        val remainSeconds = feed.remainSeconds
         val cue = driveCue.step(
             DriveCueInput(
                 nowMs = now,
@@ -467,7 +506,7 @@ class MiriViewModel @Inject constructor(
                 navVoice = navVoice,
                 holdMs = scenario.turnMs,
                 acceptEdges = edgesOpen,
-                routeId = routeKey,
+                routeId = feed.routeKey,
                 d2bEligible = d2 != null && d2.arrivalClips.isNotEmpty(),
                 remainMeters = remainMeters,
                 remainSeconds = remainSeconds,
@@ -476,20 +515,19 @@ class MiriViewModel @Inject constructor(
         )
         val d1 = if (role == DestinationRole.OTHER) {
             TodayRoad.face(
-                routeId = road.routeId,
-                routing = road.routing,
-                tolls = road.tolls,
-                highways = road.highways,
+                routeId = if (playing) "" else feed.routeId,
+                routing = if (playing) false else feed.routing,
+                tolls = if (playing) 0 else feed.tolls,
+                highways = if (playing) 0 else feed.highways,
                 pretendTolls = scenario.pretendTolls,
                 pretendHighways = scenario.pretendHighways,
             )
         } else {
             null
         }
-        val returnAt = returnAtMs(now, scenario)
-        val minutesLeft = returnAt?.let { (it - now) / 60_000L }
-        val f3Key = if (!ownCar && kind != null && minutesLeft != null) {
-            F3Rules.dueKey(kind, minutesLeft, session.f3Shown())
+        val returnAt = formAt
+        val f3Key = if (!ownCar && kind != null && feed.f3MinutesLeft != null) {
+            F3Rules.dueKey(kind, feed.f3MinutesLeft, session.f3Shown())
         } else {
             null
         }
@@ -507,7 +545,7 @@ class MiriViewModel @Inject constructor(
                     target = target,
                     returnAtMs = returnAt,
                     nowMs = now,
-                    etaSeconds = cachedTrip?.eta,
+                    etaSeconds = if (playing) feed.remainSeconds else cachedTrip?.eta,
                     zone = zone,
                 ),
             )
@@ -560,8 +598,20 @@ class MiriViewModel @Inject constructor(
                 nowMs = now,
                 cardMs = scenario.cardMs,
                 showGuide = scenario.showReturnGuide,
+                epilogue = epilogue,
             ),
         )
+        val f3Now = step.pane == MiriPane.F3 && step.card != null
+        if (f3Now && !onF3) f3Visit += 1
+        onF3 = f3Now
+        val cardKey = if (f3Now) "F3#$f3Visit" else "${step.pane}:${step.card?.title.orEmpty()}"
+        guideNote = GuideNote.retain(guideNote, guideNoteAt, now, guideNoteCard, cardKey)
+        if (guideNote.isEmpty()) {
+            guideNoteAt = 0L
+            guideNoteCard = ""
+        } else if (guideNoteCard.isEmpty()) {
+            guideNoteCard = cardKey
+        }
         val cardOpen = hostVisible && step.card != null && cue.kind == CueKind.NONE
         val voice = cardVoice.decide(
             offered = if (cardOpen) step.voice else VoicePlay.None,
@@ -750,6 +800,10 @@ class MiriViewModel @Inject constructor(
         override fun clearDemo() {
             scenarioInput.update(scenarioInput.overrides.value.clearedForNewRental())
         }
+        override fun setEpilogue(which: String?) {
+            epilogue = which
+            publish()
+        }
     }
 
     private fun rewindToIntake() {
@@ -764,6 +818,10 @@ class MiriViewModel @Inject constructor(
         checkReshow = false
         demoReturnAt = null
         demoReturnMinutes = null
+        epilogue = null
+        guideNote = ""
+        guideNoteAt = 0L
+        guideNoteCard = ""
         session.resetRental()
         driveCue.resetRental()
         rearNote.reset()

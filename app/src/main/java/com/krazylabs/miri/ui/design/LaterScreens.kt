@@ -133,13 +133,20 @@ fun f3FuelPreview() = F3Model(
     "지금", "62%", "반납 기준", "80%",
 )
 
-private fun f3From(card: ShownCard?): F3Model {
-    val lines = card?.lines.orEmpty()
-    val sentence = lines.firstOrNull { !it.contains("%") || it.contains("해요") || it.contains("됐어요") }.orEmpty()
-    val rest = lines.filter { it != sentence }
+fun f3From(card: ShownCard?): F3Model = f3Model(card?.lines.orEmpty())
+
+fun f3Model(lines: List<String>): F3Model {
+    val depart = lines.firstOrNull { it.contains("출발하면") }
+    val sentence = depart
+        ?: lines.firstOrNull { !it.contains("%") || it.contains("해요") || it.contains("됐어요") }.orEmpty()
+    val rest = lines.filter { it != sentence && !it.startsWith("반납 ") && !it.startsWith("가는 데") }
     if (sentence.contains("출발하면")) {
         val time = sentence.substringBefore("쯤").trim()
-        return F3Model("출발", time, " 쯤", sentence, "반납", rest.getOrNull(0), "가는 데", rest.getOrNull(1), showPort = false)
+        val back = lines.firstOrNull { it.startsWith("반납 ") && it.contains(":") && !it.contains("까지") }
+            ?.removePrefix("반납 ")
+            ?.trim()
+        val going = lines.firstOrNull { it.startsWith("가는 데") }?.removePrefix("가는 데")?.trim()
+        return F3Model("출발", time, " 쯤", sentence, "반납", back, "가는 데", going, showPort = false)
     }
     if (sentence.contains("남았어요") || sentence == "1분도 안 남았어요") {
         val hero = when {
@@ -221,6 +228,23 @@ fun C1CheckScreen(card: ShownCard?, dark: Boolean) {
             w = 504f, h = 68f, maxLines = 2,
         )
         SpecText(CheckRules.FOOTER, 880f, 1128f, MiriType.bodySmallNormal(), colors.frameTertiary)
+    }
+}
+
+@Composable
+fun C3ReturnScreen(card: ShownCard?, dark: Boolean) {
+    val colors = IviTheme.colors
+    val car = if (dark) R.drawable.miri_car_q34_dark else R.drawable.miri_car_q34_light
+    val trip = card?.lines?.firstOrNull { it.contains("km") }
+    SpecFrame {
+        Image(painterResource(car), null, Modifier.figma(0f, 24f, 1682f, 900f), contentScale = ContentScale.Crop)
+        SpecIcon(R.drawable.miri_ic_parking, 48f, 48f, 32f, 32f, colors.frameSecondary, "정차")
+        SpecText("정차 중", 92f, 50f, MiriType.labelMedium(), colors.frameSecondary)
+        SpecText("다녀왔어요", 48f, 958f, MiriType.headlineLargeExtra(), colors.frameInk)
+        SpecText("반납", 48f, 1062f, MiriType.titleLargeNormal(), colors.frameSecondary)
+        if (trip != null) {
+            SpecText(trip, 880f, 1128f, MiriType.bodySmallNormal(), colors.frameTertiary, w = 754f, h = 56f, maxLines = 2)
+        }
     }
 }
 

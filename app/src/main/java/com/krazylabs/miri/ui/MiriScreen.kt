@@ -26,6 +26,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -45,6 +47,7 @@ import com.krazylabs.miri.ui.design.F1KindScreen
 import com.krazylabs.miri.ui.design.F2ReturnScreen
 import com.krazylabs.miri.ui.design.C1CheckScreen
 import com.krazylabs.miri.ui.design.C2DoneScreen
+import com.krazylabs.miri.ui.design.C3ReturnScreen
 import com.krazylabs.miri.ui.design.DrivingMark
 import com.krazylabs.miri.ui.design.F3ReturnScreen
 import com.krazylabs.miri.ui.design.F4ChecklistScreen
@@ -74,6 +77,18 @@ fun MiriRoute(
                 detectTapGestures(onLongPress = { demoOpen = !demoOpen })
             },
     ) {
+        val captionBand = ui.demoCaptions && ui.demoCaption.isNotBlank()
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    val reserve = if (captionBand) CAPTION_RESERVE_DP.dp.toPx() else 0f
+                    val scale = captionInsetScale(size.height, reserve)
+                    scaleX = scale
+                    scaleY = scale
+                    transformOrigin = TransformOrigin(0.5f, 0f)
+                },
+        ) {
         when (ui.pane) {
             MiriPane.ICON -> DrivingMark(night)
             MiriPane.F1 -> F1KindScreen(
@@ -114,6 +129,7 @@ fun MiriRoute(
                 showReturnGuide = ui.dev.returnGuide,
             )
             MiriPane.CHECK -> CheckPane(ui.card, night)
+        }
         }
         if (ui.dev.scenarioPanel && demoOpen) {
             DemoDock(
@@ -160,6 +176,7 @@ private fun CheckPane(card: ShownCard?, dark: Boolean) {
     val title = card?.title.orEmpty()
     val done = card?.lines?.any { it.contains("점검 끝") } == true
     when {
+        title.contains("다녀왔어요") -> C3ReturnScreen(card, dark)
         done -> C2DoneScreen(card, dark)
         title.contains("도착") -> F4ChecklistScreen(card, dark)
         else -> C1CheckScreen(card, dark)

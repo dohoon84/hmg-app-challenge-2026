@@ -19,9 +19,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsPropertyKey
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Constraints
@@ -183,6 +192,15 @@ private fun SpecIconLocal(@DrawableRes id: Int, tint: Color) {
 
 enum class SpecButtonKind { Point, Disabled, Filled, Dashed }
 
+/** Dashed stroke for the F3 guide button. Intervals are pixels: on, off. */
+object SpecDash {
+    val intervals = floatArrayOf(14f, 10f)
+    const val TAG = "spec-dashed"
+    val key = SemanticsPropertyKey<String>("DashedOutline")
+
+    fun describe(): String = intervals.joinToString(",") { it.toInt().toString() }
+}
+
 @Composable
 fun BoxScope.SpecButton(
     label: String,
@@ -209,7 +227,7 @@ fun BoxScope.SpecButton(
     }
     val stroke = when (kind) {
         SpecButtonKind.Disabled -> Modifier.border(px(2), colors.dividerSecondary, shape)
-        SpecButtonKind.Dashed -> Modifier.border(px(3), colors.accent, shape)
+        SpecButtonKind.Dashed -> dashedOutline(colors.accent)
         else -> Modifier
     }
     Box(
@@ -224,6 +242,25 @@ fun BoxScope.SpecButton(
         Text(label, style = MiriType.titleSmallStrong(), color = labelColor, maxLines = 1)
     }
 }
+
+private fun dashedOutline(color: Color): Modifier = Modifier
+    .drawBehind {
+        val strokePx = 3f
+        val inset = strokePx / 2f
+        val radius = (32f - inset).coerceAtLeast(0f)
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(inset, inset),
+            size = Size(size.width - strokePx, size.height - strokePx),
+            cornerRadius = CornerRadius(radius, radius),
+            style = Stroke(
+                width = strokePx,
+                pathEffect = PathEffect.dashPathEffect(SpecDash.intervals, 0f),
+            ),
+        )
+    }
+    .semantics { this[SpecDash.key] = SpecDash.describe() }
+    .testTag(SpecDash.TAG)
 
 @Composable
 fun BoxScope.EdgeFade(x: Float, y: Float, w: Float, h: Float, toRight: Boolean) {

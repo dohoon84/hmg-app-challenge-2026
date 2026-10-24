@@ -9,6 +9,9 @@ data class F3Face(
 )
 
 object F3Rules {
+    /** Demo depart trip. The side values read this as "약 42분". */
+    const val DEMO_ETA_SECONDS = 42 * 60
+
     fun dueKey(kind: String?, minutesLeft: Long, shown: Set<String>): String? {
         if (minutesLeft < 0) return null
         if (kind == "share" && minutesLeft <= 60 && "share-1h" !in shown) return "share-1h"
@@ -42,7 +45,10 @@ object F3Rules {
         }
         if (etaSeconds != null) {
             val depart = returnAtMs - etaSeconds * 1000L - 15 * 60_000L
+            val etaMinutes = ((etaSeconds + 59) / 60).coerceAtLeast(1)
             lines += "${clock(depart, zone)}쯤 출발하면 여유 있게 도착해요."
+            lines += "반납 ${clock(returnAtMs, zone)}"
+            lines += "가는 데 약 ${etaMinutes}분"
         } else {
             val remainMs = (returnAtMs - nowMs).coerceAtLeast(0)
             val totalMinutes = (remainMs / 60_000L).toInt()

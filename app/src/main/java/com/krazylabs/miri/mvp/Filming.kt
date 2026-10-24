@@ -86,8 +86,8 @@ sealed interface FilmingCommand {
 
 /**
  * Broadcast contract for the debug receiver.
- * Step ids match [com.krazylabs.miri.mvp] auto-play beats. C3 is the done
- * screen the script calls C2.
+ * Step ids match the auto-play beats. C3 is 다녀왔어요, the return beat
+ * before 점검 끝.
  */
 object FilmingCommands {
     const val ACTION_FILMING = "com.krazylabs.miri.action.FILMING"
@@ -97,15 +97,11 @@ object FilmingCommands {
     const val EXTRA_STEP = "step"
     const val EXTRA_HOLD = "hold"
 
-    /** Beat ids the auto-play script already uses, in order. */
-    val steps: List<String> = listOf("F1", "F2", "F2_DONE", "D1", "D2", "F3", "C1", "C2")
-
-    /** The return-done screen. The script id is C2. */
-    const val DONE_ALIAS = "C3"
+    /** Beat ids the auto-play script uses, in order. */
+    val steps: List<String> = listOf("F1", "F2", "D1", "D2", "F3", "C1", "C3", "C2")
 
     fun resolveStep(raw: String): String? {
         val id = raw.trim()
-        if (id == DONE_ALIAS) return "C2"
         return id.takeIf { it in steps }
     }
 

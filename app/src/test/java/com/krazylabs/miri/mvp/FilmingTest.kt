@@ -133,9 +133,9 @@ class FilmingTest {
                 ),
             )
         }
-        assertEquals("C2", FilmingCommands.resolveStep(FilmingCommands.DONE_ALIAS))
+        assertEquals("C3", FilmingCommands.resolveStep("C3"))
         assertEquals(
-            FilmingCommand.Play("C2", 1.5f),
+            FilmingCommand.Play("C3", 1.5f),
             FilmingCommands.parse(
                 FilmingCommands.ACTION_AUTOPLAY,
                 FilmingExtras(start = true, step = "C3", hold = 1.5f),

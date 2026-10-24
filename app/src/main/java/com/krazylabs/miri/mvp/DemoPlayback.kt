@@ -53,6 +53,9 @@ interface DemoPlaybackHost {
     fun scenario(): ScenarioOverrides
     fun applyScenario(next: ScenarioOverrides)
     fun clearDemo()
+
+    /** Auto-play epilogue. "C3" then "C2". Null on the product path. */
+    fun setEpilogue(which: String?) {}
 }
 
 class IdlePlayback @Inject constructor() : DemoPlayback {

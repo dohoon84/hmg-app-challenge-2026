@@ -170,32 +170,56 @@ fun assembleReturnPlaces(
     limit: Int = 3,
 ): List<ReturnPlace> {
     val rows = mutableListOf(origin)
-    if (destination != null && destination.name.isNotBlank() && destination.id != origin.id) {
-        rows += destination.toReturn(hereLatitude, hereLongitude)
+    if (destination != null && destination.id != origin.id) {
+        destination.toReturn(hereLatitude, hereLongitude)?.let { row ->
+            if (rows.none { it.id == row.id || it.name == row.name }) rows += row
+        }
     }
     for (place in recents) {
-        if (place.name.isBlank()) continue
-        if (place.id == origin.id || place.name == origin.name) continue
-        if (rows.any { it.id == place.id || it.name == place.name }) continue
-        rows += place.toReturn(hereLatitude, hereLongitude)
+        if (place.id == origin.id) continue
+        val row = place.toReturn(hereLatitude, hereLongitude) ?: continue
+        if (row.name == origin.name || row.id == origin.id) continue
+        if (rows.any { it.id == row.id || it.name == row.name }) continue
+        rows += row
     }
     if (rows.size == 1) {
         for (candidate in demo) {
             if (candidate.id == F2Draft.PLACE_PICKUP || candidate.name == F2Draft.PICKUP_LABEL) continue
-            if (rows.any { it.id == candidate.id || it.name == candidate.name }) continue
-            rows += candidate
+            val shown = shownReturnRow(candidate.name, candidate.caption) ?: continue
+            if (shown.first == origin.name) continue
+            if (rows.any { it.id == candidate.id || it.name == shown.first }) continue
+            rows += candidate.copy(name = shown.first, caption = shown.second)
         }
     }
-    if (
-        selected != null &&
-        selected.id != F2Draft.PLACE_PICKUP &&
-        selected.name.isNotBlank() &&
-        rows.none { it.id == selected.id }
-    ) {
+    if (selected != null && selected.id != F2Draft.PLACE_PICKUP) {
         val picked = selected.toReturn(hereLatitude, hereLongitude)
-        rows.add(1, picked)
+        if (picked != null && rows.none { it.id == picked.id }) {
+            rows.add(1, picked)
+        }
     }
     return rows.take(limit.coerceAtLeast(1))
+}
+
+/**
+ * The pickup label is the origin row only. A later row with that name shows
+ * its address instead, and a caption that repeats the label is dropped.
+ * No address and no other name means the row is skipped.
+ */
+fun shownReturnRow(name: String, caption: String): Pair<String, String>? {
+    val label = name.trim()
+    val note = caption.trim()
+    if (label.isEmpty()) return null
+    if (label == F2Draft.PICKUP_LABEL) {
+        val address = note.takeIf {
+            it.isNotEmpty() &&
+                it != F2Draft.PICKUP_LABEL &&
+                it != ORIGIN_PENDING &&
+                it != ORIGIN_MISSED
+        } ?: return null
+        return address to ""
+    }
+    val distinct = if (note == label || note == F2Draft.PICKUP_LABEL) "" else note
+    return label to distinct
 }
 
 fun ReturnPlace.toPlaceRequest(): PlaceRequest = PlaceRequest(
@@ -224,11 +248,12 @@ fun intakeVisible(
     return if (doorLocked == null) kind == null else primed
 }
 
-private fun NearbyPlace.toReturn(hereLatitude: Double?, hereLongitude: Double?): ReturnPlace {
+private fun NearbyPlace.toReturn(hereLatitude: Double?, hereLongitude: Double?): ReturnPlace? {
+    val shown = shownReturnRow(name, caption) ?: return null
     val distance = if (hereLatitude != null && hereLongitude != null) {
         straightLineLabel(hereLatitude, hereLongitude, latitude, longitude)
     } else {
         null
     }
-    return ReturnPlace(id, name, caption, latitude, longitude, distance)
+    return ReturnPlace(id, shown.first, shown.second, latitude, longitude, distance)
 }

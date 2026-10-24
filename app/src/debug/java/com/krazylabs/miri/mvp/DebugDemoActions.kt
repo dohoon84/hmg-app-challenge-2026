@@ -46,7 +46,7 @@ fun debugReturnPlaces(): List<ReturnPlace> = listOf(
     ReturnPlace(
         id = "daechi",
         name = "대치동 공영주차장",
-        caption = "대여한 곳",
+        caption = "서울 강남구 대치동",
         latitude = 37.4995,
         longitude = 127.0635,
         distance = "2.4 km",

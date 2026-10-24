@@ -20,7 +20,7 @@ class AutoPlayDirectorTest {
     @Test
     fun theScriptOrderLastsNinetySeconds() {
         assertEquals(
-            listOf("F1", "F2", "F2_DONE", "D1", "D2", "F3", "C1", "C2"),
+            listOf("F1", "F2", "D1", "D2", "F3", "C1", "C3", "C2"),
             AutoPlayScript.beats(),
         )
         assertEquals(90_000L, AutoPlayScript.totalMs())
@@ -31,6 +31,21 @@ class AutoPlayDirectorTest {
         assertTrue(roads.last().charging)
         assertEquals(null, roads.last().tolls)
         assertTrue(AutoPlayScript.steps.any { it is AutoStep.ReturnWindow })
+        assertTrue(AutoPlayScript.steps.any { it is AutoStep.Rewind })
+        assertEquals(3_000L, AutoPlayScript.steps.last { AutoPlayScript.beatOf(it) == "C2" }.ms)
+        assertEquals(7_000L, AutoPlayScript.steps.last { AutoPlayScript.beatOf(it) == "C3" }.ms)
+    }
+
+    @Test
+    fun theReturnWindowFillsTheDepartValues() = runTest {
+        val host = RecordingHost()
+        val director = AutoPlayDirector.forTest(ScriptedCabinFeed()) {}
+        director.play(host, this, GearPosition.PARK)
+        advanceUntilIdle()
+        val window = host.applied.last { it.returnInMinutes == 120 }
+        assertEquals(F3Rules.DEMO_ETA_SECONDS, window.remainSeconds)
+        assertEquals(80, window.chargeTargetPercent)
+        assertTrue(host.rewinds >= 2)
     }
 
     @Test
@@ -124,7 +139,9 @@ class AutoPlayDirectorTest {
         assertTrue(f3 > 0)
         assertTrue(paced.take(f3).all { it.ms == 0L })
         assertEquals(16_000L, paced[f3].ms)
-        assertEquals(12_000L, paced.last().ms)
+        val c2 = paced.last { AutoPlayScript.beatOf(it) == "C2" }
+        assertEquals(6_000L, c2.ms)
+        assertTrue(paced.last() is AutoStep.Rewind)
         assertEquals(90_000L, AutoPlayScript.totalMs())
         assertEquals(7_000L, AutoPlayScript.steps.first().ms)
         assertTrue(AutoPlayScript.paced("NOPE", 2f).isEmpty())

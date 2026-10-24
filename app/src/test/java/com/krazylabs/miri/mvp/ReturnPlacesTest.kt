@@ -108,6 +108,26 @@ class ReturnPlacesTest {
         assertEquals("대여한 곳", rows.first().name)
         assertEquals(ORIGIN_PENDING, rows.first().caption)
         assertEquals(listOf("대치동 공영주차장", "역삼 영업소"), rows.drop(1).map { it.name })
+        assertEquals("", rows[1].caption)
+        assertEquals(1, rows.count { it.name == F2Draft.PICKUP_LABEL || it.caption == F2Draft.PICKUP_LABEL })
+    }
+
+    @Test
+    fun aRepeatedPickupLabelBecomesTheAddress() {
+        val labeled = demo.map { place ->
+            if (place.id == "daechi") place.copy(caption = "서울 강남구 대치동") else place
+        }
+        val rows = assembleReturnPlaces(
+            originRow(RentalOrigin(pending = true, seenSerial = 1), null, null),
+            destination = NearbyPlace(PLACE_DEST_ID, F2Draft.PICKUP_LABEL, "서울 강남구 대치동", 37.49, 127.06),
+            recents = emptyList(),
+            selected = null,
+            hereLatitude = null,
+            hereLongitude = null,
+            demo = labeled,
+        )
+        assertEquals(listOf(F2Draft.PICKUP_LABEL, "서울 강남구 대치동"), rows.map { it.name })
+        assertTrue(rows.drop(1).none { it.caption == F2Draft.PICKUP_LABEL || it.name == F2Draft.PICKUP_LABEL })
     }
 
     @Test
