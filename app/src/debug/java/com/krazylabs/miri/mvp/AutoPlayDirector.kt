@@ -46,7 +46,7 @@ class AutoPlayDirector private constructor(
     }
 
     override fun play(host: DemoPlaybackHost, scope: CoroutineScope, realGear: GearPosition) {
-        begin(host, scope, realGear, fromStep = null, holdScale = 1f)
+        begin(host, scope, realGear, fromStep = null, holdScale = 1f, profile = null, seconds = null)
     }
 
     override fun playFrom(
@@ -56,7 +56,19 @@ class AutoPlayDirector private constructor(
         fromStep: String?,
         holdScale: Float,
     ) {
-        begin(host, scope, realGear, fromStep, holdScale)
+        begin(host, scope, realGear, fromStep, holdScale, profile = null, seconds = null)
+    }
+
+    override fun playCut(
+        host: DemoPlaybackHost,
+        scope: CoroutineScope,
+        realGear: GearPosition,
+        fromStep: String?,
+        holdScale: Float,
+        profile: String?,
+        seconds: Int?,
+    ) {
+        begin(host, scope, realGear, fromStep, holdScale, profile, seconds)
     }
 
     private fun begin(
@@ -65,15 +77,24 @@ class AutoPlayDirector private constructor(
         realGear: GearPosition,
         fromStep: String?,
         holdScale: Float,
+        profile: String?,
+        seconds: Int?,
     ) {
+        if (profile != null && profile != FilmingCommands.PROFILE_STORYBOARD_V1) return
+        val storyboard = profile == FilmingCommands.PROFILE_STORYBOARD_V1
+        val beats = if (storyboard) StoryboardScript.beats() else AutoPlayScript.beats()
         if (realGear != GearPosition.PARK) return
-        if (fromStep != null && fromStep !in AutoPlayScript.beats()) return
+        if (fromStep != null && fromStep !in beats) return
         stop()
         this.host = host
-        val steps = AutoPlayScript.paced(fromStep, holdScale)
+        val steps = if (storyboard) {
+            StoryboardScript.paced(fromStep, holdScale, seconds)
+        } else {
+            AutoPlayScript.paced(fromStep, holdScale, seconds)
+        }
         val gen = generation
         _running.value = true
-        cabin.engage()
+        cabin.engage(soc = if (storyboard) StoryboardScript.SOC_OPEN else 90)
         job = scope.launch {
             try {
                 runScript(host, steps)
@@ -96,19 +117,21 @@ class AutoPlayDirector private constructor(
     }
 
     private suspend fun runScript(host: DemoPlaybackHost, steps: List<AutoStep>) {
+        host.setFastForward(true)
         host.rewindToIntake()
         for (step in steps) {
+            if (step.ms > 0L) host.setFastForward(false)
             when (step) {
                 is AutoStep.Show -> {
                     _caption.value = step.caption
                     _highlight.value = DemoHighlight.NONE
                     host.refresh()
-                    wait(step.ms)
+                    hold(step.ms)
                 }
                 is AutoStep.Highlight -> {
                     _highlight.value = step.which
                     host.refresh()
-                    wait(step.ms)
+                    hold(step.ms)
                     _highlight.value = DemoHighlight.NONE
                 }
                 is AutoStep.ChooseRental -> host.chooseRental()
@@ -148,13 +171,13 @@ class AutoPlayDirector private constructor(
                     cabin.gear = step.gear
                     _caption.value = step.caption
                     host.refresh()
-                    wait(step.ms)
+                    hold(step.ms)
                 }
                 is AutoStep.Body -> {
                     cabin.rearDoorOpen = step.rearDoorOpen
                     cabin.soc = step.soc
                     host.refresh()
-                    wait(step.ms)
+                    hold(step.ms)
                 }
                 is AutoStep.Epilogue -> host.setEpilogue(step.which)
                 is AutoStep.Rewind -> host.rewindToIntake()
@@ -162,7 +185,12 @@ class AutoPlayDirector private constructor(
         }
     }
 
+    private suspend fun hold(ms: Long) {
+        if (ms > 0L) wait(ms)
+    }
+
     private fun cleanup(host: DemoPlaybackHost) {
+        host.setFastForward(false)
         cabin.release()
         _highlight.value = DemoHighlight.NONE
         _caption.value = ""
@@ -245,40 +273,128 @@ object AutoPlayScript {
     /**
      * Full script when [fromStep] is null. Steps before that beat keep their
      * actions and drop their hold, so a jump still builds the cabin state.
-     * [holdScale] applies from the beat onward. [totalMs] stays the unscaled sum.
+     * [holdScale] applies from the beat onward. [seconds] replaces that cut's
+     * summed hold. [totalMs] stays the unscaled sum.
      */
-    fun paced(fromStep: String?, holdScale: Float): List<AutoStep> {
-        val scale = if (holdScale.isFinite() && holdScale > 0f) holdScale else 1f
-        val start = if (fromStep == null) {
-            0
-        } else {
-            val index = steps.indexOfFirst { beatOf(it) == fromStep }
-            if (index < 0) return emptyList()
-            index
-        }
-        return steps.mapIndexed { index, step ->
-            val factor = if (index < start) 0f else scale
-            step.scaled(factor)
-        }
+    fun paced(fromStep: String?, holdScale: Float, seconds: Int? = null): List<AutoStep> =
+        paceSteps(steps, fromStep, holdScale, seconds)
+}
+
+/**
+ * CF cut table. The rehearsal script stays on [AutoPlayScript].
+ * SOC stays at 60 until the return window, then 85. The distance line is the
+ * odometer difference. There is no 다녀왔어요 beat and no in-app caption.
+ */
+object StoryboardScript {
+    const val SOC_OPEN = 60
+    const val SOC_RETURN = 85
+
+    val steps: List<AutoStep> = listOf(
+        AutoStep.Show("F1", "", 5_000),
+        AutoStep.ChooseRental(),
+        AutoStep.PickTime(),
+        AutoStep.PickPlace(),
+        AutoStep.Show("F2", "", 7_000),
+        AutoStep.Confirm(),
+        AutoStep.Road(tolls = 2, highways = 1, charging = false),
+        AutoStep.Gear(GearPosition.DRIVE, "", ms = 0),
+        AutoStep.Gear(GearPosition.PARK, "", beat = "D1", ms = 6_000),
+        AutoStep.Road(tolls = null, highways = null, charging = true),
+        AutoStep.Gear(GearPosition.DRIVE, "", beat = "DRIVE1", ms = 6_000),
+        AutoStep.Gear(GearPosition.PARK, "", beat = "D2", ms = 7_000),
+        AutoStep.Gear(GearPosition.DRIVE, "", beat = "DRIVE2", ms = 3_000),
+        AutoStep.Body(rearDoorOpen = false, soc = SOC_RETURN),
+        AutoStep.ReturnWindow(),
+        AutoStep.Gear(GearPosition.PARK, "", beat = "F3", ms = 9_000),
+        AutoStep.Gear(GearPosition.DRIVE, "", ms = 0),
+        AutoStep.Body(rearDoorOpen = true, soc = SOC_RETURN),
+        AutoStep.Gear(GearPosition.PARK, "", beat = "C1", ms = 6_000),
+        AutoStep.Body(rearDoorOpen = false, soc = SOC_RETURN, ms = 1_000),
+        AutoStep.Show("C2", "", 4_000),
+        AutoStep.Rewind(),
+    )
+
+    fun beats(): List<String> = steps.mapNotNull { AutoPlayScript.beatOf(it) }.distinct()
+
+    fun paced(fromStep: String?, holdScale: Float, seconds: Int? = null): List<AutoStep> =
+        paceSteps(steps, fromStep, holdScale, seconds)
+
+    /** Milliseconds from this beat through the steps before the next beat. */
+    fun holdMs(beat: String): Long = cutHold(steps, beat)
+}
+
+internal fun paceSteps(
+    steps: List<AutoStep>,
+    fromStep: String?,
+    holdScale: Float,
+    seconds: Int? = null,
+): List<AutoStep> {
+    val scale = if (holdScale.isFinite() && holdScale > 0f) holdScale else 1f
+    val start = if (fromStep == null) {
+        0
+    } else {
+        val index = steps.indexOfFirst { AutoPlayScript.beatOf(it) == fromStep }
+        if (index < 0) return emptyList()
+        index
     }
+    val paced = steps.mapIndexed { index, step ->
+        step.scaled(if (index < start) 0f else scale)
+    }.toMutableList()
+    val overrideMs = seconds?.takeIf { it > 0 }?.times(1_000L) ?: return paced
+    var end = start
+    for (index in start + 1 until paced.size) {
+        if (AutoPlayScript.beatOf(paced[index]) != null) break
+        end = index
+    }
+    val positive = (start..end).filter { paced[it].ms > 0L }
+    if (positive.isEmpty()) {
+        paced[start] = paced[start].withMs(overrideMs)
+        return paced
+    }
+    val current = positive.sumOf { paced[it].ms }
+    var used = 0L
+    positive.forEachIndexed { nth, index ->
+        val ms = if (nth == positive.lastIndex) {
+            overrideMs - used
+        } else {
+            val share = (paced[index].ms.toDouble() / current.toDouble() * overrideMs.toDouble()).toLong()
+            used += share
+            share
+        }
+        paced[index] = paced[index].withMs(ms)
+    }
+    return paced
+}
+
+internal fun cutHold(steps: List<AutoStep>, beat: String): Long {
+    val start = steps.indexOfFirst { AutoPlayScript.beatOf(it) == beat }
+    if (start < 0) return 0L
+    var end = start
+    for (index in start + 1 until steps.size) {
+        if (AutoPlayScript.beatOf(steps[index]) != null) break
+        end = index
+    }
+    return steps.subList(start, end + 1).sumOf { it.ms }
 }
 
 private fun AutoStep.scaled(factor: Float): AutoStep {
     if (factor == 1f || ms == 0L) return this
     val next = (ms.toDouble() * factor.toDouble()).toLong()
     if (next == ms) return this
-    return when (this) {
-        is AutoStep.Show -> copy(ms = next)
-        is AutoStep.Highlight -> copy(ms = next)
-        is AutoStep.ChooseRental -> copy(ms = next)
-        is AutoStep.PickTime -> copy(ms = next)
-        is AutoStep.PickPlace -> copy(ms = next)
-        is AutoStep.Confirm -> copy(ms = next)
-        is AutoStep.Road -> copy(ms = next)
-        is AutoStep.ReturnWindow -> copy(ms = next)
-        is AutoStep.Gear -> copy(ms = next)
-        is AutoStep.Body -> copy(ms = next)
-        is AutoStep.Epilogue -> copy(ms = next)
-        is AutoStep.Rewind -> copy(ms = next)
-    }
+    return withMs(next)
+}
+
+private fun AutoStep.withMs(next: Long): AutoStep = when (this) {
+    is AutoStep.Show -> copy(ms = next)
+    is AutoStep.Highlight -> copy(ms = next)
+    is AutoStep.ChooseRental -> copy(ms = next)
+    is AutoStep.PickTime -> copy(ms = next)
+    is AutoStep.PickPlace -> copy(ms = next)
+    is AutoStep.Confirm -> copy(ms = next)
+    is AutoStep.Road -> copy(ms = next)
+    is AutoStep.ReturnWindow -> copy(ms = next)
+    is AutoStep.Gear -> copy(ms = next)
+    is AutoStep.Body -> copy(ms = next)
+    is AutoStep.Epilogue -> copy(ms = next)
+    is AutoStep.Rewind -> copy(ms = next)
 }

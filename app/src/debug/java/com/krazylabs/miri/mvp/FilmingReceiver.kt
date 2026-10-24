@@ -25,5 +25,11 @@ internal fun extrasOf(intent: Intent?): FilmingExtras {
         },
         step = extras.getString(FilmingCommands.EXTRA_STEP),
         hold = if (extras.containsKey(FilmingCommands.EXTRA_HOLD)) extras.getFloat(FilmingCommands.EXTRA_HOLD) else null,
+        profile = extras.getString(FilmingCommands.EXTRA_PROFILE),
+        seconds = if (extras.containsKey(FilmingCommands.EXTRA_SECONDS)) {
+            extras.getInt(FilmingCommands.EXTRA_SECONDS)
+        } else {
+            null
+        },
     )
 }

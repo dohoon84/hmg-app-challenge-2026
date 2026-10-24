@@ -173,6 +173,7 @@ class MiriViewModel @Inject constructor(
     private var checkReshow = false
     private var demoReturnAt: Long? = null
     private var demoReturnMinutes: Int? = null
+    private var fastForward = false
     private val lampOverride = MutableStateFlow<TurnLamps?>(null)
 
     private val _ui = MutableStateFlow(
@@ -220,7 +221,12 @@ class MiriViewModel @Inject constructor(
     private fun applyFilmingCommands() {
         filming.drain().forEach { command ->
             when (command) {
-                is FilmingCommand.Play -> startAutoPlay(command.step, command.holdScale)
+                is FilmingCommand.Play -> startAutoPlay(
+                    command.step,
+                    command.holdScale,
+                    command.profile,
+                    command.seconds,
+                )
                 is FilmingCommand.Stop -> stopAutoPlay()
                 is FilmingCommand.Set -> Unit
                 FilmingCommand.Ignore -> Unit
@@ -353,13 +359,20 @@ class MiriViewModel @Inject constructor(
         publish()
     }
 
-    fun startAutoPlay(fromStep: String? = null, holdScale: Float = 1f) {
-        playback.playFrom(
+    fun startAutoPlay(
+        fromStep: String? = null,
+        holdScale: Float = 1f,
+        profile: String? = null,
+        seconds: Int? = null,
+    ) {
+        playback.playCut(
             playbackHost,
             viewModelScope,
             drivingStateRepository.state.value.gear,
             fromStep,
             holdScale,
+            profile,
+            seconds,
         )
     }
 
@@ -627,7 +640,7 @@ class MiriViewModel @Inject constructor(
                 "edges=$edgesOpen lock=${snapshot.doorLocked} d1=${d1?.routeId} " +
                 "d2=${d2?.routeKey} f3=${f3?.key} checks=${items.size}",
         )
-        if (hostVisible) {
+        if (hostVisible && !fastForward) {
             when (cue.kind) {
                 CueKind.CHIME -> player.chime()
                 CueKind.CLIPS -> player.clips(cue.clips)
@@ -803,6 +816,9 @@ class MiriViewModel @Inject constructor(
         override fun setEpilogue(which: String?) {
             epilogue = which
             publish()
+        }
+        override fun setFastForward(on: Boolean) {
+            fastForward = on
         }
     }
 

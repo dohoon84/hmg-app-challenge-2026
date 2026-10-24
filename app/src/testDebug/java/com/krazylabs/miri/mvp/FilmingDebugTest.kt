@@ -22,6 +22,7 @@ class FilmingDebugTest {
     fun stepIdsMatchTheAutoPlayBeats() {
         assertEquals(FilmingCommands.steps, AutoPlayScript.beats())
         assertTrue(AutoPlayScript.beats().contains("C3"))
+        assertEquals(FilmingCommands.storyboardSteps, StoryboardScript.beats())
     }
 
     @Test
@@ -40,5 +41,15 @@ class FilmingDebugTest {
 
         val missing = Intent(FilmingCommands.ACTION_FILMING)
         assertEquals(FilmingCommand.Ignore, FilmingCommands.parse(missing.action, extrasOf(missing)))
+
+        val cut = Intent(FilmingCommands.ACTION_AUTOPLAY)
+            .putExtra(FilmingCommands.EXTRA_START, true)
+            .putExtra(FilmingCommands.EXTRA_PROFILE, FilmingCommands.PROFILE_STORYBOARD_V1)
+            .putExtra(FilmingCommands.EXTRA_STEP, "DRIVE1")
+            .putExtra(FilmingCommands.EXTRA_SECONDS, 6)
+        assertEquals(
+            FilmingCommand.Play("DRIVE1", 1f, FilmingCommands.PROFILE_STORYBOARD_V1, 6),
+            FilmingCommands.parse(cut.action, extrasOf(cut)),
+        )
     }
 }

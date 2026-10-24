@@ -1,6 +1,7 @@
 package com.krazylabs.miri.mvp
 
 import com.krazylabs.miri.domain.DoorId
+import kotlin.math.roundToInt
 import com.krazylabs.miri.domain.FuelKind
 import com.krazylabs.miri.domain.GearPosition
 import com.krazylabs.miri.domain.VehicleSnapshot
@@ -153,7 +154,8 @@ class AutoPlayDirectorTest {
         advanceUntilIdle()
         assertEquals(paced.mapNotNull { step ->
             when (step) {
-                is AutoStep.Show, is AutoStep.Highlight, is AutoStep.Gear, is AutoStep.Body -> step.ms
+                is AutoStep.Show, is AutoStep.Highlight, is AutoStep.Gear, is AutoStep.Body ->
+                    step.ms.takeIf { it > 0L }
                 else -> null
             }
         }, waits)
@@ -174,6 +176,105 @@ class AutoPlayDirectorTest {
         yield()
         assertTrue(director.running.value)
         director.playFrom(host, this, GearPosition.PARK, "NOPE", 2f)
+        assertTrue(director.running.value)
+        assertTrue(cabin.engaged)
+        director.stop()
+        advanceUntilIdle()
+        assertFalse(cabin.engaged)
+    }
+
+    @Test
+    fun storyboardV1HoldsMatchTheCutTable() {
+        assertEquals(FilmingCommands.storyboardSteps, StoryboardScript.beats())
+        assertEquals(5_000L, StoryboardScript.holdMs("F1"))
+        assertEquals(7_000L, StoryboardScript.holdMs("F2"))
+        assertEquals(6_000L, StoryboardScript.holdMs("D1"))
+        assertEquals(6_000L, StoryboardScript.holdMs("DRIVE1"))
+        assertEquals(7_000L, StoryboardScript.holdMs("D2"))
+        assertEquals(3_000L, StoryboardScript.holdMs("DRIVE2"))
+        assertEquals(9_000L, StoryboardScript.holdMs("F3"))
+        assertEquals(7_000L, StoryboardScript.holdMs("C1"))
+        assertEquals(4_000L, StoryboardScript.holdMs("C2"))
+        assertEquals(54_000L, StoryboardScript.steps.sumOf { it.ms })
+        assertFalse(StoryboardScript.beats().contains("C3"))
+        assertTrue(StoryboardScript.steps.none { it is AutoStep.Epilogue })
+        assertTrue(StoryboardScript.steps.filterIsInstance<AutoStep.Show>().all { it.caption.isEmpty() })
+        val roads = StoryboardScript.steps.filterIsInstance<AutoStep.Road>()
+        assertEquals(2, roads.first().tolls)
+        assertEquals(1, roads.first().highways)
+        assertFalse(roads.first().charging)
+        assertTrue(roads.last().charging)
+        val open = StoryboardScript.steps.filterIsInstance<AutoStep.Gear>().first { it.beat == "C1" }
+        val close = StoryboardScript.steps.filterIsInstance<AutoStep.Body>().last()
+        assertEquals(6_000L, open.ms)
+        assertTrue(StoryboardScript.steps.filterIsInstance<AutoStep.Body>().any { it.rearDoorOpen })
+        assertEquals(1_000L, close.ms)
+        assertFalse(close.rearDoorOpen)
+        assertEquals(StoryboardScript.SOC_RETURN, close.soc)
+        val paced = StoryboardScript.paced("D1", 1f, null)
+        val d1 = paced.indexOfFirst { it is AutoStep.Gear && it.beat == "D1" }
+        assertTrue(paced.take(d1).all { it.ms == 0L })
+        assertEquals(6_000L, paced[d1].ms)
+        assertEquals(6_000L, paced.first { it is AutoStep.Gear && it.beat == "DRIVE1" }.ms)
+        val stretched = StoryboardScript.paced("C1", 1f, 14)
+        assertEquals(14_000L, cutHold(stretched, "C1"))
+        assertEquals(4_000L, cutHold(stretched, "C2"))
+        assertTrue(StoryboardScript.paced("O1", 1f, null).isEmpty())
+        assertTrue(StoryboardScript.paced("C3", 1f, null).isEmpty())
+    }
+
+    @Test
+    fun storyboardKeepsSocAndCountsDistanceFromTheOdometer() = runTest {
+        val cabin = ScriptedCabinFeed()
+        data class Sample(val soc: Int, val door: Boolean, val gear: GearPosition, val ms: Long)
+        val samples = mutableListOf<Sample>()
+        val host = RecordingHost()
+        val director = AutoPlayDirector.forTest(cabin) { ms ->
+            samples += Sample(cabin.soc, cabin.rearDoorOpen, cabin.gear, ms)
+        }
+        director.playCut(
+            host,
+            this,
+            GearPosition.PARK,
+            null,
+            1f,
+            FilmingCommands.PROFILE_STORYBOARD_V1,
+            null,
+        )
+        advanceUntilIdle()
+        assertEquals(StoryboardScript.SOC_OPEN, samples.first().soc)
+        assertEquals(60, samples.first { it.ms == 7_000L && it.gear == GearPosition.PARK }.soc)
+        assertTrue(samples.any { it.ms == 6_000L && it.gear == GearPosition.DRIVE && it.soc == 60 && !it.door })
+        assertTrue(samples.any { it.ms == 9_000L && it.soc == 85 && !it.door })
+        assertTrue(samples.any { it.ms == 6_000L && it.soc == 85 && it.door && it.gear == GearPosition.PARK })
+        assertTrue(samples.any { it.ms == 1_000L && it.soc == 85 && !it.door })
+        val drives = StoryboardScript.steps.filterIsInstance<AutoStep.Gear>().count { it.gear == GearPosition.DRIVE }
+        assertEquals(4, drives)
+        val km = (cabin.odometerKm - ScriptedCabinFeed.START_KM).roundToInt()
+        assertEquals(drives * ScriptedCabinFeed.DRIVE_STEP_KM.roundToInt(), km)
+        assertEquals(
+            RentalDistance.line(ScriptedCabinFeed.START_KM, cabin.odometerKm, true),
+            "이번 대여에서 ${km}km를 달렸어요. 수고하셨어요.",
+        )
+        assertFalse(cabin.engaged)
+        val window = host.applied.last { it.returnInMinutes == 120 }
+        assertEquals(80, window.chargeTargetPercent)
+        assertEquals(F3Rules.DEMO_ETA_SECONDS, window.remainSeconds)
+        assertEquals(2, host.applied.first { it.pretendTolls != null }.pretendTolls)
+    }
+
+    @Test
+    fun storyboardRejectsAnUnknownCutWithoutStopping() = runTest {
+        val cabin = ScriptedCabinFeed()
+        val host = RecordingHost()
+        val director = AutoPlayDirector.forTest(cabin) { yield() }
+        director.play(host, this, GearPosition.PARK)
+        yield()
+        assertTrue(director.running.value)
+        director.playCut(host, this, GearPosition.PARK, "O1", 1f, FilmingCommands.PROFILE_STORYBOARD_V1, null)
+        director.playCut(host, this, GearPosition.PARK, "C3", 1f, FilmingCommands.PROFILE_STORYBOARD_V1, null)
+        director.playCut(host, this, GearPosition.PARK, "D1", 1f, "other-profile", null)
+        director.playCut(host, this, GearPosition.DRIVE, "F1", 1f, FilmingCommands.PROFILE_STORYBOARD_V1, null)
         assertTrue(director.running.value)
         assertTrue(cabin.engaged)
         director.stop()

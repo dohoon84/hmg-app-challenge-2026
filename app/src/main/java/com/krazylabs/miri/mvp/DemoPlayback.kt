@@ -37,6 +37,23 @@ interface DemoPlayback {
         play(host, scope, realGear)
     }
 
+    /**
+     * [profile] `storyboard-v1` plays the CF cut table.
+     * Null keeps the rehearsal. [seconds] replaces the starting cut's hold.
+     * Release ignores both and plays nothing.
+     */
+    fun playCut(
+        host: DemoPlaybackHost,
+        scope: CoroutineScope,
+        realGear: GearPosition,
+        fromStep: String?,
+        holdScale: Float,
+        profile: String?,
+        seconds: Int?,
+    ) {
+        playFrom(host, scope, realGear, fromStep, holdScale)
+    }
+
     fun onRealGear(gear: GearPosition) = Unit
     fun stop()
 }
@@ -56,6 +73,12 @@ interface DemoPlaybackHost {
 
     /** Auto-play epilogue. "C3" then "C2". Null on the product path. */
     fun setEpilogue(which: String?) {}
+
+    /**
+     * True while earlier cuts are applied with no hold, so a take opens on
+     * its own step. The host still updates cards. It does not play those chimes.
+     */
+    fun setFastForward(on: Boolean) {}
 }
 
 class IdlePlayback @Inject constructor() : DemoPlayback {

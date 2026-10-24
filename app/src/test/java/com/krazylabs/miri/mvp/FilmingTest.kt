@@ -164,6 +164,61 @@ class FilmingTest {
         )
     }
 
+    @Test
+    fun theStoryboardProfileAcceptsOnlyItsCuts() {
+        assertEquals(
+            listOf("F1", "F2", "D1", "DRIVE1", "D2", "DRIVE2", "F3", "C1", "C2"),
+            FilmingCommands.storyboardSteps,
+        )
+        FilmingCommands.storyboardSteps.forEach { step ->
+            assertEquals(step, FilmingCommands.resolveStep(step, FilmingCommands.PROFILE_STORYBOARD_V1))
+        }
+        listOf("O1", "O2", "O3", "H", "C3", "DRIVE3").forEach { step ->
+            assertNull(FilmingCommands.resolveStep(step, FilmingCommands.PROFILE_STORYBOARD_V1))
+            assertEquals(
+                FilmingCommand.Ignore,
+                FilmingCommands.parse(
+                    FilmingCommands.ACTION_AUTOPLAY,
+                    FilmingExtras(start = true, step = step, profile = FilmingCommands.PROFILE_STORYBOARD_V1),
+                ),
+            )
+        }
+        assertNull(FilmingCommands.resolveStep("DRIVE1"))
+        assertEquals(
+            FilmingCommand.Play("D1", 1f, FilmingCommands.PROFILE_STORYBOARD_V1, null),
+            FilmingCommands.parse(
+                FilmingCommands.ACTION_AUTOPLAY,
+                FilmingExtras(start = true, step = "D1", profile = " storyboard-v1 "),
+            ),
+        )
+        assertEquals(
+            FilmingCommand.Play("F3", 1f, FilmingCommands.PROFILE_STORYBOARD_V1, 9),
+            FilmingCommands.parse(
+                FilmingCommands.ACTION_AUTOPLAY,
+                FilmingExtras(
+                    start = true,
+                    step = "F3",
+                    profile = FilmingCommands.PROFILE_STORYBOARD_V1,
+                    seconds = 9,
+                ),
+            ),
+        )
+        assertEquals(
+            FilmingCommand.Play(null, 1f, FilmingCommands.PROFILE_STORYBOARD_V1, null),
+            FilmingCommands.parse(
+                FilmingCommands.ACTION_AUTOPLAY,
+                FilmingExtras(start = true, profile = FilmingCommands.PROFILE_STORYBOARD_V1, seconds = 0),
+            ),
+        )
+        assertEquals(
+            FilmingCommand.Ignore,
+            FilmingCommands.parse(
+                FilmingCommands.ACTION_AUTOPLAY,
+                FilmingExtras(start = true, profile = "rehearsal", step = "F1"),
+            ),
+        )
+    }
+
     private fun moduleRoot(): File {
         val cwd = File("").absoluteFile
         return when {

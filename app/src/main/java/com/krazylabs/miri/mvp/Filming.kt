@@ -75,19 +75,33 @@ data class FilmingExtras(
     val start: Boolean? = null,
     val step: String? = null,
     val hold: Float? = null,
+    val profile: String? = null,
+    val seconds: Int? = null,
 )
 
 sealed interface FilmingCommand {
     data class Set(val on: Boolean) : FilmingCommand
-    data class Play(val step: String?, val holdScale: Float) : FilmingCommand
+
+    /**
+     * [profile] null is the rehearsal script.
+     * `storyboard-v1` uses the cut-table holds.
+     * [seconds] replaces that cut's hold. Null keeps the profile.
+     */
+    data class Play(
+        val step: String?,
+        val holdScale: Float,
+        val profile: String? = null,
+        val seconds: Int? = null,
+    ) : FilmingCommand
+
     data object Stop : FilmingCommand
     data object Ignore : FilmingCommand
 }
 
 /**
  * Broadcast contract for the debug receiver.
- * Step ids match the auto-play beats. C3 is 다녀왔어요, the return beat
- * before 점검 끝.
+ * [steps] are the rehearsal beats. C3 is 다녀왔어요, before 점검 끝.
+ * [storyboardSteps] are the CF cut table. Editing cards are not steps.
  */
 object FilmingCommands {
     const val ACTION_FILMING = "com.krazylabs.miri.action.FILMING"
@@ -96,13 +110,22 @@ object FilmingCommands {
     const val EXTRA_START = "start"
     const val EXTRA_STEP = "step"
     const val EXTRA_HOLD = "hold"
+    const val EXTRA_PROFILE = "profile"
+    const val EXTRA_SECONDS = "seconds"
+    const val PROFILE_STORYBOARD_V1 = "storyboard-v1"
 
-    /** Beat ids the auto-play script uses, in order. */
+    /** Beat ids the rehearsal script uses, in order. */
     val steps: List<String> = listOf("F1", "F2", "D1", "D2", "F3", "C1", "C3", "C2")
 
-    fun resolveStep(raw: String): String? {
+    /** App cuts in the storyboard. Opening, hook, charge close-up, and ending are absent. */
+    val storyboardSteps: List<String> = listOf(
+        "F1", "F2", "D1", "DRIVE1", "D2", "DRIVE2", "F3", "C1", "C2",
+    )
+
+    fun resolveStep(raw: String, profile: String? = null): String? {
         val id = raw.trim()
-        return id.takeIf { it in steps }
+        val allowed = if (profile == PROFILE_STORYBOARD_V1) storyboardSteps else steps
+        return id.takeIf { it in allowed }
     }
 
     fun parse(action: String?, extras: FilmingExtras): FilmingCommand {
@@ -114,13 +137,17 @@ object FilmingCommands {
             ACTION_AUTOPLAY -> {
                 val start = extras.start ?: return FilmingCommand.Ignore
                 if (!start) return FilmingCommand.Stop
+                val profile = extras.profile?.trim()?.takeIf { it.isNotEmpty() }
+                if (profile != null && profile != PROFILE_STORYBOARD_V1) {
+                    return FilmingCommand.Ignore
+                }
                 val raw = extras.step?.trim().orEmpty()
                 val step = if (raw.isEmpty()) {
                     null
                 } else {
-                    resolveStep(raw) ?: return FilmingCommand.Ignore
+                    resolveStep(raw, profile) ?: return FilmingCommand.Ignore
                 }
-                FilmingCommand.Play(step, holdScale(extras.hold))
+                FilmingCommand.Play(step, holdScale(extras.hold), profile, holdSeconds(extras.seconds))
             }
             else -> FilmingCommand.Ignore
         }
@@ -128,4 +155,7 @@ object FilmingCommands {
 
     fun holdScale(hold: Float?): Float =
         if (hold != null && hold.isFinite() && hold > 0f) hold else 1f
+
+    /** Whole seconds for the cut that is starting. Zero and negative keep the profile. */
+    fun holdSeconds(seconds: Int?): Int? = seconds?.takeIf { it > 0 }
 }
