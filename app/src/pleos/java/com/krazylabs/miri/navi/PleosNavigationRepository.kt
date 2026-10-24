@@ -22,6 +22,7 @@ import com.krazylabs.miri.domain.TripEstimate
 import com.krazylabs.miri.mvp.TbtGuard
 import com.krazylabs.miri.mvp.countRoad
 import com.krazylabs.miri.mvp.bookmarkRowLabel
+import com.krazylabs.miri.mvp.emptyBookmarkSlot
 import com.krazylabs.miri.mvp.navPlaceId
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -180,8 +181,11 @@ class PleosNavigationRepository @Inject constructor(
                         "address=${item.address} category=${item.category} provider=${item.poiProvider}",
                 )
             }
-            _bookmarks.value = list.map { item ->
+            _bookmarks.value = list.mapNotNull { item ->
                 val address = item.address.orEmpty()
+                if (emptyBookmarkSlot(item.name, address, item.latitude, item.longitude)) {
+                    return@mapNotNull null
+                }
                 val name = bookmarkRowLabel(item.name, address, item.latitude, item.longitude)
                 PlaceRequest(
                     latitude = item.latitude,

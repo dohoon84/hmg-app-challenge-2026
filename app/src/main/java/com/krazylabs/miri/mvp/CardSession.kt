@@ -71,6 +71,8 @@ class CardSession {
     private var checkShows = 0
     /** Door-close chimes that arrive on back-to-back ticks count as one event. */
     private var checkChimeAt: Long? = null
+    /** A later content change on this check card is not another door close. */
+    private var doorCloseChimed = false
     private val toldRoutes = linkedSetOf<String>()
     private val toldD2 = linkedSetOf<String>()
     /** An empty D2 key has no route to store. One show per rental, then [resetRental]. */
@@ -116,6 +118,7 @@ class CardSession {
         shownF3.clear()
         checkShows = 0
         checkChimeAt = null
+        doorCloseChimed = false
         deferred = null
         deferFromPrior = false
         deferUsed = false
@@ -168,6 +171,7 @@ class CardSession {
             held = null
             checkCount = -1
             checkChimeAt = null
+            doorCloseChimed = false
             voiceStamp = null
             f3ReadyThisPark = input.f3 != null
         }
@@ -240,11 +244,20 @@ class CardSession {
             if (checkCount >= 0 && count < checkCount) {
                 voice = checkChime(input.nowMs, VoicePlay.Chime)
                 closeHandled = true
+                doorCloseChimed = true
             }
             checkCount = count
         }
         if (id == CardId.F3) f3Face = face
-        if (voice == VoicePlay.None && !closeHandled) voice = once(stamp(id, face), intended(id, input))
+        if (voice == VoicePlay.None && !closeHandled) {
+            val offered = once(stamp(id, face), intended(id, input))
+            voice = if (id == CardId.CHECK && offered == VoicePlay.Chime && doorCloseChimed) {
+                VoicePlay.None
+            } else {
+                offered
+            }
+        }
+        if (closeHandled) voiceStamp = stamp(id, face)
         return DeckStep(face.pane, face, voice)
     }
 

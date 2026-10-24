@@ -138,10 +138,7 @@ fun ScenarioPanel(
             Button(onClick = onRoute) { Text("충전 경로") }
         }
         val gear = overrides.gearBackend.ifBlank { BuildConfig.GEAR_BACKEND }
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-        ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(onClick = {
                 onGearBackend(if (gear == GearBackend.PLEOS) GearBackend.AAOS else GearBackend.PLEOS)
             }) { Text(if (gear == GearBackend.PLEOS) "기어: PLEOS" else "기어: AAOS") }

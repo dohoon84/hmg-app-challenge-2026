@@ -38,6 +38,7 @@ import com.krazylabs.miri.mvp.ReturnForm
 import com.krazylabs.miri.mvp.ScenarioInput
 import com.krazylabs.miri.mvp.assembleReturnPlaces
 import com.krazylabs.miri.mvp.bookmarkRowLabel
+import com.krazylabs.miri.mvp.emptyBookmarkSlot
 import com.krazylabs.miri.mvp.intakeVisible
 import com.krazylabs.miri.mvp.originRow
 import com.krazylabs.miri.mvp.toPlaceRequest
@@ -687,7 +688,10 @@ class MiriViewModel @Inject constructor(
         }
     }
 
-    private fun sheetChips(places: List<PlaceRequest>): List<PlaceChip> = places.map { place ->
+    private fun sheetChips(places: List<PlaceRequest>): List<PlaceChip> = places.mapNotNull { place ->
+        if (emptyBookmarkSlot(place.name, place.address, place.latitude, place.longitude)) {
+            return@mapNotNull null
+        }
         val label = bookmarkRowLabel(place.name, place.address, place.latitude, place.longitude)
         PlaceChip(
             id = place.poiId.ifBlank { label },

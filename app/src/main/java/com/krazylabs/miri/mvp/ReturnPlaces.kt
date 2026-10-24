@@ -69,6 +69,13 @@ fun straightLineLabel(
     toLongitude: Double,
 ): String = kmDistance(GeoEstimate.haversineMeters(fromLatitude, fromLongitude, toLatitude, toLongitude))
 
+/** An unset home or work slot: no name, no address, and the 0,0 point. */
+fun emptyBookmarkSlot(name: String?, address: String?, latitude: Double, longitude: Double): Boolean {
+    if (name?.trim().orEmpty().isNotEmpty()) return false
+    if (address?.trim().orEmpty().isNotEmpty()) return false
+    return latitude == 0.0 && longitude == 0.0
+}
+
 /** Name, then address, then coordinates. A bookmark row is never blank. */
 fun bookmarkRowLabel(name: String?, address: String?, latitude: Double, longitude: Double): String {
     val named = name?.trim().orEmpty()

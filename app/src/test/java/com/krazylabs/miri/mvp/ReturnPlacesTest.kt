@@ -118,6 +118,15 @@ class ReturnPlacesTest {
     }
 
     @Test
+    fun anEmptyHomeSlotIsNotARow() {
+        assertTrue(emptyBookmarkSlot(null, "  ", 0.0, 0.0))
+        assertTrue(emptyBookmarkSlot("", null, 0.0, -0.0))
+        assertFalse(emptyBookmarkSlot("집", "", 0.0, 0.0))
+        assertFalse(emptyBookmarkSlot("", "서울", 0.0, 0.0))
+        assertFalse(emptyBookmarkSlot(null, null, 37.5, 127.0))
+    }
+
+    @Test
     fun aForcedNewRentalOpensF1EvenWhenTheLockIsKnown() {
         assertTrue(intakeVisible(doorLocked = true, kind = null, ownCar = false, primed = false, forcedNewRental = true))
         assertFalse(intakeVisible(doorLocked = true, kind = "rental", ownCar = false, primed = false, forcedNewRental = true))

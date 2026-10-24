@@ -644,6 +644,51 @@ class MvpPhaseTest {
     }
 
     @Test
+    fun aDoorCloseDoesNotChimeAgainWhenTheCardChanges() {
+        val session = CardSession()
+        val open = baseInput(GearPosition.PARK).copy(
+            checkItems = listOf("오른쪽 뒷문이 열려 있어요."),
+            f4 = "충전 60% · 반납 기준 80%",
+            reshowCheck = true,
+        )
+        assertEquals(VoicePlay.Chime, session.step(open.copy(nowMs = 0)).voice)
+        assertEquals(
+            VoicePlay.Chime,
+            session.step(open.copy(checkItems = emptyList(), nowMs = 5_000)).voice,
+        )
+        val followUp = session.step(
+            open.copy(
+                checkItems = emptyList(),
+                f4 = "충전 59% · 반납 기준 80%",
+                nowMs = 5_280,
+            ),
+        )
+        assertEquals(MiriPane.CHECK, followUp.pane)
+        assertEquals(VoicePlay.None, followUp.voice)
+        assertEquals(
+            VoicePlay.None,
+            session.step(
+                open.copy(
+                    checkItems = emptyList(),
+                    f4 = "충전 58% · 반납 기준 80%",
+                    nowMs = 9_000,
+                ),
+            ).voice,
+        )
+        session.step(
+            open.copy(
+                checkItems = listOf("실내등이 켜져 있어요."),
+                f4 = "충전 58% · 반납 기준 80%",
+                nowMs = 10_000,
+            ),
+        )
+        assertEquals(
+            VoicePlay.Chime,
+            session.step(open.copy(checkItems = emptyList(), f4 = "충전 58% · 반납 기준 80%", nowMs = 11_000)).voice,
+        )
+    }
+
+    @Test
     fun newRentalClearsDemoNumbersAndVoice() {
         val cleared = ScenarioOverrides(
             remainMeters = 400,
