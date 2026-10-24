@@ -15,10 +15,22 @@ import io.hmg.appchallenge.foundation.speech.CabinAnnouncer
 import io.hmg.appchallenge.foundation.vehicle.VehicleRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Before
 import org.junit.Test
 
 class CabinSessionTest {
+    @Before
+    fun clearHold() {
+        ProbeNavigationHold.keepRegistered = false
+    }
+
+    @After
+    fun resetHold() {
+        ProbeNavigationHold.keepRegistered = false
+    }
+
     @Test
     fun startStopStartReentersEveryRepository() {
         val vehicle = CountingVehicle()
@@ -42,6 +54,26 @@ class CabinSessionTest {
         assertEquals(1, navigation.stops)
         assertEquals(2, announcer.foregrounds)
         assertEquals(1, announcer.suspends)
+    }
+
+    @Test
+    fun backgroundHoldSkipsNavigationStopOnly() {
+        val vehicle = CountingVehicle()
+        val driving = CountingDriving()
+        val navigation = CountingNavigation()
+        val session = CabinSession(vehicle, driving, navigation, CountingAnnouncer())
+        val owner = object : LifecycleOwner {
+            override val lifecycle: Lifecycle get() = error("unused")
+        }
+        ProbeNavigationHold.keepRegistered = true
+
+        session.onStart(owner)
+        session.onStop(owner)
+
+        assertEquals(0, navigation.stops)
+        assertEquals(1, navigation.starts)
+        assertEquals(1, vehicle.stops)
+        assertEquals(1, driving.stops)
     }
 
     private class CountingVehicle : VehicleRepository {
