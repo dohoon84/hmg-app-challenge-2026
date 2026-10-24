@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
@@ -210,6 +211,7 @@ fun BoxScope.SpecButton(
     h: Float = 100f,
     kind: SpecButtonKind,
     onClick: () -> Unit,
+    note: String = "",
 ) {
     val colors = IviTheme.colors
     val shape = RoundedCornerShape(px(32))
@@ -225,21 +227,39 @@ fun BoxScope.SpecButton(
         SpecButtonKind.Filled -> colors.onFilled
         SpecButtonKind.Dashed -> colors.accent
     }
-    val stroke = when (kind) {
-        SpecButtonKind.Disabled -> Modifier.border(px(2), colors.dividerSecondary, shape)
-        SpecButtonKind.Dashed -> dashedOutline(colors.accent)
-        else -> Modifier
-    }
-    Box(
+    // The dash sits outside the clip. A stroke drawn inside clip() is cut off
+    // and the button reads as an empty corner.
+    val outline = if (kind == SpecButtonKind.Dashed) dashedOutline(colors.accent) else Modifier
+    val innerStroke = if (kind == SpecButtonKind.Disabled) {
+        Modifier.border(px(2), colors.dividerSecondary, shape)
+    } else {
         Modifier
-            .figma(x, y, w, h)
-            .clip(shape)
-            .background(fill)
-            .then(stroke)
-            .quietClick(enabled = kind != SpecButtonKind.Disabled, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(label, style = MiriType.titleSmallStrong(), color = labelColor, maxLines = 1)
+    }
+    Box(Modifier.figma(x, y, w, h).then(outline)) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .clip(shape)
+                .background(fill)
+                .then(innerStroke)
+                .quietClick(enabled = kind != SpecButtonKind.Disabled, onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (note.isBlank()) {
+                Text(label, style = MiriType.titleSmallStrong(), color = labelColor, maxLines = 1)
+            } else {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(label, style = MiriType.titleSmallStrong(), color = labelColor, maxLines = 1)
+                    Text(
+                        note,
+                        style = MiriType.bodySmallNormal(),
+                        color = colors.frameTertiary,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                    )
+                }
+            }
+        }
     }
 }
 

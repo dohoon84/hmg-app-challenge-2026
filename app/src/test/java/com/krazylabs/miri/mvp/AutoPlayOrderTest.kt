@@ -6,8 +6,11 @@ import com.krazylabs.miri.domain.GearPosition
 import com.krazylabs.miri.domain.PortSide
 import com.krazylabs.miri.ui.design.f3Model
 import com.krazylabs.miri.ui.design.visibleReturnMinutes
+import java.time.ZoneId
+import java.time.ZonedDateTime
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -88,6 +91,64 @@ class AutoPlayOrderTest {
         assertFalse(model.leftValue.isNullOrBlank())
         assertEquals("약 42분", model.rightValue)
         assertTrue(model.sentence.contains("출발하면"))
+        val depart = F3Rules.departAtMs(back, F3Rules.DEMO_ETA_SECONDS)
+        assertEquals(back - F3Rules.DEMO_ETA_SECONDS * 1000L - F3Rules.DEPART_BUFFER_MS, depart)
+    }
+
+    @Test
+    fun demoDepartureIsNotTheWallClock() {
+        val zone = ZoneId.of("Asia/Seoul")
+        val now = ZonedDateTime.of(2026, 10, 24, 20, 45, 0, 0, zone).toInstant().toEpochMilli()
+        val back = now + 120 * 60_000L
+        val lines = F3Rules.lines(
+            ev = true,
+            level = 85,
+            target = 80,
+            returnAtMs = back,
+            nowMs = now,
+            etaSeconds = F3Rules.DEMO_ETA_SECONDS,
+            zone = zone,
+        )
+        val model = f3Model(lines)
+        assertEquals("22:45", model.leftValue)
+        assertEquals("약 42분", model.rightValue)
+        assertEquals("21:48", model.hero)
+        assertFalse(model.hero == "20:45")
+        assertEquals("반납", model.leftLabel)
+        assertEquals("가는 데", model.rightLabel)
+    }
+
+    @Test
+    fun aDepartLineWithoutSideValuesLeavesNoEmptyLabels() {
+        val model = f3Model(listOf("20:45쯤 출발하면 여유 있게 도착해요."))
+        assertEquals("20:45", model.hero)
+        assertNull(model.leftLabel)
+        assertNull(model.rightLabel)
+        assertTrue(model.leftValue.isNullOrBlank())
+        assertTrue(model.rightValue.isNullOrBlank())
+    }
+
+    @Test
+    fun aMissingTripUsesTheFallbackCopy() {
+        val zone = ZoneId.of("Asia/Seoul")
+        val back = ZonedDateTime.of(2026, 10, 24, 20, 0, 0, 0, zone).toInstant().toEpochMilli()
+        val now = ZonedDateTime.of(2026, 10, 24, 17, 0, 0, 0, zone).toInstant().toEpochMilli()
+        val lines = F3Rules.lines(
+            ev = true,
+            level = null,
+            target = null,
+            returnAtMs = back,
+            nowMs = now,
+            etaSeconds = null,
+            zone = zone,
+        )
+        val model = f3Model(lines)
+        assertEquals("반납까지", model.label)
+        assertEquals("3", model.hero)
+        assertEquals("시간", model.heroRest)
+        assertEquals("반납 20:00까지 3시간 남았어요.", model.sentence)
+        assertNull(model.leftLabel)
+        assertNull(model.rightLabel)
     }
 
     private fun walk(nowMinute: Int): WalkResult {

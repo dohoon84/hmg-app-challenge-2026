@@ -83,26 +83,31 @@ fun F3ReturnScreen(
             SpecIcon(R.drawable.miri_ic_check_40, 880f, 470f, 40f, 40f, colors.accent)
         }
         SpecText(face.sentence, face.sentenceX, 476f, MiriType.bodyLargeNormal(), colors.frameInk)
-        if (face.leftLabel != null) {
+        val left = face.leftValue?.takeIf { it.isNotBlank() }
+        val right = face.rightValue?.takeIf { it.isNotBlank() }
+        if (left != null || right != null) {
             Box(Modifier.figma(880f, 580f, 754f, 1f).background(colors.divider))
-            SpecText(face.leftLabel, 880f, 620f, MiriType.labelMedium(), colors.frameTertiary)
-            SpecText(face.leftValue.orEmpty(), 880f, 656f, MiriType.titleMediumStrong(), colors.frameInk)
         }
-        if (face.rightLabel != null) {
-            SpecText(face.rightLabel, 1180f, 620f, MiriType.labelMedium(), colors.frameTertiary)
-            SpecText(face.rightValue.orEmpty(), 1180f, 656f, MiriType.titleMediumStrong(), colors.frameInk)
+        if (left != null) {
+            SpecText(face.leftLabel.orEmpty(), 880f, 620f, MiriType.labelMedium(), colors.frameTertiary)
+            SpecText(left, 880f, 656f, MiriType.titleMediumStrong(), colors.frameInk)
+        }
+        if (right != null) {
+            SpecText(face.rightLabel.orEmpty(), 1180f, 620f, MiriType.labelMedium(), colors.frameTertiary)
+            SpecText(right, 1180f, 656f, MiriType.titleMediumStrong(), colors.frameInk)
         }
         SpecButton("다 봤어요", 880f, 1062f, 352f, kind = SpecButtonKind.Point, onClick = onDone)
         if (showReturnGuide) {
-            if (guideNote.isNotBlank()) {
-                SpecText(
-                    guideNote, 1256f, 990f, MiriType.bodySmallNormal(), colors.frameTertiary,
-                    w = 378f, h = 56f, maxLines = 2,
-                )
-            }
+            val noted = guideNote.isNotBlank()
             SpecButton(
-                "반납 장소로 안내", 1256f, 1062f, 378f,
-                kind = SpecButtonKind.Dashed, onClick = onGuide,
+                "반납 장소로 안내",
+                1256f,
+                if (noted) 962f else 1062f,
+                378f,
+                h = if (noted) 200f else 100f,
+                kind = SpecButtonKind.Dashed,
+                onClick = onGuide,
+                note = if (noted) guideNote else "",
             )
         }
     }
@@ -145,8 +150,22 @@ fun f3Model(lines: List<String>): F3Model {
         val back = lines.firstOrNull { it.startsWith("반납 ") && it.contains(":") && !it.contains("까지") }
             ?.removePrefix("반납 ")
             ?.trim()
-        val going = lines.firstOrNull { it.startsWith("가는 데") }?.removePrefix("가는 데")?.trim()
-        return F3Model("출발", time, " 쯤", sentence, "반납", back, "가는 데", going, showPort = false)
+            ?.takeIf { it.isNotEmpty() }
+        val going = lines.firstOrNull { it.startsWith("가는 데") }
+            ?.removePrefix("가는 데")
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+        return F3Model(
+            "출발",
+            time,
+            " 쯤",
+            sentence,
+            leftLabel = back?.let { "반납" },
+            leftValue = back,
+            rightLabel = going?.let { "가는 데" },
+            rightValue = going,
+            showPort = false,
+        )
     }
     if (sentence.contains("남았어요") || sentence == "1분도 안 남았어요") {
         val hero = when {
