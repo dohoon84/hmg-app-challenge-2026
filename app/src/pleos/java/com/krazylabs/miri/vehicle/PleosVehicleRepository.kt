@@ -23,11 +23,13 @@ import ai.pleos.playground.vehicle.constant.area.TurnSignalValue
 import ai.pleos.playground.vehicle.listener.TurnSignalStateListener
 import ai.pleos.playground.vehicle.listener.WindowPositionListener
 import android.content.Context
+import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.krazylabs.miri.BuildConfig
 import com.krazylabs.miri.car.PleosCarClient
 import com.krazylabs.miri.domain.CarFacts
 import com.krazylabs.miri.domain.DoorId
+import com.krazylabs.miri.domain.GearBackend
 import com.krazylabs.miri.domain.GearPosition
 import com.krazylabs.miri.domain.LinkState
 import com.krazylabs.miri.domain.PanelState
@@ -80,6 +82,11 @@ class PleosVehicleRepository @Inject constructor(
     private var identityJob: Job? = null
     private val rereads = CopyOnWriteArrayList<() -> Unit>()
     private val hazardDetector = HazardDetector()
+    private var appliedBind = 0
+    private var gearBackend: String? = null
+    private var pleosGearOn = false
+    /** Test seam. When set, a car rebind counts here and does not construct [Vehicle]. */
+    internal var reopenForTest: (() -> Unit)? = null
 
     /** Written on [scope] (main). Volatile so a late callback cannot publish a stale pair. */
     @Volatile private var seatOccupancy: Pair<SignalAccess, Set<SeatId>>? = null
@@ -131,6 +138,53 @@ class PleosVehicleRepository @Inject constructor(
                     )
                 }
             }
+        }
+        val ready = carClient.bindGeneration.value
+        if (ready > 0) appliedBind = ready
+        reopenVehicle()
+        scope.launch {
+            carClient.bindGeneration.collect { generation -> acceptBind(generation) }
+        }
+    }
+
+    /**
+     * CarService became ready again. Drop the previous Vehicle listeners and
+     * register them on a new session, then read each value once.
+     */
+    internal fun acceptBind(generation: Int) {
+        if (generation <= appliedBind) return
+        if (!started.get() && reopenForTest == null) return
+        appliedBind = generation
+        reopenVehicle()
+    }
+
+    override fun setGearBackend(mode: String) {
+        if (mode.isBlank()) return
+        val next = GearBackend.normalize(mode)
+        if (next == gearBackend) return
+        gearBackend = next
+        if (!started.get()) return
+        if (next == GearBackend.PLEOS) subscribePleosGear()
+    }
+
+    private fun gearBackendMode(): String = gearBackend ?: BuildConfig.GEAR_BACKEND
+
+    private fun reopenVehicle() {
+        val hook = reopenForTest
+        if (hook != null) {
+            hook()
+            return
+        }
+        rereads.clear()
+        pleosGearOn = false
+        listeners.close()
+        sessionToken = listeners.open()
+        val previous = vehicle
+        vehicle = null
+        try {
+            previous?.release()
+        } catch (error: Throwable) {
+            note(error)
         }
         val created = Vehicle(appContext)
         vehicle = created
@@ -639,31 +693,43 @@ class PleosVehicleRepository @Inject constructor(
                     if (!live(token) || !config.accessType.toSignal().allowsRead()) {
                         return@checkDoorLockCapabilities
                     }
-                    val area = areas.firstOrNull { it.toDoorId() == DoorId.ROW_1_LEFT }
-                        ?: return@checkDoorLockCapabilities
-                    val listener = object : DoorLockStateListener {
-                        override fun onDoorLockStateUpdated(state: Boolean?) {
-                            if (live(token)) updateLock(state)
-                        }
-
-                        override fun onFailed(error: Exception) {
-                            if (live(token)) note(error)
-                        }
+                    val driverAreas = areas.driverLockAreas()
+                    if (driverAreas.isEmpty()) {
+                        Log.i(TAG, "door lock unset; no supported area contains ROW_1_LEFT")
+                        return@checkDoorLockCapabilities
                     }
-                    try {
-                        door.registerDoorLockState(area, listener)
-                        track(token) { door.unregisterDoorLockState(area, listener) }
-                        val read = {
-                            door.getDoorLockState(
-                                area,
-                                { value -> if (live(token)) updateLock(value) },
-                                { error -> if (live(token)) note(error) },
-                            )
+                    driverAreas.forEach { area ->
+                        val bits = area.driverBits()
+                        val listener = object : DoorLockStateListener {
+                            override fun onDoorLockStateUpdated(state: Boolean?) {
+                                if (!live(token)) return
+                                Log.i(TAG, "door lock area=0x${bits.toString(16)} locked=$state")
+                                updateLock(state)
+                            }
+
+                            override fun onFailed(error: Exception) {
+                                if (live(token)) note(error)
+                            }
                         }
-                        read()
-                        rereads += read
-                    } catch (error: Throwable) {
-                        note(error)
+                        try {
+                            door.registerDoorLockState(area, listener)
+                            track(token) { door.unregisterDoorLockState(area, listener) }
+                            val read = {
+                                door.getDoorLockState(
+                                    area,
+                                    { value ->
+                                        if (!live(token)) return@getDoorLockState
+                                        Log.i(TAG, "door lock area=0x${bits.toString(16)} locked=$value")
+                                        updateLock(value)
+                                    },
+                                    { error -> if (live(token)) note(error) },
+                                )
+                            }
+                            read()
+                            rereads += read
+                        } catch (error: Throwable) {
+                            note(error)
+                        }
                     }
                 },
                 { error -> if (live(token)) note(error) },
@@ -781,9 +847,10 @@ class PleosVehicleRepository @Inject constructor(
 
     @Suppress("DEPRECATION")
     private fun subscribePleosGear() {
-        if (BuildConfig.GEAR_BACKEND != "PLEOS") return
+        if (gearBackendMode() != GearBackend.PLEOS || pleosGearOn) return
         val token = sessionToken
         val current = vehicle ?: return
+        pleosGearOn = true
         val gear = VehicleDomains.gear(current)
         try {
             val listener = object : GearSelectionListener {
@@ -861,6 +928,10 @@ class PleosVehicleRepository @Inject constructor(
     private fun note(error: Throwable) {
         _snapshot.update { it.copy(lastError = error.message ?: error.javaClass.simpleName) }
     }
+
+    private companion object {
+        const val TAG = "MiriLock"
+    }
 }
 
 private fun lightOn(state: LightState?): Boolean? = when (state) {
@@ -884,6 +955,11 @@ private fun AccessType.toSignal(): SignalAccess = when (this) {
     AccessType.WRITE -> SignalAccess.WRITE
     AccessType.READ_WRITE -> SignalAccess.READ_WRITE
 }
+
+internal fun DoorArea.driverBits(): Int = DoorLockAreas.mask(values.map { it.id })
+
+internal fun List<DoorArea>.driverLockAreas(): List<DoorArea> =
+    filter { DoorLockAreas.containsDriver(it.driverBits()) }
 
 private fun DoorArea.toDoorId(): DoorId? {
     val items = values

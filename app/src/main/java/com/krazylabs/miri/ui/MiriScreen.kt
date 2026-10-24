@@ -38,8 +38,11 @@ import com.krazylabs.miri.ui.design.D1RoadScreen
 import com.krazylabs.miri.ui.design.D2ChargeScreen
 import com.krazylabs.miri.ui.design.F1KindScreen
 import com.krazylabs.miri.ui.design.F2ReturnScreen
-import com.krazylabs.miri.ui.design.HeroTitle
-import com.krazylabs.miri.ui.design.ScreenCanvas
+import com.krazylabs.miri.ui.design.C1CheckScreen
+import com.krazylabs.miri.ui.design.C2DoneScreen
+import com.krazylabs.miri.ui.design.DrivingMark
+import com.krazylabs.miri.ui.design.F3ReturnScreen
+import com.krazylabs.miri.ui.design.F4ChecklistScreen
 import com.krazylabs.miri.ui.design.SystemWallClock
 import com.krazylabs.miri.ui.design.WallClock
 import com.krazylabs.miri.ui.design.quietClick
@@ -47,7 +50,11 @@ import com.krazylabs.miri.ui.theme.AstaSans
 import com.krazylabs.miri.ui.theme.IviTheme
 
 @Composable
-fun MiriRoute(viewModel: MiriViewModel, clock: WallClock = SystemWallClock) {
+fun MiriRoute(
+    viewModel: MiriViewModel,
+    clock: WallClock = SystemWallClock,
+    onOpenFoundation: () -> Unit = {},
+) {
     val ui by viewModel.ui.collectAsState()
     val dark = isSystemInDarkTheme()
     var demoOpen by rememberSaveable { mutableStateOf(false) }
@@ -77,13 +84,12 @@ fun MiriRoute(viewModel: MiriViewModel, clock: WallClock = SystemWallClock) {
                 onTime = viewModel::selectTime,
                 onPlace = viewModel::selectPlace,
                 onDone = viewModel::confirmReturn,
+                onCloseDates = viewModel::closeDates,
             )
             MiriPane.D1 -> D1RoadScreen(ui.card, dark)
             MiriPane.D2 -> D2ChargeScreen(ui.card, dark)
-            MiriPane.F3, MiriPane.CHECK -> FaceScreen(
-                card = ui.card,
-                onGuide = viewModel::requestReturnGuide,
-            )
+            MiriPane.F3 -> F3ReturnScreen(ui.card, dark, onGuide = viewModel::requestReturnGuide)
+            MiriPane.CHECK -> CheckPane(ui.card, dark)
         }
         if (ui.showScenarioPanel) {
             DemoDock(
@@ -96,6 +102,8 @@ fun MiriRoute(viewModel: MiriViewModel, clock: WallClock = SystemWallClock) {
                     onChange = viewModel::updateScenario,
                     onRoute = viewModel::requestDemoRoute,
                     onRoad = viewModel::requestDemoRoad,
+                    onGearBackend = viewModel::setGearBackend,
+                    onOpenFoundation = onOpenFoundation,
                 )
                 if (ui.simulator) {
                     LampRow(
@@ -111,54 +119,13 @@ fun MiriRoute(viewModel: MiriViewModel, clock: WallClock = SystemWallClock) {
 }
 
 @Composable
-private fun DrivingMark(dark: Boolean) {
-    ScreenCanvas {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Image(
-                painter = painterResource(if (dark) R.drawable.miri_car_q34_dark else R.drawable.miri_car_q34_light),
-                contentDescription = null,
-                modifier = Modifier.size(280.dp),
-                contentScale = ContentScale.Fit,
-            )
-        }
-    }
-}
-
-@Composable
-private fun FaceScreen(card: ShownCard?, onGuide: () -> Unit) {
-    val face = card ?: return
-    val colors = IviTheme.colors
-    ScreenCanvas {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(48.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            face.badge?.let {
-                Text(it, color = colors.textTertiary, fontFamily = AstaSans, fontSize = 20.sp)
-            }
-            HeroTitle(face.title)
-            face.lines.forEach { line ->
-                Text(line, color = colors.textPrimary, fontFamily = AstaSans, fontSize = 28.sp, lineHeight = 40.sp)
-            }
-            face.note?.let {
-                Text(it, color = colors.textSecondary, fontFamily = AstaSans, fontSize = 22.sp, lineHeight = 32.sp)
-            }
-            face.footer?.let {
-                Text(it, color = colors.textTertiary, fontFamily = AstaSans, fontSize = 20.sp)
-            }
-            if (face.showGuide) {
-                Text(
-                    "반납 장소로 안내",
-                    modifier = Modifier.quietClick(onClick = onGuide).padding(vertical = 12.dp),
-                    color = colors.accent,
-                    fontFamily = AstaSans,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 24.sp,
-                )
-            }
-        }
+private fun CheckPane(card: ShownCard?, dark: Boolean) {
+    val title = card?.title.orEmpty()
+    val done = card?.lines?.any { it.contains("점검 끝") } == true
+    when {
+        done -> C2DoneScreen(card, dark)
+        title.contains("도착") -> F4ChecklistScreen(card, dark)
+        else -> C1CheckScreen(card, dark)
     }
 }
 

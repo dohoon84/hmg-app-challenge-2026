@@ -2,220 +2,141 @@ package com.krazylabs.miri.ui.design
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.krazylabs.miri.R
 import com.krazylabs.miri.ui.ShownCard
-import com.krazylabs.miri.ui.theme.AstaSans
 import com.krazylabs.miri.ui.theme.IviTheme
 
-data class RoadStat(val value: String, val label: String)
-
-fun roadStats(lines: List<String>): List<RoadStat> = lines.map { line ->
-    val toll = Regex("""톨게이트\s+(\d+)""").find(line)
-    if (toll != null) return@map RoadStat(toll.groupValues[1], "톨게이트")
-    val highway = Regex("""고속도로 진입\s+(\d+)""").find(line)
-    if (highway != null) return@map RoadStat(highway.groupValues[1], "고속도로 진입")
-    RoadStat(line, "")
-}
-
-fun portValue(lines: List<String>): String {
-    val line = lines.firstOrNull { it.startsWith("충전구는") || it.startsWith("주유구는") } ?: return ""
-    return line
-        .removePrefix("충전구는 ")
-        .removePrefix("주유구는 ")
-        .removeSuffix("에 있어요.")
-        .removeSuffix(".")
-        .trim()
-}
-
-fun connectorValue(lines: List<String>, chips: List<String>): String? {
-    val fromLine = lines.firstOrNull { it.startsWith("커넥터") }
-        ?.substringAfter(":")
-        ?.trim()
-        ?.takeIf { it.isNotEmpty() }
-    if (fromLine != null) return fromLine
-    return chips.firstOrNull { it.contains("콤보") || it.contains("커넥터") }
-}
-
 @Composable
-fun D1RoadScreen(card: ShownCard?, dark: Boolean) {
+fun D1RoadScreen(card: ShownCard?, dark: Boolean, onDone: () -> Unit = {}) {
     val colors = IviTheme.colors
-    val stats = roadStats(card?.lines.orEmpty()).ifEmpty {
-        listOf(RoadStat("1", "톨게이트"), RoadStat("1", "고속도로 진입"))
-    }
-    ScreenCanvas {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(start = Frame.pad, top = 52.dp, end = Frame.pad, bottom = 36.dp),
-        ) {
-            StatusLine("정차 중 · 출발 전")
-            Spacer(Modifier.height(28.dp))
-            HeroTitle(card?.title ?: "오늘 길")
-            Row(Modifier.weight(1f).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1.05f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                    Image(
-                        painter = painterResource(if (dark) R.drawable.miri_car_top_dark else R.drawable.miri_car_top_light),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxHeight(0.92f),
-                        contentScale = ContentScale.Fit,
-                    )
-                }
-                Column(Modifier.weight(0.95f), verticalArrangement = Arrangement.spacedBy(36.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                        stats.take(2).forEach { stat ->
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    stat.value,
-                                    color = colors.textPrimary,
-                                    fontFamily = AstaSans,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 96.sp,
-                                    lineHeight = 104.sp,
-                                )
-                                Text(
-                                    stat.label,
-                                    color = colors.textSecondary,
-                                    fontFamily = AstaSans,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 24.sp,
-                                )
-                            }
-                        }
-                    }
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            "이 차에서 다른 점",
-                            color = colors.textTertiary,
-                            fontFamily = AstaSans,
-                            fontSize = 20.sp,
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Image(
-                                painter = painterResource(if (dark) R.drawable.miri_stalk_dark else R.drawable.miri_stalk_light),
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .width(220.dp)
-                                    .height(120.dp)
-                                    .clip(RoundedCornerShape(20.dp)),
-                                contentScale = ContentScale.Crop,
-                            )
-                            Spacer(Modifier.width(20.dp))
-                            Text(
-                                "와이퍼는 오른쪽 레버예요",
-                                color = colors.textPrimary,
-                                fontFamily = AstaSans,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 26.sp,
-                                lineHeight = 36.sp,
-                            )
-                        }
-                    }
-                }
-            }
-        }
+    val stats = roadStats(card?.lines.orEmpty())
+    val note = card?.lines?.firstOrNull { it.startsWith("와이퍼") } ?: "와이퍼는 오른쪽 레버예요"
+    val stalk = if (dark) R.drawable.miri_stalk_dark else R.drawable.miri_stalk_light
+    SpecFrame {
+        CroppedImage(
+            id = stalk,
+            clipX = 48f, clipY = 48f, clipW = 760f, clipH = 1114f,
+            imageX = -874f, imageY = 48f, imageW = 1980f, imageH = 1114f,
+            radius = 32f,
+        )
+        Hotspot(537.3f, 501.96f)
+        SpecIcon(R.drawable.miri_ic_parking, 880f, 48f, 32f, 32f, colors.frameSecondary, "정차")
+        SpecText("정차 중 · 출발 전", 924f, 50f, MiriType.labelMedium(), colors.frameSecondary)
+        SpecText(card?.title ?: "오늘 길", 880f, 112f, MiriType.titleLargeNormal(), colors.frameInk)
+        SpecIcon(R.drawable.miri_ic_toll, 880f, 320f, 40f, 40f, colors.frameSecondary)
+        CountRun(stats.tolls.toString(), " 곳", 880f, 372f)
+        SpecText("톨게이트", 880f, 460f, MiriType.labelMedium(), colors.frameTertiary)
+        Box(Modifier.figma(1260f, 320f, 1f, 172f).background(colors.divider))
+        SpecIcon(R.drawable.miri_ic_entry, 1292f, 320f, 40f, 40f, colors.frameSecondary)
+        CountRun(stats.highways.toString(), " 번", 1292f, 372f)
+        SpecText("고속도로 진입", 1292f, 460f, MiriType.labelMedium(), colors.frameTertiary)
+        Box(Modifier.figma(880f, 580f, 754f, 1f).background(colors.divider))
+        SpecText("이 차에서 다른 점", 880f, 636f, MiriType.labelMedium(), colors.frameTertiary)
+        SpecText(note, 880f, 676f, MiriType.titleLargeNormal(), colors.frameInk)
+        SpecButton("다 봤어요", 880f, 1062f, 352f, kind = SpecButtonKind.Point, onClick = onDone)
     }
 }
 
 @Composable
-fun D2ChargeScreen(card: ShownCard?, dark: Boolean) {
+fun D2ChargeScreen(card: ShownCard?, dark: Boolean, onDone: () -> Unit = {}) {
     val colors = IviTheme.colors
-    val title = card?.title ?: "충전소에 가요"
-    val charging = title.contains("충전")
-    val port = portValue(card?.lines.orEmpty()).ifEmpty { if (charging) "오른쪽 뒤" else "" }
-    val connector = connectorValue(card?.lines.orEmpty(), card?.chips.orEmpty())
-    val percent = card?.chargePercent
-    ScreenCanvas {
-        Column(
+    val car = if (dark) R.drawable.miri_car_top_dark else R.drawable.miri_car_top_light
+    val port = portPhrase(card)
+    val connector = connectorPhrase(card)
+    SpecFrame {
+        Image(
+            painter = painterResource(car),
+            contentDescription = null,
+            modifier = Modifier.figma(110f, 40f, 620f, 1128f),
+            contentScale = ContentScale.Crop,
+        )
+        Hotspot(515.07f, 823.95f)
+        Box(Modifier.figma(583.07f, 866.95f, 272.93f, 2f).background(colors.accent))
+        Box(
             Modifier
-                .fillMaxSize()
-                .padding(start = Frame.pad, top = 52.dp, end = Frame.pad, bottom = 36.dp),
-        ) {
-            StatusLine("정차 중 · 출발 전")
-            Spacer(Modifier.height(28.dp))
-            HeroTitle(title)
-            Row(Modifier.weight(1f).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1.05f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                    Image(
-                        painter = painterResource(
-                            if (dark) R.drawable.miri_car_port_dark else R.drawable.miri_car_port_light,
-                        ),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxHeight(0.92f),
-                        contentScale = ContentScale.Fit,
-                    )
-                }
-                Column(
-                    Modifier.weight(0.95f),
-                    verticalArrangement = Arrangement.spacedBy(28.dp),
-                ) {
-                    if (percent != null) {
-                        Column {
-                            SectionLabel(if (charging) "충전" else "연료")
-                            Text(
-                                "$percent% 남음",
-                                color = colors.textPrimary,
-                                fontFamily = AstaSans,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 64.sp,
-                                lineHeight = 76.sp,
-                            )
-                        }
-                    }
-                    if (port.isNotEmpty()) {
-                        Column {
-                            SectionLabel(if (charging) "충전구" else "주유구")
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                port,
-                                color = colors.accent,
-                                fontFamily = AstaSans,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 48.sp,
-                                lineHeight = 60.sp,
-                            )
-                        }
-                    }
-                    if (connector != null) {
-                        Column {
-                            SectionLabel("커넥터")
-                            Spacer(Modifier.height(10.dp))
-                            Text(
-                                connector,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(18.dp))
-                                    .background(colors.accentContainer)
-                                    .padding(horizontal = 22.dp, vertical = 12.dp),
-                                color = colors.accent,
-                                fontFamily = AstaSans,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 24.sp,
-                            )
-                        }
-                    }
-                }
-            }
+                .figma(579.07f, 863.95f, 8f, 8f)
+                .background(colors.accent, RoundedCornerShape(percent = 50)),
+        )
+        SpecIcon(R.drawable.miri_ic_parking, 880f, 48f, 32f, 32f, colors.frameSecondary, "정차")
+        SpecText("정차 중 · 출발 전", 924f, 50f, MiriType.labelMedium(), colors.frameSecondary)
+        SpecText(card?.title ?: "충전소에 가요", 880f, 112f, MiriType.titleLargeNormal(), colors.frameInk)
+        SpecText("충전", 880f, 212f, MiriType.labelMedium(), colors.frameTertiary)
+        card?.chargePercent?.let { percent ->
+            Pill(880f, 248f, "$percent% 남음")
         }
+        SpecText("충전구", 880f, 791.95f, MiriType.labelMedium(), colors.frameTertiary)
+        SpecText(port, 880f, 827.95f, MiriType.headlineLargeExtra(), colors.accent)
+        connector?.let {
+            SpecText("커넥터", 880f, 939.95f, MiriType.labelMedium(), colors.frameTertiary)
+            Pill(880f, 975.95f, it)
+        }
+        SpecButton("다 봤어요", 880f, 1062f, 352f, kind = SpecButtonKind.Point, onClick = onDone)
     }
+}
+
+@Composable
+private fun androidx.compose.foundation.layout.BoxScope.CountRun(value: String, unit: String, x: Float, y: Float) {
+    val colors = IviTheme.colors
+    Row(Modifier.figma(x, y, 200f, 80f), verticalAlignment = Alignment.Bottom) {
+        Text(value, style = MiriType.headlineLargeExtra(), color = colors.frameInk, maxLines = 1)
+        Text(unit, style = MiriType.bodyMediumNormal(), color = colors.frameTertiary, maxLines = 1)
+    }
+}
+
+@Composable
+private fun androidx.compose.foundation.layout.BoxScope.Pill(x: Float, y: Float, label: String) {
+    val colors = IviTheme.colors
+    Box(
+        Modifier
+            .offset(px(x), px(y))
+            .background(colors.track, RoundedCornerShape(percent = 50))
+            .padding(horizontal = px(16), vertical = px(4)),
+    ) {
+        Text(label, style = MiriType.labelMedium(), color = colors.frameInk, maxLines = 1)
+    }
+}
+
+private data class RoadCounts(val tolls: Int, val highways: Int)
+
+private fun roadStats(lines: List<String>): RoadCounts {
+    fun take(prefix: String): Int =
+        lines.firstOrNull { it.startsWith(prefix) }
+            ?.removePrefix(prefix)
+            ?.takeWhile { it.isDigit() }
+            ?.toIntOrNull()
+            ?: 0
+    return RoadCounts(take("톨게이트 "), take("고속도로 진입 "))
+}
+
+private fun portPhrase(card: ShownCard?): String {
+    val line = card?.lines?.firstOrNull { it.startsWith("충전구는 ") || it.startsWith("주유구는 ") }
+    if (line != null) {
+        return line.removePrefix("충전구는 ").removePrefix("주유구는 ").removeSuffix("에 있어요.").removeSuffix("예요.").trim()
+    }
+    return when (card?.portName) {
+        "REAR_RIGHT" -> "오른쪽 뒤"
+        "REAR_LEFT" -> "왼쪽 뒤"
+        "FRONT_RIGHT" -> "오른쪽 앞"
+        "FRONT_LEFT" -> "왼쪽 앞"
+        "REAR" -> "뒤쪽"
+        "FRONT" -> "앞쪽"
+        else -> "오른쪽 뒤"
+    }
+}
+
+private fun connectorPhrase(card: ShownCard?): String? {
+    val chip = card?.chips?.firstOrNull { it != "전기" && it != "연료" }
+    if (chip != null) return chip
+    return card?.lines?.firstOrNull { it.startsWith("커넥터") }?.substringAfter(":")?.trim()
 }

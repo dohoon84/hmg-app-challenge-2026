@@ -1,10 +1,12 @@
 package com.krazylabs.miri.ui
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.krazylabs.miri.BuildConfig
 import com.krazylabs.miri.mvp.CardVoiceGate
+import com.krazylabs.miri.domain.GearBackend
 import com.krazylabs.miri.domain.GearPosition
 import com.krazylabs.miri.domain.PlaceRequest
 import com.krazylabs.miri.domain.TripEstimate
@@ -213,6 +215,11 @@ class MiriViewModel @Inject constructor(
         publish()
     }
 
+    fun closeDates() {
+        form.closeDateSheet()
+        publish()
+    }
+
     fun selectDate(offset: Int) {
         form.selectDate(offset)
         publish()
@@ -247,6 +254,15 @@ class MiriViewModel @Inject constructor(
 
     fun updateScenario(next: ScenarioOverrides) {
         scenarioInput.update(next)
+        publish()
+    }
+
+    /** Debug panel. AAOS is the build default; PLEOS reads Vehicle.getGear(). */
+    fun setGearBackend(mode: String) {
+        val next = GearBackend.normalize(mode)
+        drivingStateRepository.setGearBackend(next)
+        vehicleRepository.setGearBackend(next)
+        scenarioInput.update(scenarioInput.overrides.value.copy(gearBackend = next))
         publish()
     }
 
@@ -298,7 +314,9 @@ class MiriViewModel @Inject constructor(
         }
         val identity = snapshot.identity
         val routeKey = RouteKey.of(destination, road.routeId)
-        val navVoice = speechFocus.navigationOrAssistantActive()
+        // Our own guidance-usage playback is in the active configurations.
+        // Count it as navigation only when it is someone else.
+        val navVoice = speechFocus.navigationOrAssistantActive() && !player.audible
         val d2 = D2Rules.offer(identity, role, specAgrees = CarSpec.agrees(identity), routeKey = routeKey)
         val remainMeters = scenario.remainMeters ?: destination?.remainDistance
         val remainSeconds = scenario.remainSeconds ?: destination?.remainTime
@@ -406,6 +424,12 @@ class MiriViewModel @Inject constructor(
             nowMs = now,
         )
         if (speechHalt.shouldStop(hostVisible, gear, navVoice)) player.stop()
+        Log.i(
+            DECK_TAG,
+            "pane=${step.pane} kind=$kind saved=${form.saved != null} drove=$drove " +
+                "edges=$edgesOpen lock=${snapshot.doorLocked} d1=${d1?.routeId} " +
+                "d2=${d2?.routeKey} f3=${f3?.key} checks=${items.size}",
+        )
         if (hostVisible) {
             when (cue.kind) {
                 CueKind.CHIME -> player.chime()
@@ -550,5 +574,6 @@ class MiriViewModel @Inject constructor(
         const val KIND_SHARE = "share"
         const val SETTLE_MS = 2_500L
         const val TRIP_TIMEOUT_MS = 7_000L
+        const val DECK_TAG = "MiriDeck"
     }
 }

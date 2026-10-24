@@ -266,7 +266,8 @@ class MvpPhaseTest {
             nowMs = 1_700_000_000_000L - 59_000L,
             etaSeconds = null,
         )
-        assertTrue(underAMinute[0].contains("곧 남았어요."))
+        assertEquals("1분도 안 남았어요", underAMinute[0])
+        assertFalse(underAMinute[0].contains("곧"))
         assertFalse(underAMinute[0].contains("0분"))
         val trip = straightLineTrip(37.5, 127.0, 37.5, 127.0)
         assertEquals(0, trip.distance)
@@ -400,6 +401,106 @@ class MvpPhaseTest {
             ),
         )
         assertEquals(MiriPane.D1, again.pane)
+    }
+
+    @Test
+    fun choosingAKindOpensF2WithoutAGearChange() {
+        val session = CardSession()
+        assertEquals(MiriPane.F1, session.step(baseInput(GearPosition.PARK, showIntake = true)).pane)
+        val next = session.step(baseInput(GearPosition.PARK).copy(kind = "rental"))
+        assertEquals(MiriPane.F2, next.pane)
+    }
+
+    @Test
+    fun lateDestinationInTheSameParkDoesNotShowD2Again() {
+        val session = CardSession()
+        val route = D2Rules.offer(evRearRight(true), DestinationRole.CHARGING, routeKey = "route-1")!!
+        assertEquals(MiriPane.D2, session.step(baseInput(GearPosition.PARK).copy(d2 = route, nowMs = 0)).pane)
+        val late = route.copy(routeKey = RouteKey.of(destination("충전소", 37.5, 127.1), "route-1"))
+        assertEquals(MiriPane.D2, session.step(baseInput(GearPosition.PARK).copy(d2 = late, nowMs = 1_000)).pane)
+        assertEquals(MiriPane.ICON, session.step(baseInput(GearPosition.PARK).copy(d2 = late, nowMs = 6_000)).pane)
+        assertEquals(MiriPane.ICON, session.step(baseInput(GearPosition.PARK).copy(d2 = late, nowMs = 7_000)).pane)
+        session.step(baseInput(GearPosition.DRIVE).copy(d2 = late))
+        assertEquals(MiriPane.ICON, session.step(baseInput(GearPosition.PARK).copy(d2 = late, nowMs = 8_000)).pane)
+    }
+
+    /**
+     * One card per park after F2 is saved. D2 is skipped when its destination
+     * is already set during the drive that opens the next park, so the demo
+     * sets that destination only after the car is parked again.
+     */
+    @Test
+    fun demoOrderReachesD1ThenD2ThenF3ThenCheck() {
+        val session = CardSession()
+        val rental = baseInput(GearPosition.PARK).copy(kind = "rental", returnSaved = true)
+        assertEquals(MiriPane.F1, session.step(baseInput(GearPosition.PARK, showIntake = true)).pane)
+        assertEquals(MiriPane.F2, session.step(baseInput(GearPosition.PARK).copy(kind = "rental")).pane)
+        assertEquals(MiriPane.ICON, session.step(rental.copy(nowMs = 1_000)).pane)
+
+        val road = D1Face("pretend", listOf("톨게이트 2곳"), "vo_toll_2")
+        session.step(baseInput(GearPosition.DRIVE).copy(kind = "rental", returnSaved = true, d1 = road))
+        assertEquals(MiriPane.D1, session.step(rental.copy(d1 = road, nowMs = 2_000)).pane)
+        assertEquals(MiriPane.ICON, session.step(rental.copy(d1 = road, nowMs = 8_000)).pane)
+
+        val charging = D2Rules.offer(evRearRight(true), DestinationRole.CHARGING, routeKey = "charge-1")!!
+        session.step(baseInput(GearPosition.DRIVE).copy(kind = "rental", returnSaved = true))
+        assertEquals(MiriPane.ICON, session.step(rental.copy(nowMs = 10_000)).pane)
+        assertEquals(MiriPane.D2, session.step(rental.copy(d2 = charging, nowMs = 11_000)).pane)
+        assertEquals(MiriPane.D2, session.step(rental.copy(d2 = charging, nowMs = 12_000)).pane)
+
+        val prepared = F3Face("rent-3h", listOf("반납까지 약 18% 더 충전해야 해요."))
+        session.step(baseInput(GearPosition.DRIVE).copy(kind = "rental", returnSaved = true))
+        assertEquals(MiriPane.F3, session.step(rental.copy(f3 = prepared, nowMs = 20_000)).pane)
+        assertEquals(MiriPane.F3, session.step(rental.copy(f3 = null, nowMs = 21_000)).pane)
+
+        session.step(baseInput(GearPosition.DRIVE).copy(kind = "rental", returnSaved = true))
+        val check = session.step(
+            rental.copy(checkItems = listOf("오른쪽 뒷문이 열려 있어요."), nowMs = 30_000),
+        )
+        assertEquals(MiriPane.CHECK, check.pane)
+    }
+
+    @Test
+    fun chargeLineWaitsUntilRoadCardsHaveShown() {
+        val session = CardSession()
+        val line = "충전 62% · 반납 기준 80%"
+        val rental = baseInput(GearPosition.PARK).copy(kind = "rental", returnSaved = true, f4 = line)
+        val road = D1Face("pretend", listOf("톨게이트 2곳"), "vo_toll_2")
+        session.step(baseInput(GearPosition.DRIVE).copy(kind = "rental", returnSaved = true, f4 = line))
+        assertEquals(MiriPane.D1, session.step(rental.copy(d1 = road, nowMs = 2_000)).pane)
+        assertEquals(MiriPane.ICON, session.step(rental.copy(d1 = road, nowMs = 8_000)).pane)
+
+        val charging = D2Rules.offer(evRearRight(true), DestinationRole.CHARGING, routeKey = "charge-1")!!
+        session.step(baseInput(GearPosition.DRIVE).copy(kind = "rental", returnSaved = true, f4 = line))
+        assertEquals(MiriPane.D2, session.step(rental.copy(d2 = charging, nowMs = 11_000)).pane)
+
+        val prepared = F3Face("rent-3h", listOf("반납까지 약 18% 더 충전해야 해요."))
+        session.step(baseInput(GearPosition.DRIVE).copy(kind = "rental", returnSaved = true, f4 = line))
+        assertEquals(MiriPane.F3, session.step(rental.copy(f3 = prepared, f4 = line, nowMs = 20_000)).pane)
+
+        session.step(baseInput(GearPosition.DRIVE).copy(kind = "rental", returnSaved = true, f4 = line))
+        val checklist = session.step(rental.copy(nowMs = 30_000))
+        assertEquals(MiriPane.CHECK, checklist.pane)
+        assertEquals(listOf(line), checklist.card?.lines)
+
+        val openDoor = CardSession()
+        assertEquals(
+            MiriPane.CHECK,
+            openDoor.step(
+                rental.copy(checkItems = listOf("오른쪽 뒷문이 열려 있어요."), f3 = prepared),
+            ).pane,
+        )
+    }
+
+    @Test
+    fun chargingDestinationChosenWhileDrivingSkipsTheNextPark() {
+        val session = CardSession()
+        val face = D2Rules.offer(evRearRight(true), DestinationRole.CHARGING, routeKey = "charge-1")!!
+        session.step(baseInput(GearPosition.DRIVE).copy(d2 = face, kind = "rental", returnSaved = true))
+        assertEquals(
+            MiriPane.ICON,
+            session.step(baseInput(GearPosition.PARK).copy(d2 = face, kind = "rental", returnSaved = true)).pane,
+        )
     }
 
     @Test

@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.widthIn
 import com.krazylabs.miri.BuildConfig
+import com.krazylabs.miri.domain.GearBackend
 import com.krazylabs.miri.mvp.ScenarioOverrides
 import com.krazylabs.miri.speech.SpeechUsage
 
@@ -27,6 +28,8 @@ fun ScenarioPanel(
     onChange: (ScenarioOverrides) -> Unit,
     onRoute: () -> Unit,
     onRoad: () -> Unit,
+    onGearBackend: (String) -> Unit = {},
+    onOpenFoundation: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var meters by rememberSaveable { mutableStateOf(overrides.remainMeters?.toString().orEmpty()) }
@@ -111,6 +114,13 @@ fun ScenarioPanel(
             }) { Text(if (overrides.lightsUseDoorStandIn) "문 대체 끔" else "실내등→문") }
             Button(onClick = onRoad) { Text("오늘 길") }
             Button(onClick = onRoute) { Text("충전 경로") }
+        }
+        val gear = overrides.gearBackend.ifBlank { BuildConfig.GEAR_BACKEND }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = {
+                onGearBackend(if (gear == GearBackend.PLEOS) GearBackend.AAOS else GearBackend.PLEOS)
+            }) { Text(if (gear == GearBackend.PLEOS) "기어: PLEOS" else "기어: AAOS") }
+            TextButton(onClick = onOpenFoundation) { Text("이 좌표 ETA") }
         }
     }
 }

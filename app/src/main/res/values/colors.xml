@@ -32,4 +32,16 @@
     <color name="ivi_canvas">#F7F8FA</color>
     <color name="ivi_track">#EDEEF2</color>
     <color name="ivi_outline">#C5C8CE</color>
+    <!-- Frame tokens from the Figma variable table. Text ink is #131417, not the locked #121417 surface. -->
+    <color name="ivi_frame_ink">#131417</color>
+    <color name="ivi_button_disabled">#33FFFFFF</color>
+    <color name="ivi_divider">#0D131417</color>
+    <color name="ivi_divider_secondary">#1A131417</color>
+    <color name="ivi_popup">#FFFFFF</color>
+    <color name="ivi_button_filled">#44464E</color>
+    <color name="ivi_on_filled">#FFFFFF</color>
+    <color name="ivi_overlay">#33131417</color>
+    <color name="ivi_border_strong">#686A72</color>
+    <color name="ivi_caution_badge">#FF8A00</color>
+    <color name="ivi_on_caution_badge">#121417</color>
 </resources>

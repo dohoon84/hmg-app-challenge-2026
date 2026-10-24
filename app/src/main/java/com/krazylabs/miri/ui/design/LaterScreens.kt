@@ -1,0 +1,307 @@
+package com.krazylabs.miri.ui.design
+
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import com.krazylabs.miri.R
+import com.krazylabs.miri.mvp.CheckRules
+import com.krazylabs.miri.ui.ShownCard
+import com.krazylabs.miri.ui.theme.IviTheme
+
+/** E2 app area only: one vehicle glyph on the canvas. The system chrome stays outside the app. */
+@Composable
+fun DrivingMark(dark: Boolean) {
+    val colors = IviTheme.colors
+    SpecFrame {
+        SpecIcon(R.drawable.miri_ic_vehicle, 793f, 557f, 96f, 96f, colors.frameTertiary)
+    }
+}
+
+data class F3Model(
+    val label: String,
+    val hero: String,
+    val heroRest: String,
+    val sentence: String,
+    val leftLabel: String? = null,
+    val leftValue: String? = null,
+    val rightLabel: String? = null,
+    val rightValue: String? = null,
+    val showPort: Boolean = true,
+    val sentenceX: Float = 880f,
+)
+
+@Composable
+fun F3ReturnScreen(
+    card: ShownCard?,
+    dark: Boolean,
+    onGuide: () -> Unit = {},
+    onDone: () -> Unit = {},
+    model: F3Model? = null,
+) {
+    val colors = IviTheme.colors
+    val face = model ?: f3From(card)
+    val car = if (dark) R.drawable.miri_car_top_dark else R.drawable.miri_car_top_light
+    SpecFrame {
+        Image(
+            painterResource(car),
+            contentDescription = null,
+            modifier = Modifier.figma(110f, 40f, 620f, 1128f),
+            contentScale = ContentScale.Crop,
+        )
+        if (face.showPort) Hotspot(515.07f, 823.95f)
+        SpecIcon(R.drawable.miri_ic_parking, 880f, 48f, 32f, 32f, colors.frameSecondary, "정차")
+        SpecText("정차 중", 924f, 50f, MiriType.labelMedium(), colors.frameSecondary)
+        SpecText("반납 준비", 880f, 112f, MiriType.titleLargeNormal(), colors.frameInk)
+        SpecText(face.label, 880f, 300f, MiriType.labelMedium(), colors.frameTertiary)
+        Row(Modifier.figma(880f, 336f, 400f, 80f), verticalAlignment = Alignment.Bottom) {
+            Text(face.hero, style = MiriType.headlineLargeExtra(), color = colors.frameInk, maxLines = 1)
+            Text(face.heroRest, style = MiriType.titleMediumNormal(), color = colors.frameSecondary, maxLines = 1)
+        }
+        if (face.sentenceX > 880f) {
+            SpecIcon(R.drawable.miri_ic_check_40, 880f, 470f, 40f, 40f, colors.accent)
+        }
+        SpecText(face.sentence, face.sentenceX, 476f, MiriType.bodyLargeNormal(), colors.frameInk)
+        if (face.leftLabel != null) {
+            Box(Modifier.figma(880f, 580f, 754f, 1f).background(colors.divider))
+            SpecText(face.leftLabel, 880f, 620f, MiriType.labelMedium(), colors.frameTertiary)
+            SpecText(face.leftValue.orEmpty(), 880f, 656f, MiriType.titleMediumStrong(), colors.frameInk)
+        }
+        if (face.rightLabel != null) {
+            SpecText(face.rightLabel, 1180f, 620f, MiriType.labelMedium(), colors.frameTertiary)
+            SpecText(face.rightValue.orEmpty(), 1180f, 656f, MiriType.titleMediumStrong(), colors.frameInk)
+        }
+        SpecButton("다 봤어요", 880f, 1062f, 352f, kind = SpecButtonKind.Point, onClick = onDone)
+        if (card?.showGuide != false) {
+            SpecButton("반납 장소로 안내", 1256f, 1062f, 378f, kind = SpecButtonKind.Dashed, onClick = onGuide)
+        }
+    }
+}
+
+fun f3ChargePreview() = F3Model(
+    "더 충전할 양", "18", "%", "반납까지 약 18% 더 충전해야 해요.",
+    "지금 충전량", "62%", "반납 기준", "80%",
+)
+
+fun f3DepartPreview() = F3Model(
+    "출발", "19:00", " 쯤", "19:00쯤 출발하면 여유 있게 도착해요.",
+    "반납", "20:00", "가는 데", "약 42분", showPort = false,
+)
+
+fun f3FilledPreview() = F3Model(
+    "지금 충전량", "81", "%", "반납 기준만큼 충전됐어요.",
+    "반납 기준", "80%", sentenceX = 936f,
+)
+
+fun f3FallbackPreview() = F3Model(
+    "반납까지", "3", "시간", "반납 20:00까지 3시간 남았어요.",
+    showPort = false,
+)
+
+fun f3FuelPreview() = F3Model(
+    "더 채울 연료", "18", "%", "반납까지 연료를 약 18% 더 채워야 해요.",
+    "지금", "62%", "반납 기준", "80%",
+)
+
+private fun f3From(card: ShownCard?): F3Model {
+    val lines = card?.lines.orEmpty()
+    val sentence = lines.firstOrNull { !it.contains("%") || it.contains("해요") || it.contains("됐어요") }.orEmpty()
+    val rest = lines.filter { it != sentence }
+    if (sentence.contains("출발하면")) {
+        val time = sentence.substringBefore("쯤").trim()
+        return F3Model("출발", time, " 쯤", sentence, "반납", rest.getOrNull(0), "가는 데", rest.getOrNull(1), showPort = false)
+    }
+    if (sentence.contains("남았어요") || sentence == "1분도 안 남았어요") {
+        val hero = when {
+            sentence.startsWith("1분") -> "1" to "분"
+            else -> {
+                val body = sentence.substringAfter("까지 ").substringBefore(" 남았어요")
+                val num = body.takeWhile { it.isDigit() }
+                num to body.removePrefix(num)
+            }
+        }
+        return F3Model("반납까지", hero.first, hero.second, sentence, showPort = false)
+    }
+    if (sentence.contains("기준만큼")) {
+        val level = Regex("\\d+").find(sentence)?.value ?: ""
+        return F3Model("지금 충전량", level.ifEmpty { "80" }, "%", sentence, "반납 기준", rest.firstOrNull(), sentenceX = 936f)
+    }
+    val gap = Regex("(\\d+)%").find(sentence)?.groupValues?.get(1) ?: ""
+    val fuel = sentence.contains("연료")
+    return F3Model(
+        label = if (fuel) "더 채울 연료" else "더 충전할 양",
+        hero = gap,
+        heroRest = "%",
+        sentence = sentence.ifEmpty { "반납 준비" },
+        leftLabel = if (fuel) "지금" else "지금 충전량",
+        leftValue = rest.getOrNull(0),
+        rightLabel = "반납 기준",
+        rightValue = rest.getOrNull(1),
+    )
+}
+
+@Composable
+fun C1CheckScreen(card: ShownCard?, dark: Boolean) {
+    val colors = IviTheme.colors
+    val car = if (dark) R.drawable.miri_car_port_dark else R.drawable.miri_car_port_light
+    val items = card?.lines?.filter { it != CheckRules.FOOTER && it != card.note }.orEmpty()
+        .ifEmpty { listOf("오른쪽 뒷문", "실내등", "뒤쪽 왼쪽 독서등") }
+    SpecFrame {
+        Image(painterResource(car), null, Modifier.figma(110f, 40f, 620f, 1128f), contentScale = ContentScale.Crop)
+        val marks = listOf(593.92f to 570.72f, 398f to 519.96f, 336f to 672.24f)
+        items.take(3).forEachIndexed { index, _ ->
+            val (x, y) = marks[index]
+            NumberBadge(x, y, "${index + 1}")
+        }
+        SpecIcon(R.drawable.miri_ic_parking, 880f, 48f, 32f, 32f, colors.frameSecondary, "정차")
+        SpecText("정차 중", 924f, 50f, MiriType.labelMedium(), colors.frameSecondary)
+        SpecText(card?.title ?: "반납 전 점검", 880f, 112f, MiriType.titleLargeNormal(), colors.frameInk)
+        val rows = listOf(300f, 500f, 760f)
+        val dividers = listOf(422f, 682f)
+        items.take(rows.size).forEachIndexed { index, line ->
+            val y = rows[index]
+            NumberBadge(880f, y, "${index + 1}")
+            SpecText(shortItem(line), 944f, y, MiriType.titleMediumStrong(), colors.frameInk)
+            StatusBadge(1558f, y, if (line.contains("등")) "켜짐" else "열림")
+            if (line.contains("실내등")) {
+                SpecText("켜 둔 채 내리면 배터리가 약해질 수 있어요.", 944f, 558f, MiriType.bodySmallNormal(), colors.frameTertiary)
+            }
+            dividers.getOrNull(index)?.let { divider ->
+                Box(Modifier.figma(944f, divider, 690f, 1f).background(colors.divider))
+            }
+        }
+        Box(Modifier.figma(880f, 964f, 754f, 1f).background(colors.divider))
+        SpecIcon(R.drawable.miri_ic_belongings, 880f, 996f, 32f, 32f, colors.frameSecondary)
+        SpecText(
+            card?.note ?: CheckRules.REAR_NOTE,
+            928f, 994f, MiriType.bodySmallNormal(), colors.frameTertiary,
+            w = 504f, h = 68f, maxLines = 2,
+        )
+        SpecText(CheckRules.FOOTER, 880f, 1128f, MiriType.bodySmallNormal(), colors.frameTertiary)
+    }
+}
+
+@Composable
+fun C2DoneScreen(card: ShownCard?, dark: Boolean) {
+    val colors = IviTheme.colors
+    val car = if (dark) R.drawable.miri_car_q34_dark else R.drawable.miri_car_q34_light
+    SpecFrame {
+        Image(painterResource(car), null, Modifier.figma(0f, 24f, 1682f, 900f), contentScale = ContentScale.Crop)
+        SpecIcon(R.drawable.miri_ic_parking, 48f, 48f, 32f, 32f, colors.frameSecondary, "정차")
+        SpecText("정차 중", 92f, 50f, MiriType.labelMedium(), colors.frameSecondary)
+        SpecIcon(R.drawable.miri_ic_check_48, 48f, 972f, 48f, 48f, colors.accent)
+        SpecText("점검 끝.", 112f, 958f, MiriType.headlineLargeExtra(), colors.frameInk)
+        SpecText("좋은 하루 보내세요.", 48f, 1062f, MiriType.titleLargeNormal(), colors.frameSecondary)
+        val trip = card?.lines?.firstOrNull { it.contains("km") } ?: "이번 대여에서 212km를 달렸어요. 수고하셨어요."
+        SpecText(trip, 1137f, 1128f, MiriType.bodySmallNormal(), colors.frameTertiary)
+    }
+}
+
+@Composable
+fun F4ChecklistScreen(card: ShownCard?, dark: Boolean) {
+    val colors = IviTheme.colors
+    val car = if (dark) R.drawable.miri_car_port_dark else R.drawable.miri_car_port_light
+    val charge = card?.lines?.firstOrNull { it.contains("반납 기준") } ?: "충전 62% · 반납 기준 80%"
+    val open = card?.lines?.firstOrNull { it.contains("문") || it.contains("트렁크") } ?: "오른쪽 뒷문"
+    SpecFrame {
+        Image(painterResource(car), null, Modifier.figma(110f, 40f, 620f, 1128f), contentScale = ContentScale.Crop)
+        Hotspot(571.92f, 548.72f)
+        Hotspot(515.07f, 823.95f)
+        SpecIcon(R.drawable.miri_ic_parking, 880f, 48f, 32f, 32f, colors.frameSecondary, "정차")
+        SpecText("정차 중", 924f, 50f, MiriType.labelMedium(), colors.frameSecondary)
+        SpecText(card?.title ?: "반납 장소에 도착했어요", 880f, 112f, MiriType.titleLargeNormal(), colors.frameInk)
+        SpecText(
+            card?.badge ?: "아직 확인할 곳이 2개 남아 있어요.",
+            880f, 180f, MiriType.bodyMediumNormal(), colors.frameSecondary,
+        )
+        SpecIcon(R.drawable.miri_ic_door, 880f, 316f, 40f, 40f, colors.frameSecondary)
+        SpecText(shortItem(open), 944f, 312f, MiriType.titleMediumStrong(), colors.frameInk)
+        StatusBadge(1558f, 312f, "열림")
+        Box(Modifier.figma(944f, 420f, 690f, 1f).background(colors.divider))
+        SpecIcon(R.drawable.miri_ic_charge, 880f, 476f, 40f, 40f, colors.frameSecondary)
+        SpecText("충전 · 반납 기준", 944f, 452f, MiriType.labelMedium(), colors.frameTertiary)
+        ChargeLine(charge)
+        Box(Modifier.figma(944f, 590f, 690f, 1f).background(colors.divider))
+        Box(Modifier.figma(880f, 626f, 754f, 64f).alpha(0.45f)) {
+            SpecIcon(R.drawable.miri_ic_check_40, 0f, 10f, 40f, 40f, colors.accent)
+            SpecText("실내등", 64f, 6f, MiriType.titleMediumStrong(), colors.frameTertiary)
+            SpecText("꺼졌어요", 664f, 14f, MiriType.bodySmallNormal(), colors.frameTertiary)
+        }
+        Box(Modifier.figma(880f, 770f, 754f, 1f).background(colors.divider))
+        SpecIcon(R.drawable.miri_ic_window, 880f, 804f, 32f, 32f, colors.frameSecondary)
+        SpecText("창문은 신호가 없어요. 봐 주세요.", 928f, 802f, MiriType.bodySmallNormal(), colors.frameSecondary)
+        SpecIcon(R.drawable.miri_ic_belongings, 880f, 884f, 32f, 32f, colors.frameSecondary)
+        SpecText(card?.note ?: CheckRules.REAR_NOTE, 928f, 882f, MiriType.bodySmallNormal(), colors.frameTertiary)
+        SpecText(CheckRules.FOOTER, 880f, 1128f, MiriType.bodySmallNormal(), colors.frameTertiary)
+    }
+}
+
+@Composable
+private fun BoxScope.ChargeLine(line: String) {
+    val colors = IviTheme.colors
+    val parts = Regex("(\\d+%)").findAll(line).map { it.value }.toList()
+    val annotated = buildAnnotatedString {
+        var rest = line
+        parts.forEach { token ->
+            val at = rest.indexOf(token)
+            if (at > 0) withStyle(SpanStyle(color = colors.frameSecondary, fontWeight = androidx.compose.ui.text.font.FontWeight.Normal)) {
+                append(rest.substring(0, at))
+            }
+            withStyle(SpanStyle(color = colors.frameInk, fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold)) {
+                append(token)
+            }
+            rest = rest.substring(at + token.length)
+        }
+        if (rest.isNotEmpty()) {
+            withStyle(SpanStyle(color = colors.frameSecondary)) { append(rest) }
+        }
+    }
+    Text(annotated, Modifier.figma(944f, 488f, 500f, 44f), style = MiriType.titleMediumNormal(), maxLines = 1)
+}
+
+@Composable
+private fun BoxScope.NumberBadge(x: Float, y: Float, label: String) {
+    val colors = IviTheme.colors
+    Box(
+        Modifier
+            .figma(x, y, 44f, 44f)
+            .background(colors.canvas, RoundedCornerShape(px(22)))
+            .border(px(3), colors.accent, RoundedCornerShape(px(22))),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, style = MiriType.bodySmallStrong(), color = colors.accent)
+    }
+}
+
+@Composable
+private fun BoxScope.StatusBadge(x: Float, y: Float, label: String) {
+    val colors = IviTheme.colors
+    Box(
+        Modifier
+            .figma(x, y, 76f, 44f)
+            .background(colors.cautionBadge, RoundedCornerShape(px(12))),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, style = MiriType.bodyMediumNormal(), color = colors.onCautionBadge, maxLines = 1)
+    }
+}
+
+private fun shortItem(line: String): String = line
+    .removeSuffix("이 열려 있어요.")
+    .removeSuffix("가 열려 있어요.")
+    .removeSuffix("이 켜져 있어요.")
+    .removeSuffix(" 창문이 열려 있어요.")
+    .ifBlank { line }

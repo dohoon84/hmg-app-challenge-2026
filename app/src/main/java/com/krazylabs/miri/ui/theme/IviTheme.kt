@@ -102,11 +102,30 @@ data class IviColors(
     val accent: Color,
     val onAccent: Color,
     val accentContainer: Color,
-    /** App-area background measured from the 1682×1210 frames. */
+    /** App-area background. Dark #1D1E21, light #F7F8FA. */
     val canvas: Color,
     val track: Color,
     val outline: Color,
-)
+    /**
+     * Frame text. Light is #131417. The locked [textPrimary] stays #121417 in light
+     * so the contrast test is unchanged.
+     */
+    val frameInk: Color,
+    val buttonDisabled: Color,
+    val divider: Color,
+    val dividerSecondary: Color,
+    val popup: Color,
+    val buttonFilled: Color,
+    val onFilled: Color,
+    val overlay: Color,
+    val borderStrong: Color,
+    val cautionBadge: Color,
+    val onCautionBadge: Color,
+) {
+    val frameSecondary: Color get() = frameInk.copy(alpha = TEXT_SECONDARY)
+    val frameTertiary: Color get() = frameInk.copy(alpha = TEXT_TERTIARY)
+    val frameQuaternary: Color get() = frameInk.copy(alpha = TEXT_DISABLED)
+}
 
 private const val TEXT_SECONDARY = 0.84f
 private const val TEXT_TERTIARY = 0.64f
@@ -141,6 +160,17 @@ fun iviColors(context: Context): IviColors {
         canvas = color(R.color.ivi_canvas),
         track = color(R.color.ivi_track),
         outline = color(R.color.ivi_outline),
+        frameInk = color(R.color.ivi_frame_ink),
+        buttonDisabled = color(R.color.ivi_button_disabled),
+        divider = color(R.color.ivi_divider),
+        dividerSecondary = color(R.color.ivi_divider_secondary),
+        popup = color(R.color.ivi_popup),
+        buttonFilled = color(R.color.ivi_button_filled),
+        onFilled = color(R.color.ivi_on_filled),
+        overlay = color(R.color.ivi_overlay),
+        borderStrong = color(R.color.ivi_border_strong),
+        cautionBadge = color(R.color.ivi_caution_badge),
+        onCautionBadge = color(R.color.ivi_on_caution_badge),
     )
 }
 

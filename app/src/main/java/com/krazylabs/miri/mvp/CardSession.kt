@@ -74,6 +74,14 @@ class CardSession {
     /** An empty D2 key has no route to store. One show per rental, then [resetRental]. */
     private var toldUnkeyedD2 = false
     private val shownF3 = mutableSetOf<String>()
+    /** F3 is recorded as shown when it opens, so the next publish no longer offers it. */
+    private var f3Face: CardFace? = null
+    /**
+     * True after D2 has been shown in this park. A destination that arrives
+     * later in the same park changes the key; that key is absorbed and D2
+     * does not open again until the car leaves Park.
+     */
+    private var parkD2Told = false
     private var deferred: CardId? = null
     private var deferFromPrior = false
     private var deferUsed = false
@@ -88,6 +96,7 @@ class CardSession {
         toldRoutes.clear()
         toldD2.clear()
         toldUnkeyedD2 = false
+        parkD2Told = false
         shownF3.clear()
         checkShows = 0
         deferred = null
@@ -99,6 +108,7 @@ class CardSession {
 
     fun step(input: DeckInput): DeckStep {
         val moving = input.gear == GearPosition.DRIVE || input.gear == GearPosition.REVERSE
+        if (input.gear != GearPosition.PARK) parkD2Told = false
         if (input.gear == GearPosition.REVERSE) cameraCover = true
         if (moving) {
             input.d2?.routeKey?.takeIf { it.isNotEmpty() }?.let { toldD2 += it }
@@ -110,9 +120,13 @@ class CardSession {
             parkOpen = false
             spent = false
             held = null
+            f3Face = null
             checkCount = -1
             completion = false
             return DeckStep(MiriPane.ICON, null, VoicePlay.None)
+        }
+        if (input.gear == GearPosition.PARK && parkD2Told) {
+            input.d2?.routeKey?.takeIf { it.isNotEmpty() }?.let { toldD2 += it }
         }
         if (input.gear != GearPosition.PARK || cameraCover || !input.edgesOpen) {
             return DeckStep(MiriPane.ICON, null, VoicePlay.None)
@@ -132,6 +146,18 @@ class CardSession {
             )
         }
         if (spent) return DeckStep(MiriPane.ICON, null, VoicePlay.None)
+        // F1 and F2 are the intake. Choosing a kind while parked opens F2
+        // without a gear change. Saving the return spends this park.
+        if (held == CardId.F1 && (input.ownCar || input.kind != null)) {
+            held = null
+            voiceStamp = null
+        }
+        if (held == CardId.F2 && (input.returnSaved || input.ownCar)) {
+            held = null
+            voiceStamp = null
+            spent = true
+            return DeckStep(MiriPane.ICON, null, VoicePlay.None)
+        }
         if (!input.visible) {
             rememberMiss(input)
             return DeckStep(MiriPane.ICON, null, VoicePlay.None)
@@ -167,6 +193,7 @@ class CardSession {
             if (checkCount >= 0 && count < checkCount) voice = VoicePlay.Chime
             checkCount = count
         }
+        if (id == CardId.F3) f3Face = face
         if (voice == VoicePlay.None) voice = once(stamp(id, face), intended(id, input))
         return DeckStep(face.pane, face, voice)
     }
@@ -200,8 +227,11 @@ class CardSession {
     }
 
     private fun pick(input: DeckInput): CardId? {
-        val check = input.checkItems.isNotEmpty() || input.f4 != null
-        if (check) return CardId.CHECK
+        // An open door, window, or light is the return check and takes this park.
+        // The charge line alone (f4) does not. While it outranked D1, D2, and F3,
+        // applying a charge target after the first drive kept every later park on
+        // CHECK, so those three cards never appeared.
+        if (input.checkItems.isNotEmpty()) return CardId.CHECK
         if (!input.ownCar && input.showIntake && input.kind == null) return CardId.F1
         if (!input.ownCar && input.kind != null && !input.returnSaved) return CardId.F2
         val d2 = input.d2
@@ -211,6 +241,7 @@ class CardSession {
         if (input.edgesOpen && d1 != null && d1.routeId !in toldRoutes && toldRoutes.size < 3) {
             return CardId.D1
         }
+        if (input.f4 != null) return CardId.CHECK
         if (deferred != null && !deferUsed && deferredStill(input, deferred)) return deferred
         return null
     }
@@ -243,7 +274,7 @@ class CardSession {
         }
         CardId.F3 -> input.f3?.let {
             CardFace(MiriPane.F3, "반납 준비", it.lines, showGuide = input.showGuide)
-        }
+        } ?: f3Face
         CardId.D1 -> input.d1?.let {
             CardFace(MiriPane.D1, "오늘 길", it.lines)
         }
@@ -263,6 +294,7 @@ class CardSession {
     private fun stamp(id: CardId, face: CardFace): String = "$id:${face.title}:${face.lines}"
 
     private fun rememberD2(routeKey: String) {
+        parkD2Told = true
         if (routeKey.isEmpty()) toldUnkeyedD2 = true else toldD2 += routeKey
     }
 

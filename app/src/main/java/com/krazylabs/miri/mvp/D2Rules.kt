@@ -21,6 +21,10 @@ data class D2Face(
  * A destination is its name plus lat/lon rounded to 4 decimals, so a cleared
  * routeId or a reroute does not change the key. [routeId] is used only when
  * there is no destination. An empty result is not recorded in the route set.
+ *
+ * A destination that arrives late in the same park session changes this key
+ * from the route id to the destination key. D2 must not show again for that
+ * stop. [com.krazylabs.miri.mvp.CardSession] keeps a park-session latch for it.
  */
 object RouteKey {
     fun of(destination: DestinationSnapshot?, routeId: String?): String {

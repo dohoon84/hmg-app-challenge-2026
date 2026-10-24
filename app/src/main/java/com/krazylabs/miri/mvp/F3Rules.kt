@@ -46,15 +46,18 @@ object F3Rules {
         } else {
             val remainMs = (returnAtMs - nowMs).coerceAtLeast(0)
             val totalMinutes = (remainMs / 60_000L).toInt()
-            val hours = totalMinutes / 60
-            val minutes = totalMinutes % 60
-            val left = when {
-                totalMinutes < 1 -> "곧"
-                hours > 0 && minutes > 0 -> "${hours}시간 ${minutes}분"
-                hours > 0 -> "${hours}시간"
-                else -> "${minutes}분"
+            if (totalMinutes < 1) {
+                lines += "1분도 안 남았어요"
+            } else {
+                val hours = totalMinutes / 60
+                val minutes = totalMinutes % 60
+                val left = when {
+                    hours > 0 && minutes > 0 -> "${hours}시간 ${minutes}분"
+                    hours > 0 -> "${hours}시간"
+                    else -> "${minutes}분"
+                }
+                lines += "반납 ${clock(returnAtMs, zone)}까지 ${left} 남았어요."
             }
-            lines += "반납 ${clock(returnAtMs, zone)}까지 ${left} 남았어요."
         }
         return lines
     }

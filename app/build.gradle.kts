@@ -258,6 +258,8 @@ val forbiddenPleosReleaseNames = listOf(
     "FakeDrivingStateRepository",
     "DemoScenario",
     "DebugDemoActions",
+    "PleosConnectorNames",
+    "ConnectorProbe",
 )
 
 // Names the app may ship. Library merges (Vehicle binding, AndroidX receiver) are included.
@@ -336,7 +338,10 @@ tasks.register("checkPleosReleaseContents") {
                     val text = zip.getInputStream(entry).use { input ->
                         String(input.readBytes(), Charsets.ISO_8859_1)
                     }
-                    val hit = forbiddenPleosReleaseNames.firstOrNull { name -> text.contains(name) }
+                    val hit = forbiddenPleosReleaseNames.firstOrNull { name ->
+                        // Identifier boundary so ConnectorProbe does not match ConnectorProbeText.
+                        Regex("(?<![A-Za-z0-9_])${Regex.escape(name)}(?![A-Za-z0-9_])").containsMatchIn(text)
+                    }
                     if (hit != null) {
                         throw GradleException("${apk.name} contains $hit")
                     }

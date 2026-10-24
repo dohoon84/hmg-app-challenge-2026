@@ -71,6 +71,10 @@ class ReturnForm {
         draft = draft.copy(dateSheetOpen = true)
     }
 
+    fun closeDateSheet() {
+        draft = draft.copy(dateSheetOpen = false)
+    }
+
     fun selectDate(offset: Int) {
         require(offset in F2Draft.dateOffsets())
         draft = draft.copy(dayOffset = offset, epochDay = null, dateSheetOpen = false)

@@ -22,6 +22,8 @@ data class ScenarioOverrides(
     val turnMs: Long = 20_000L,
     /** Blank keeps [com.krazylabs.miri.speech.SpeechUsage] on the build-config default. */
     val speechUsage: String = "",
+    /** Blank keeps [com.krazylabs.miri.domain.GearBackend] on the build-config default. */
+    val gearBackend: String = "",
 )
 
 interface ScenarioInput {

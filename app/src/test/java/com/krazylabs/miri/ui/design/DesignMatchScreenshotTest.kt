@@ -40,14 +40,14 @@ class DesignMatchScreenshotTest {
     val rule = createComposeRule()
 
     private val previewClock = WallClock {
-        LocalDateTime.of(2026, 10, 24, 17, 10)
+        LocalDateTime.of(2026, 10, 24, 14, 40)
     }
 
     @Test
     fun lightFrames() = renderSet(dark = false)
 
     @Test
-    @Config(sdk = [34], qualifiers = "w1682dp-h1210dp-mdpi-night")
+    @Config(sdk = [34], qualifiers = "w1682dp-h1210dp-night-mdpi")
     fun darkFrames() = renderSet(dark = true)
 
     private fun renderSet(dark: Boolean) {
@@ -90,6 +90,7 @@ class DesignMatchScreenshotTest {
                 draft = F2Draft(dateSheetOpen = true),
                 places = samplePlaces,
                 clock = previewClock,
+                sheetPressedOffset = 2,
                 onOpenDates = {},
                 onDate = {},
                 onTime = {},

@@ -8,4 +8,7 @@ interface DrivingStateRepository {
 
     fun start()
     fun stop()
+
+    /** Debug override. Blank keeps the build-time gear backend. */
+    fun setGearBackend(mode: String) {}
 }

@@ -15,4 +15,6 @@ class PleosDrivingStateRepository @Inject constructor(
     override fun start() = carClient.start()
 
     override fun stop() = carClient.stop()
+
+    override fun setGearBackend(mode: String) = carClient.setGearBackend(mode)
 }

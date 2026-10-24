@@ -11,5 +11,7 @@ fun ScenarioPanel(
     onChange: (ScenarioOverrides) -> Unit,
     onRoute: () -> Unit,
     onRoad: () -> Unit,
+    onGearBackend: (String) -> Unit = {},
+    onOpenFoundation: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) = Unit

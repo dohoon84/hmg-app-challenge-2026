@@ -19,9 +19,20 @@
     <!-- Dark warning text stays the official alert orange. -->
     <color name="ivi_on_driving_alert">@color/ivi_driving_alert</color>
     <color name="ivi_accent">#2DD4BF</color>
-    <color name="ivi_on_accent">#121417</color>
+    <color name="ivi_on_accent">#131417</color>
     <color name="ivi_accent_container">#0F3A36</color>
     <color name="ivi_canvas">#1D1E21</color>
     <color name="ivi_track">#313236</color>
     <color name="ivi_outline">#686A72</color>
+    <color name="ivi_frame_ink">#FFFFFF</color>
+    <color name="ivi_button_disabled">#33131417</color>
+    <color name="ivi_divider">#0DFFFFFF</color>
+    <color name="ivi_divider_secondary">#1AFFFFFF</color>
+    <color name="ivi_popup">#313236</color>
+    <color name="ivi_button_filled">#E0E1E6</color>
+    <color name="ivi_on_filled">#131417</color>
+    <color name="ivi_overlay">#80131417</color>
+    <color name="ivi_border_strong">#686A72</color>
+    <color name="ivi_caution_badge">#FF8A00</color>
+    <color name="ivi_on_caution_badge">#121417</color>
 </resources>

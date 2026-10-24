@@ -1,16 +1,17 @@
 package com.krazylabs.miri.ui.design
 
-import androidx.compose.foundation.Canvas
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -18,101 +19,248 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.krazylabs.miri.ui.pressScale
 import com.krazylabs.miri.ui.theme.AstaSans
 import com.krazylabs.miri.ui.theme.IviTheme
 
-object Frame {
-    val pad = 48.dp
-    val tileWidth = 760.dp
-    val tileHeight = 184.dp
-    val tileGap = 16.dp
-    val radius = 28.dp
-    val chipWidth = 150.dp
-    val chipHeight = 100.dp
-    val chipGap = 16.dp
-    val buttonWidth = 352.dp
-    val buttonHeight = 100.dp
-    val buttonRadius = 32.dp
-    val segmentHeight = 108.dp
+/**
+ * Figma px of the 1682×1210 app area, as physical pixels.
+ * At mdpi this is 1dp. On a denser panel the dp shrinks so the frame stays the same size.
+ */
+@Composable
+fun px(value: Float): Dp = (value / LocalDensity.current.density).dp
+
+@Composable
+fun px(value: Int): Dp = px(value.toFloat())
+
+@Composable
+fun pxSp(value: Float): TextUnit = with(LocalDensity.current) { px(value).toSp() }
+
+@Composable
+fun pxSp(value: Int): TextUnit = pxSp(value.toFloat())
+
+/** Place a layer at Figma x/y/w/h inside a [SpecFrame]. */
+@Composable
+fun Modifier.figma(x: Float, y: Float, w: Float, h: Float): Modifier =
+    offset(px(x), px(y)).size(px(w), px(h))
+
+@Composable
+fun Modifier.figma(x: Int, y: Int, w: Int, h: Int): Modifier =
+    figma(x.toFloat(), y.toFloat(), w.toFloat(), h.toFloat())
+
+private val lineBox = LineHeightStyle(
+    alignment = LineHeightStyle.Alignment.Center,
+    trim = LineHeightStyle.Trim.None,
+)
+
+/** Named styles from tokens.md. Sizes are Figma px, not the older IviType scale. */
+object MiriType {
+    @Composable fun headlineLargeExtra() = face(60, 80, FontWeight.ExtraBold)
+    @Composable fun headlineSmallStrong() = face(48, 64, FontWeight.Bold)
+    @Composable fun titleLargeExtra() = face(40, 52, FontWeight.ExtraBold)
+    @Composable fun titleLargeStrong() = face(40, 52, FontWeight.Bold)
+    @Composable fun titleLargeNormal() = face(40, 52, FontWeight.Normal)
+    @Composable fun titleMediumExtra36() = face(36, 44, FontWeight.ExtraBold)
+    @Composable fun titleMediumStrong() = face(36, 44, FontWeight.Bold)
+    @Composable fun titleMediumNormal() = face(36, 44, FontWeight.Normal)
+    @Composable fun titleSmallStrong() = face(32, 40, FontWeight.Bold)
+    @Composable fun bodyLargeStrong() = face(30, 38, FontWeight.Bold)
+    @Composable fun bodyLargeNormal() = face(30, 38, FontWeight.Normal)
+    @Composable fun bodyMediumNormal() = face(28, 36, FontWeight.Normal)
+    @Composable fun bodySmallStrong() = face(26, 34, FontWeight.Bold)
+    @Composable fun bodySmallNormal() = face(26, 34, FontWeight.Normal)
+    @Composable fun labelMedium() = face(24, 28, FontWeight.Normal)
+
+    @Composable
+    private fun face(size: Int, line: Int, weight: FontWeight) = TextStyle(
+        fontFamily = AstaSans,
+        fontWeight = weight,
+        fontSize = pxSp(size),
+        lineHeight = pxSp(line),
+        platformStyle = PlatformTextStyle(includeFontPadding = false),
+        lineHeightStyle = lineBox,
+    )
 }
 
 @Composable
-fun ScreenCanvas(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    Box(
-        modifier
-            .fillMaxSize()
-            .background(IviTheme.colors.canvas),
-    ) {
-        content()
-    }
-}
-
-@Composable
-fun StatusLine(text: String, modifier: Modifier = Modifier) {
+fun SpecFrame(content: @Composable BoxScope.() -> Unit) {
     val colors = IviTheme.colors
-    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
-        Canvas(Modifier.size(10.dp)) {
-            drawCircle(colors.textTertiary)
-        }
-        Spacer(Modifier.width(12.dp))
-        Text(
-            text,
-            color = colors.textTertiary,
-            fontFamily = AstaSans,
-            fontWeight = FontWeight.Normal,
-            fontSize = 20.sp,
-            lineHeight = 28.sp,
+    Box(
+        Modifier
+            .fillMaxSize()
+            .clip(RoundedCornerShape(px(40)))
+            .background(colors.canvas),
+        content = content,
+    )
+}
+
+@Composable
+fun BoxScope.SpecText(
+    text: String,
+    x: Float,
+    y: Float,
+    style: TextStyle,
+    color: Color,
+    w: Float? = null,
+    h: Float? = null,
+    align: TextAlign = TextAlign.Start,
+    maxLines: Int = 1,
+) {
+    val box = if (w != null && h != null) {
+        Modifier.figma(x, y, w, h)
+    } else {
+        Modifier.offset(px(x), px(y))
+    }
+    Text(
+        text,
+        modifier = box,
+        style = style,
+        color = color,
+        textAlign = align,
+        maxLines = maxLines,
+        softWrap = maxLines > 1,
+    )
+}
+
+@Composable
+fun BoxScope.SpecIcon(
+    @DrawableRes id: Int,
+    x: Float,
+    y: Float,
+    w: Float,
+    h: Float,
+    tint: Color,
+    description: String? = null,
+) {
+    Image(
+        painter = painterResource(id),
+        contentDescription = description,
+        modifier = Modifier.figma(x, y, w, h),
+        contentScale = ContentScale.Fit,
+        colorFilter = ColorFilter.tint(tint),
+    )
+}
+
+@Composable
+fun BoxScope.Hotspot(x: Float, y: Float) {
+    val accent = IviTheme.colors.accent
+    Box(Modifier.figma(x, y, 88f, 88f), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier
+                .size(px(44))
+                .background(accent.copy(alpha = 0.28f), RoundedCornerShape(percent = 50)),
         )
+        SpecIconLocal(com.krazylabs.miri.R.drawable.miri_ic_hotspot, accent)
     }
 }
 
 @Composable
-fun HeroTitle(text: String, modifier: Modifier = Modifier) {
-    Text(
-        text,
-        modifier = modifier,
-        color = IviTheme.colors.textPrimary,
-        fontFamily = AstaSans,
-        fontWeight = FontWeight.ExtraBold,
-        fontSize = 40.sp,
-        lineHeight = 52.sp,
+private fun SpecIconLocal(@DrawableRes id: Int, tint: Color) {
+    Image(
+        painter = painterResource(id),
+        contentDescription = null,
+        modifier = Modifier.fillMaxSize(),
+        colorFilter = ColorFilter.tint(tint),
+    )
+}
+
+enum class SpecButtonKind { Point, Disabled, Filled, Dashed }
+
+@Composable
+fun BoxScope.SpecButton(
+    label: String,
+    x: Float,
+    y: Float,
+    w: Float,
+    h: Float = 100f,
+    kind: SpecButtonKind,
+    onClick: () -> Unit,
+) {
+    val colors = IviTheme.colors
+    val shape = RoundedCornerShape(px(32))
+    val fill = when (kind) {
+        SpecButtonKind.Point -> colors.accent
+        SpecButtonKind.Disabled -> colors.buttonDisabled
+        SpecButtonKind.Filled -> colors.buttonFilled
+        SpecButtonKind.Dashed -> Color.Transparent
+    }
+    val labelColor = when (kind) {
+        SpecButtonKind.Point -> colors.onAccent
+        SpecButtonKind.Disabled -> colors.frameQuaternary
+        SpecButtonKind.Filled -> colors.onFilled
+        SpecButtonKind.Dashed -> colors.accent
+    }
+    val stroke = when (kind) {
+        SpecButtonKind.Disabled -> Modifier.border(px(2), colors.dividerSecondary, shape)
+        SpecButtonKind.Dashed -> Modifier.border(px(3), colors.accent, shape)
+        else -> Modifier
+    }
+    Box(
+        Modifier
+            .figma(x, y, w, h)
+            .clip(shape)
+            .background(fill)
+            .then(stroke)
+            .quietClick(enabled = kind != SpecButtonKind.Disabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, style = MiriType.titleSmallStrong(), color = labelColor, maxLines = 1)
+    }
+}
+
+@Composable
+fun BoxScope.EdgeFade(x: Float, y: Float, w: Float, h: Float, toRight: Boolean) {
+    val canvas = IviTheme.colors.canvas
+    val colors = if (toRight) {
+        listOf(canvas.copy(alpha = 0f), canvas)
+    } else {
+        listOf(canvas, canvas.copy(alpha = 0f))
+    }
+    Box(
+        Modifier
+            .figma(x, y, w, h)
+            .background(Brush.horizontalGradient(colors)),
     )
 }
 
 @Composable
-fun SectionLabel(text: String, modifier: Modifier = Modifier) {
-    Text(
-        text,
-        modifier = modifier,
-        color = IviTheme.colors.textTertiary,
-        fontFamily = AstaSans,
-        fontWeight = FontWeight.Normal,
-        fontSize = 20.sp,
-        lineHeight = 28.sp,
-    )
-}
-
-@Composable
-fun CheckMark(color: Color, modifier: Modifier = Modifier) {
-    Canvas(modifier.size(36.dp)) {
-        val stroke = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-        val path = Path().apply {
-            moveTo(size.width * 0.16f, size.height * 0.52f)
-            lineTo(size.width * 0.40f, size.height * 0.76f)
-            lineTo(size.width * 0.84f, size.height * 0.26f)
-        }
-        drawPath(path, color, style = stroke)
+fun BoxScope.CroppedImage(
+    @DrawableRes id: Int,
+    clipX: Float,
+    clipY: Float,
+    clipW: Float,
+    clipH: Float,
+    imageX: Float,
+    imageY: Float,
+    imageW: Float,
+    imageH: Float,
+    radius: Float = 0f,
+) {
+    Box(
+        Modifier
+            .figma(clipX, clipY, clipW, clipH)
+            .clip(RoundedCornerShape(px(radius))),
+    ) {
+        Image(
+            painter = painterResource(id),
+            contentDescription = null,
+            modifier = Modifier.figma(imageX - clipX, imageY - clipY, imageW, imageH),
+            contentScale = ContentScale.FillBounds,
+        )
     }
 }
 
@@ -130,45 +278,21 @@ fun Modifier.quietClick(enabled: Boolean = true, onClick: () -> Unit): Modifier 
 }
 
 @Composable
-fun PrimaryButton(
-    label: String,
-    enabled: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    width: Dp = Frame.buttonWidth,
-) {
+fun DistanceRun(distance: String, emphasize: Boolean) {
     val colors = IviTheme.colors
-    Box(
-        modifier
-            .width(width)
-            .size(width = width, height = Frame.buttonHeight)
-            .clip(RoundedCornerShape(Frame.buttonRadius))
-            .background(if (enabled) colors.accent else colors.track)
-            .quietClick(enabled, onClick),
-        contentAlignment = Alignment.Center,
-    ) {
+    val number = distance.removeSuffix(" km").removeSuffix("km").trim()
+    Row(verticalAlignment = Alignment.Bottom) {
         Text(
-            label,
-            color = if (enabled) colors.onAccent else colors.textDisabled,
-            fontFamily = AstaSans,
-            fontWeight = FontWeight.Bold,
-            fontSize = 24.sp,
-            lineHeight = 32.sp,
+            number,
+            style = MiriType.titleLargeExtra(),
+            color = if (emphasize) colors.accent else colors.frameInk,
+            maxLines = 1,
         )
-    }
-}
-
-@Composable
-fun InfoMark(modifier: Modifier = Modifier) {
-    val color = IviTheme.colors.textTertiary
-    Canvas(modifier.size(22.dp)) {
-        drawCircle(color, radius = size.minDimension * 0.08f, center = Offset(size.width / 2f, size.height * 0.28f))
-        drawLine(
-            color,
-            start = Offset(size.width / 2f, size.height * 0.46f),
-            end = Offset(size.width / 2f, size.height * 0.78f),
-            strokeWidth = 2.dp.toPx(),
-            cap = StrokeCap.Round,
+        Text(
+            " km",
+            style = MiriType.bodyMediumNormal(),
+            color = colors.frameTertiary,
+            maxLines = 1,
         )
     }
 }

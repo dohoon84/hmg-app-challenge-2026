@@ -19,6 +19,7 @@ import com.krazylabs.miri.domain.MotionResolver
 import com.krazylabs.miri.domain.SignalLoss
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -66,6 +67,12 @@ class PleosCarClient internal constructor(
 
     private val _identity = MutableStateFlow(AaosIdentity())
     val identity: StateFlow<AaosIdentity> = _identity
+
+    private val _bindGeneration = MutableStateFlow(0)
+    /** Increments each time CarService is ready and property listeners are registered again. */
+    val bindGeneration: StateFlow<Int> = _bindGeneration.asStateFlow()
+
+    private var gearBackendMode: String = com.krazylabs.miri.BuildConfig.GEAR_BACKEND
 
     private var link: CarLink? = null
     private var pending: CarLink? = null
@@ -172,10 +179,23 @@ class PleosCarClient internal constructor(
         publishDriving()
     }
 
+    /** Debug panel. Blank keeps the build-time backend. AAOS clears a Pleos overlay. */
+    fun setGearBackend(mode: String) {
+        checkMainThread()
+        if (mode.isBlank()) return
+        val next = com.krazylabs.miri.domain.GearBackend.normalize(mode)
+        if (next == gearBackendMode) return
+        gearBackendMode = next
+        if (next != com.krazylabs.miri.domain.GearBackend.PLEOS) {
+            gearOverride = null
+            publishDriving()
+        }
+    }
+
     /** Ignored unless the gear backend is PLEOS. AAOS GEAR_SELECTION stays primary. */
     fun overlayGear(position: com.krazylabs.miri.domain.GearPosition) {
         checkMainThread()
-        if (com.krazylabs.miri.BuildConfig.GEAR_BACKEND != "PLEOS") return
+        if (gearBackendMode != com.krazylabs.miri.domain.GearBackend.PLEOS) return
         gearOverride = position
         gearAvailable = true
         publishDriving()
@@ -204,6 +224,7 @@ class PleosCarClient internal constructor(
                     return@open
                 }
                 created.bindSignals()
+                _bindGeneration.value = _bindGeneration.value + 1
             }
             // The sync callback may already have stopped the session. Do not resurrect its Car.
             if (gen == connectGen.get() && users.get() > 0) {
@@ -367,6 +388,9 @@ class PleosCarClient internal constructor(
     }
 }
 
+/** Blocks until CarService is up, then keeps the lifecycle listener for later restarts. */
+internal const val CAR_CONNECT_WAIT_MS = Car.CAR_WAIT_TIMEOUT_WAIT_FOREVER
+
 internal fun readScalarProperty(port: PropertyPort, propertyId: Int, areaId: Int): Int? = try {
     if (!port.isPropertyAvailable(propertyId, areaId)) {
         null
@@ -431,7 +455,7 @@ private class AndroidCarConnector(
         val car = Car.createCar(
             context,
             handler,
-            Car.CAR_WAIT_TIMEOUT_DO_NOT_WAIT,
+            CAR_CONNECT_WAIT_MS,
             Car.CarServiceLifecycleListener { created, ready ->
                 // Sync dispatch runs before createCar returns, so reuse the wrapper either way.
                 val link = session ?: AndroidCarLink(created, host).also { session = it }
