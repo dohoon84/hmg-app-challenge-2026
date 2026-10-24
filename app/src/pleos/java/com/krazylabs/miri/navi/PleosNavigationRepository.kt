@@ -24,6 +24,7 @@ import com.krazylabs.miri.mvp.countRoad
 import com.krazylabs.miri.mvp.bookmarkRowLabel
 import com.krazylabs.miri.mvp.emptyBookmarkSlot
 import com.krazylabs.miri.mvp.navPlaceId
+import com.krazylabs.miri.mvp.usableFix
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -75,7 +76,7 @@ class PleosNavigationRepository @Inject constructor(
     override val here: StateFlow<HereFix?> = _here
     private val _hereSerial = MutableStateFlow(0L)
     override val hereSerial: StateFlow<Long> = _hereSerial
-    private val wantLocation = AtomicBoolean(false)
+    private val locationGate = LocationRequestGate()
     /** A resume or reconnect still needs getDestinationInfo after the link is READY. */
     private val destinationAfterReady = AtomicBoolean(false)
     private val tbt = TbtGuard()
@@ -151,19 +152,24 @@ class PleosNavigationRepository @Inject constructor(
         override fun onCurrentLocationInfo(info: ai.pleos.playground.navi.data.CurrentLocationInfo) {
             val id = info.routeId
             _road.update { it.copy(routeId = id) }
+            if (!locationGate.acceptCallback()) return
+            if (!usableFix(info.latitude, info.longitude)) return
             _here.value = HereFix(info.latitude, info.longitude, info.address.orEmpty())
             _hereSerial.value = _hereSerial.value + 1
-            wantLocation.set(false)
         }
 
         override fun onRecentDestinationInfo(list: List<ai.pleos.playground.navi.data.RecentDestinationInfo>) {
-            _recents.value = list.take(RECENT_CAP).map { item ->
+            _recents.value = list.take(RECENT_CAP).mapNotNull { item ->
                 val name = item.name.orEmpty()
+                val address = item.address.orEmpty()
+                if (emptyBookmarkSlot(name, address, item.latitude, item.longitude)) {
+                    return@mapNotNull null
+                }
                 PlaceRequest(
                     latitude = item.latitude,
                     longitude = item.longitude,
                     name = name,
-                    address = item.address.orEmpty(),
+                    address = address,
                     poiId = navPlaceId("recent", item.poiId.orEmpty(), name, item.latitude, item.longitude),
                     poiSubId = item.poiSubId.orEmpty(),
                 )
@@ -173,12 +179,17 @@ class PleosNavigationRepository @Inject constructor(
         override fun onBookmarkInfo(list: List<BookmarkInfo>) {
             Log.i(NAV_TAG, "bookmarks count=${list.size}")
             list.forEach { item ->
-                Log.i(
-                    NAV_TAG,
-                    "bookmark lat=${item.latitude} lon=${item.longitude} " +
-                        "displayLat=${item.displayLatitude} displayLon=${item.displayLongitude} " +
-                        "name=${item.name} poiId=${item.poiId} poiSubId=${item.poiSubId} " +
-                        "address=${item.address} category=${item.category} provider=${item.poiProvider}",
+                logBookmarkFields(
+                    latitude = item.latitude,
+                    longitude = item.longitude,
+                    displayLatitude = item.displayLatitude,
+                    displayLongitude = item.displayLongitude,
+                    name = item.name,
+                    poiId = item.poiId,
+                    poiSubId = item.poiSubId,
+                    address = item.address,
+                    category = item.category.toString(),
+                    provider = item.poiProvider,
                 )
             }
             _bookmarks.value = list.mapNotNull { item ->
@@ -215,9 +226,9 @@ class PleosNavigationRepository @Inject constructor(
                 {
                     if (!started.get() || helper !== created) return@initialize
                     _link.value = LinkState.READY
+                    locationGate.markReady(System.currentTimeMillis())
                     readDestination(created)
                     if (destinationAfterReady.getAndSet(false)) readDestination(created)
-                    readLocation(created)
                     readBookmarks(created)
                 },
                 { error ->
@@ -252,6 +263,10 @@ class PleosNavigationRepository @Inject constructor(
     }
 
     override fun setDestination(request: PlaceRequest) {
+        if (!usableFix(request.latitude, request.longitude)) {
+            _status.value = "좌표가 없습니다"
+            return
+        }
         val current = helper
         if (_link.value != LinkState.READY || current == null) {
             _status.value = "내비에 연결되지 않았습니다"
@@ -316,7 +331,6 @@ class PleosNavigationRepository @Inject constructor(
             { current.getRouteStateInfo() },
             { current.getTBTInfo() },
             { current.getDestinationInfo() },
-            { current.getCurrentLocationInfo() },
             { current.getRecentDestinationInfo() },
             { current.getBookmarkInfo() },
         ).forEach { call ->
@@ -329,9 +343,19 @@ class PleosNavigationRepository @Inject constructor(
     }
 
     override fun requestCurrentLocation() {
-        wantLocation.set(true)
+        locationGate.request()
+    }
+
+    override fun pollLocation(nowMs: Long) {
+        if (!locationGate.shouldIssue(nowMs)) return
         val current = helper ?: return
-        readLocation(current)
+        if (!started.get() || helper !== current || _link.value != LinkState.READY) return
+        locationGate.markIssued()
+        try {
+            current.getCurrentLocationInfo()
+        } catch (error: Throwable) {
+            _status.value = error.message ?: error.javaClass.simpleName
+        }
     }
 
     override fun refreshBookmarks() {
@@ -352,15 +376,6 @@ class PleosNavigationRepository @Inject constructor(
         if (!started.get() || helper !== target || _link.value != LinkState.READY) return
         try {
             target.getDestinationInfo()
-        } catch (error: Throwable) {
-            _status.value = error.message ?: error.javaClass.simpleName
-        }
-    }
-
-    private fun readLocation(target: NaviHelper) {
-        if (!wantLocation.get() || !started.get() || helper !== target || _link.value != LinkState.READY) return
-        try {
-            target.getCurrentLocationInfo()
         } catch (error: Throwable) {
             _status.value = error.message ?: error.javaClass.simpleName
         }

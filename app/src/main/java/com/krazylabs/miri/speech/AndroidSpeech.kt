@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.media.AudioPlaybackConfiguration
 import android.media.MediaPlayer
 import android.os.Bundle
 import android.os.Handler
@@ -368,14 +369,43 @@ class AndroidSpeechFocus(
         request = null
     }
 
-    override fun navigationOrAssistantActive(): Boolean =
+    override fun navigationOrAssistantActive(): Boolean {
         // Pleos navigation and Gleo are expected to use these usages.
+        // getClientUid is hidden. Our own session shares this process uid, so a
+        // guidance-usage clip we are playing is not "nav started".
         // Whether activePlaybackConfigurations actually reports them is unverified on device.
-        audio.activePlaybackConfigurations.any { config ->
+        val self = android.os.Process.myUid()
+        return audio.activePlaybackConfigurations.any { config ->
             val usage = config.audioAttributes.usage
-            usage == AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE ||
-                usage == AudioAttributes.USAGE_ASSISTANT
+            val uid = hiddenClientUid(config)
+            if (uid != null) {
+                foreignNavOrAssistant(usage, uid, self)
+            } else {
+                val nav = usage == AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE ||
+                    usage == AudioAttributes.USAGE_ASSISTANT
+                // No uid: sonification is a different usage, so a real nav stream still
+                // counts. Guidance mode shares that usage, so ignore it rather than
+                // stopping our own clip.
+                nav && SpeechUsage.mode != SpeechUsage.NAVIGATION_GUIDANCE
+            }
         }
+    }
+}
+
+/** @hide AudioPlaybackConfiguration.getClientUid. Null when the platform hides it. */
+private fun hiddenClientUid(config: AudioPlaybackConfiguration): Int? {
+    val getter = clientUidGetter ?: return null
+    return try {
+        getter.invoke(config) as? Int
+    } catch (_: ReflectiveOperationException) {
+        null
+    }
+}
+
+private val clientUidGetter: java.lang.reflect.Method? = try {
+    AudioPlaybackConfiguration::class.java.getMethod("getClientUid")
+} catch (_: NoSuchMethodException) {
+    null
 }
 
 class MainThreadScheduler : SpeechScheduler {

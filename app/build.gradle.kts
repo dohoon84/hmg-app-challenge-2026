@@ -291,6 +291,8 @@ val forbiddenPleosReleaseNames = listOf(
     "DebugDemoActions",
     "PleosConnectorNames",
     "ConnectorProbe",
+    "AutoPlayDirector",
+    "ScriptedCabinFeed",
 )
 
 // Names the app may ship. Library merges (Vehicle binding, AndroidX receiver) are included.
@@ -379,7 +381,55 @@ tasks.register("checkPleosReleaseContents") {
                 }
             }
         }
+        val logHit = project.bookmarkFieldLogInRelease()
+        if (logHit != null) {
+            throw GradleException("release sources log a bookmark field: $logHit")
+        }
     }
+}
+
+/** A Log call in main, pleos, or release must not print bookmark coordinates or names. */
+fun Project.bookmarkFieldLogInRelease(): String? {
+    val roots = listOf("src/main", "src/pleos", "src/release")
+    val logStart = Regex("""Log\.[iwd]\(""")
+    val field = Regex("""latitude|address|name=""")
+    roots.forEach { root ->
+        val dir = file(root)
+        if (!dir.isDirectory) return@forEach
+        dir.walkTopDown().filter { it.isFile && it.extension == "kt" }.forEach { source ->
+            val lines = source.readLines()
+            var index = 0
+            while (index < lines.size) {
+                if (!logStart.containsMatchIn(lines[index])) {
+                    index += 1
+                    continue
+                }
+                val call = StringBuilder()
+                var depth = 0
+                var started = false
+                var end = index
+                while (end < lines.size && end < index + 12) {
+                    val part = lines[end]
+                    call.append(part).append('\n')
+                    part.forEach { ch ->
+                        if (ch == '(') {
+                            depth += 1
+                            started = true
+                        } else if (ch == ')') {
+                            depth -= 1
+                        }
+                    }
+                    if (started && depth <= 0) break
+                    end += 1
+                }
+                if (field.containsMatchIn(call)) {
+                    return "${source.relativeTo(projectDir).path}:${index + 1}"
+                }
+                index = end + 1
+            }
+        }
+    }
+    return null
 }
 
 tasks.register<Copy>("exportContestApk") {

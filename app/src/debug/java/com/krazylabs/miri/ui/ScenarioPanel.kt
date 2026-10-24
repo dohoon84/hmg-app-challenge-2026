@@ -33,6 +33,13 @@ fun ScenarioPanel(
     onRoad: () -> Unit,
     onGearBackend: (String) -> Unit = {},
     onOpenFoundation: () -> Unit = {},
+    parked: Boolean = true,
+    onNewRental: () -> Unit = {},
+    playing: Boolean = false,
+    onAutoPlay: () -> Unit = {},
+    onStopAutoPlay: () -> Unit = {},
+    captionsOn: Boolean = false,
+    onToggleCaptions: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var meters by rememberSaveable { mutableStateOf(overrides.remainMeters?.toString().orEmpty()) }
@@ -98,13 +105,16 @@ fun ScenarioPanel(
                         remainSeconds = seconds.toIntOrNull(),
                         returnInMinutes = returnMin.toIntOrNull(),
                         chargeTargetPercent = target.toIntOrNull(),
+                        armNewRental = false,
                     ),
                 )
             }) { Text("값 적용") }
             TextButton(onClick = { onChange(overrides.copy(pretendCharging = !overrides.pretendCharging)) }) {
                 Text(if (overrides.pretendCharging) "충전 목적지 끔" else "충전 목적지")
             }
-            TextButton(onClick = { onChange(overrides.copy(pretendTolls = 2, pretendHighways = 1)) }) {
+            TextButton(onClick = {
+                onChange(overrides.copy(pretendTolls = 2, pretendHighways = 1, armNewRental = false))
+            }) {
                 Text("톨 2 · 고속 1")
             }
         }
@@ -128,7 +138,9 @@ fun ScenarioPanel(
                     ),
                 )
             }) { Text(if (guidance) "음성: 내비 안내" else "음성: 효과음") }
-            Button(onClick = { onChange(overrides.copy(armNewRental = true)) }) { Text("새 대여") }
+            Button(onClick = onNewRental, enabled = parked) {
+                Text(if (parked) "새 대여" else "P에서 적용")
+            }
             TextButton(onClick = {
                 onChange(overrides.copy(lightsUseDoorStandIn = !overrides.lightsUseDoorStandIn))
             }) { Text(if (overrides.lightsUseDoorStandIn) "문 대체 끔" else "실내등→문") }
@@ -136,6 +148,14 @@ fun ScenarioPanel(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = onRoad) { Text("오늘 길") }
             Button(onClick = onRoute) { Text("충전 경로") }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { if (playing) onStopAutoPlay() else onAutoPlay() }) {
+                Text(if (playing) "재생 정지" else "자동 재생")
+            }
+            TextButton(onClick = onToggleCaptions) {
+                Text(if (captionsOn) "자막 켜짐" else "자막")
+            }
         }
         val gear = overrides.gearBackend.ifBlank { BuildConfig.GEAR_BACKEND }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

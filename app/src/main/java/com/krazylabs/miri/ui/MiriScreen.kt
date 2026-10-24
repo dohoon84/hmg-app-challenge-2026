@@ -8,9 +8,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -30,7 +34,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.isSystemInDarkTheme
 import com.krazylabs.miri.R
 import com.krazylabs.miri.domain.TurnLamps
+import com.krazylabs.miri.mvp.DemoHighlight
 import com.krazylabs.miri.mvp.MiriPane
+import com.krazylabs.miri.ui.design.VehicleKind
 import com.krazylabs.miri.ui.design.D1RoadScreen
 import com.krazylabs.miri.ui.design.D2ChargeScreen
 import com.krazylabs.miri.ui.design.F1KindScreen
@@ -66,7 +72,7 @@ fun MiriRoute(
         when (ui.pane) {
             MiriPane.ICON -> DrivingMark(dark)
             MiriPane.F1 -> F1KindScreen(
-                highlighted = null,
+                highlighted = if (ui.demoHighlight == DemoHighlight.RENTAL) VehicleKind.RENTAL else null,
                 onOwn = viewModel::chooseOwnCar,
                 onRental = { viewModel.chooseKind(rental = true) },
                 onShare = { viewModel.chooseKind(rental = false) },
@@ -106,6 +112,13 @@ fun MiriRoute(
                     onRoad = viewModel::requestDemoRoad,
                     onGearBackend = viewModel::setGearBackend,
                     onOpenFoundation = onOpenFoundation,
+                    parked = ui.placeSearchEnabled,
+                    onNewRental = viewModel::requestNewRental,
+                    playing = ui.demoPlaying,
+                    onAutoPlay = viewModel::startAutoPlay,
+                    onStopAutoPlay = viewModel::stopAutoPlay,
+                    captionsOn = ui.demoCaptions,
+                    onToggleCaptions = viewModel::toggleDemoCaptions,
                 )
                 if (ui.simulator) {
                     LampRow(
@@ -117,6 +130,11 @@ fun MiriRoute(
                 }
             }
         }
+        DemoCaption(
+            text = ui.demoCaption,
+            enabled = ui.demoCaptions,
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
     }
 }
 
@@ -142,10 +160,13 @@ private fun DemoDock(
     content: @Composable () -> Unit,
 ) {
     val colors = IviTheme.colors
+    val screenHeight = LocalConfiguration.current.screenHeightDp.dp
     Column(
         modifier
             .padding(16.dp)
             .widthIn(max = 560.dp)
+            .heightIn(max = screenHeight - 32.dp)
+            .verticalScroll(rememberScrollState())
             .background(colors.track, RoundedCornerShape(24.dp))
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),

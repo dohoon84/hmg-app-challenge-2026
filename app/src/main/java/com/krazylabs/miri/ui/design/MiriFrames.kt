@@ -82,6 +82,7 @@ object MiriType {
     @Composable fun titleSmallStrong() = face(32, 40, FontWeight.Bold)
     @Composable fun bodyLargeStrong() = face(30, 38, FontWeight.Bold)
     @Composable fun bodyLargeNormal() = face(30, 38, FontWeight.Normal)
+    @Composable fun bodyMediumStrong() = face(28, 36, FontWeight.Bold)
     @Composable fun bodyMediumNormal() = face(28, 36, FontWeight.Normal)
     @Composable fun bodySmallStrong() = face(26, 34, FontWeight.Bold)
     @Composable fun bodySmallNormal() = face(26, 34, FontWeight.Normal)

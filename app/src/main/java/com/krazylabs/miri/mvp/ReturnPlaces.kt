@@ -34,27 +34,59 @@ data class RentalOrigin(
     val address: String = "",
     val pending: Boolean = false,
     val seenSerial: Long = 0L,
+    val requestedAtMs: Long = 0L,
+    val failed: Boolean = false,
 ) {
-    val located: Boolean get() = !pending && latitude != null && longitude != null
+    val located: Boolean get() = !pending && !failed && latitude != null && longitude != null
 
-    fun begin(currentSerial: Long): RentalOrigin = RentalOrigin(
+    fun begin(currentSerial: Long, nowMs: Long = 0L): RentalOrigin = RentalOrigin(
         pending = true,
         seenSerial = currentSerial,
+        requestedAtMs = nowMs,
     )
 
-    fun arrive(serial: Long, latitude: Double, longitude: Double, address: String): RentalOrigin {
-        if (!pending || serial <= seenSerial) return this
+    /** A fix is stored only in Park, only for a newer serial, and never at 0,0. */
+    fun arrive(
+        serial: Long,
+        latitude: Double,
+        longitude: Double,
+        address: String,
+        parked: Boolean = true,
+    ): RentalOrigin {
+        if (!pending || !parked || serial <= seenSerial) return this
+        if (!usableFix(latitude, longitude)) return this
         return copy(
             latitude = latitude,
             longitude = longitude,
             address = address,
             pending = false,
+            failed = false,
             seenSerial = serial,
         )
     }
+
+    /** Leave Park or wait out the request, then stop saying the location is on its way. */
+    fun tick(nowMs: Long, parked: Boolean): RentalOrigin {
+        if (!pending) return this
+        val waited = nowMs - requestedAtMs
+        if (!parked || waited >= ORIGIN_GIVE_UP_MS) {
+            return copy(pending = false, failed = true, latitude = null, longitude = null, address = "")
+        }
+        return this
+    }
+
+    /** A process restart must not send the request again. */
+    fun dropPending(): RentalOrigin = if (!pending) this else copy(pending = false, failed = false)
 }
 
+fun usableFix(latitude: Double, longitude: Double): Boolean {
+    if (!latitude.isFinite() || !longitude.isFinite()) return false
+    return !(latitude == 0.0 && longitude == 0.0)
+}
+
+const val ORIGIN_GIVE_UP_MS = 30_000L
 const val ORIGIN_PENDING = "위치 확인 중"
+const val ORIGIN_MISSED = "위치를 못 찾았어요"
 const val PLACE_SEARCH = "다른 곳 찾기"
 const val PLACE_SEARCH_EMPTY = "내비에서 목적지를 정하면 여기 나타나요"
 const val PLACE_DEST_ID = "dest"
@@ -100,7 +132,7 @@ fun originRow(
         return ReturnPlace(
             id = F2Draft.PLACE_PICKUP,
             name = F2Draft.PICKUP_LABEL,
-            caption = ORIGIN_PENDING,
+            caption = if (origin.failed) ORIGIN_MISSED else ORIGIN_PENDING,
             latitude = 0.0,
             longitude = 0.0,
             distance = null,

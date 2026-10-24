@@ -31,7 +31,10 @@ import kotlin.math.abs
 
 /**
  * Headless 1682×1210 renders. The comparison image is our frame on the left
- * and the approved mockup on the right.
+ * and the approved mockup on the right. C1 and F4 use the v5.6 mockups
+ * docs/mvp/mockups/u1-rental/v4/C1_return-check_{light,dark}.png and
+ * F4_auto-checklist_charge_{light,dark}.png. The rear-right door mark is
+ * NumberBadge (587, 701) and the F4 location Hotspot is (564.5, 678.5).
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)

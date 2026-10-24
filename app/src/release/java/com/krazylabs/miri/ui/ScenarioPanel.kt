@@ -13,5 +13,12 @@ fun ScenarioPanel(
     onRoad: () -> Unit,
     onGearBackend: (String) -> Unit = {},
     onOpenFoundation: () -> Unit = {},
+    parked: Boolean = true,
+    onNewRental: () -> Unit = {},
+    playing: Boolean = false,
+    onAutoPlay: () -> Unit = {},
+    onStopAutoPlay: () -> Unit = {},
+    captionsOn: Boolean = false,
+    onToggleCaptions: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) = Unit

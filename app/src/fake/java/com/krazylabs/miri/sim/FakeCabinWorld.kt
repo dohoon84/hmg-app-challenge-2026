@@ -100,6 +100,10 @@ class FakeCabinWorld @Inject constructor() : CabinSimulator {
     }
 
     fun setDestination(request: PlaceRequest) {
+        if (!com.krazylabs.miri.mvp.usableFix(request.latitude, request.longitude)) {
+            _status.value = "좌표가 없습니다"
+            return
+        }
         val distance = GeoEstimate.haversineMeters(originLat, originLon, request.latitude, request.longitude)
         val eta = GeoEstimate.etaSeconds(distance)
         _destination.value = DestinationSnapshot(

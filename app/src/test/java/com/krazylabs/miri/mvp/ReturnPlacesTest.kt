@@ -118,6 +118,36 @@ class ReturnPlacesTest {
     }
 
     @Test
+    fun aFixThatArrivesOutsideParkOrAtZeroIsIgnored() {
+        val started = RentalOrigin().begin(currentSerial = 1, nowMs = 1_000)
+        val driving = started.arrive(2, 37.5, 127.0, "수정구 시흥동", parked = false)
+        assertTrue(driving.pending)
+        assertNull(driving.latitude)
+        val zero = started.arrive(2, 0.0, 0.0, "없음")
+        assertTrue(zero.pending)
+        assertNull(zero.latitude)
+        val missing = started.arrive(2, Double.NaN, 127.0, "없음")
+        assertTrue(missing.pending)
+    }
+
+    @Test
+    fun pendingClearsAfterTheTimeoutOrWhenParkEnds() {
+        val started = RentalOrigin().begin(currentSerial = 1, nowMs = 1_000)
+        assertTrue(started.tick(1_000 + 29_000, parked = true).pending)
+        val gaveUp = started.tick(1_000 + ORIGIN_GIVE_UP_MS, parked = true)
+        assertFalse(gaveUp.pending)
+        assertTrue(gaveUp.failed)
+        assertEquals(ORIGIN_MISSED, originRow(gaveUp, null, null).caption)
+        val leftPark = started.tick(2_000, parked = false)
+        assertTrue(leftPark.failed)
+        assertEquals(ORIGIN_MISSED, originRow(leftPark, null, null).caption)
+        val dropped = started.dropPending()
+        assertFalse(dropped.pending)
+        assertFalse(dropped.failed)
+        assertNull(dropped.latitude)
+    }
+
+    @Test
     fun anEmptyHomeSlotIsNotARow() {
         assertTrue(emptyBookmarkSlot(null, "  ", 0.0, 0.0))
         assertTrue(emptyBookmarkSlot("", null, 0.0, -0.0))

@@ -160,9 +160,10 @@ class MvpPhaseTest {
             reading = mapOf(com.krazylabs.miri.domain.SeatId.REAR_LEFT to true),
             lightsUseDoorStandIn = false,
         )
-        assertEquals("앞 왼쪽 창문이 열려 있어요.", lines[0])
-        assertTrue(lines.contains("실내등이 켜져 있어요."))
-        assertTrue(lines.contains("뒤쪽 왼쪽 독서등이 켜져 있어요."))
+        assertEquals("앞 왼쪽 창문이 열려 있어요.", lines[0].text)
+        assertEquals(CheckKind.WINDOW, lines[0].kind)
+        assertTrue(lines.any { it.kind == CheckKind.LIGHT && it.text == "실내등이 켜져 있어요." })
+        assertTrue(lines.any { it.kind == CheckKind.LIGHT && it.text == "뒤쪽 왼쪽 독서등이 켜져 있어요." })
         val stoodIn = CheckRules.items(
             doors = mapOf(DoorId.ROW_2_RIGHT to open),
             windows = emptyMap(),
@@ -170,7 +171,7 @@ class MvpPhaseTest {
             reading = emptyMap(),
             lightsUseDoorStandIn = true,
         )
-        assertEquals(listOf("오른쪽 뒷문이 열려 있어요."), stoodIn)
+        assertEquals(listOf(doorItem()), stoodIn)
     }
 
     @Test
@@ -190,7 +191,7 @@ class MvpPhaseTest {
         val step = session.step(
             baseInput(GearPosition.PARK).copy(
                 showIntake = true,
-                checkItems = listOf("오른쪽 뒷문이 열려 있어요."),
+                checkItems = listOf(doorItem()),
                 d1 = D1Face("route-1", listOf("톨게이트 1곳"), "vo_toll_1"),
             ),
         )
@@ -425,7 +426,7 @@ class MvpPhaseTest {
         val door = baseInput(GearPosition.PARK).copy(
             kind = "rental",
             returnSaved = true,
-            checkItems = listOf("오른쪽 뒷문이 열려 있어요."),
+            checkItems = listOf(doorItem()),
         )
         assertEquals(MiriPane.CHECK, session.step(door).pane)
         val done = session.step(door.copy(checkItems = emptyList()))
@@ -489,7 +490,7 @@ class MvpPhaseTest {
 
         session.step(baseInput(GearPosition.DRIVE).copy(kind = "rental", returnSaved = true))
         val check = session.step(
-            rental.copy(checkItems = listOf("오른쪽 뒷문이 열려 있어요."), nowMs = 30_000),
+            rental.copy(checkItems = listOf(doorItem()), nowMs = 30_000),
         )
         assertEquals(MiriPane.CHECK, check.pane)
     }
@@ -498,21 +499,21 @@ class MvpPhaseTest {
     fun chargeLineWaitsUntilRoadCardsHaveShown() {
         val session = CardSession()
         val line = "충전 62% · 반납 기준 80%"
-        val rental = baseInput(GearPosition.PARK).copy(kind = "rental", returnSaved = true, f4 = line)
+        val rental = baseInput(GearPosition.PARK).copy(kind = "rental", returnSaved = true, f4 = chargeItem(line))
         val road = D1Face("pretend", listOf("톨게이트 2곳"), "vo_toll_2")
-        session.step(baseInput(GearPosition.DRIVE).copy(kind = "rental", returnSaved = true, f4 = line))
+        session.step(baseInput(GearPosition.DRIVE).copy(kind = "rental", returnSaved = true, f4 = chargeItem(line)))
         assertEquals(MiriPane.D1, session.step(rental.copy(d1 = road, nowMs = 2_000)).pane)
         assertEquals(MiriPane.ICON, session.step(rental.copy(d1 = road, nowMs = 8_000)).pane)
 
         val charging = D2Rules.offer(evRearRight(true), DestinationRole.CHARGING, routeKey = "charge-1")!!
-        session.step(baseInput(GearPosition.DRIVE).copy(kind = "rental", returnSaved = true, f4 = line))
+        session.step(baseInput(GearPosition.DRIVE).copy(kind = "rental", returnSaved = true, f4 = chargeItem(line)))
         assertEquals(MiriPane.D2, session.step(rental.copy(d2 = charging, nowMs = 11_000)).pane)
 
         val prepared = F3Face("rent-3h", listOf("반납까지 약 18% 더 충전해야 해요."))
-        session.step(baseInput(GearPosition.DRIVE).copy(kind = "rental", returnSaved = true, f4 = line))
-        assertEquals(MiriPane.F3, session.step(rental.copy(f3 = prepared, f4 = line, nowMs = 20_000)).pane)
+        session.step(baseInput(GearPosition.DRIVE).copy(kind = "rental", returnSaved = true, f4 = chargeItem(line)))
+        assertEquals(MiriPane.F3, session.step(rental.copy(f3 = prepared, f4 = chargeItem(line), nowMs = 20_000)).pane)
 
-        session.step(baseInput(GearPosition.DRIVE).copy(kind = "rental", returnSaved = true, f4 = line))
+        session.step(baseInput(GearPosition.DRIVE).copy(kind = "rental", returnSaved = true, f4 = chargeItem(line)))
         val checklist = session.step(rental.copy(nowMs = 30_000))
         assertEquals(MiriPane.CHECK, checklist.pane)
         assertEquals(listOf(line), checklist.card?.lines)
@@ -521,7 +522,7 @@ class MvpPhaseTest {
         assertEquals(
             MiriPane.CHECK,
             openDoor.step(
-                rental.copy(checkItems = listOf("오른쪽 뒷문이 열려 있어요."), f3 = prepared),
+                rental.copy(checkItems = listOf(doorItem()), f3 = prepared),
             ).pane,
         )
     }
@@ -565,7 +566,7 @@ class MvpPhaseTest {
 
         val hidden = CardSession()
         assertEquals(MiriPane.ICON, hidden.step(baseInput(GearPosition.PARK).copy(d1 = road, visible = false)).pane)
-        assertEquals(MiriPane.ICON, hidden.step(baseInput(GearPosition.PARK).copy(d1 = road, nowMs = 1_000)).pane)
+        assertEquals(MiriPane.D1, hidden.step(baseInput(GearPosition.PARK).copy(d1 = road, nowMs = 1_000)).pane)
 
         val blocked = CardSession()
         assertEquals(
@@ -573,7 +574,7 @@ class MvpPhaseTest {
             blocked.step(
                 baseInput(GearPosition.PARK).copy(
                     d1 = road,
-                    checkItems = listOf("오른쪽 뒷문이 열려 있어요."),
+                    checkItems = listOf(doorItem()),
                 ),
             ).pane,
         )
@@ -620,12 +621,12 @@ class MvpPhaseTest {
     fun aDoorCloseChimesOnceAcrossTwoTicks() {
         val session = CardSession()
         val open = baseInput(GearPosition.PARK).copy(
-            checkItems = listOf("오른쪽 뒷문이 열려 있어요.", "실내등이 켜져 있어요."),
+            checkItems = listOf(doorItem(), lightItem()),
         )
         assertEquals(MiriPane.CHECK, session.step(open.copy(nowMs = 0)).pane)
         assertEquals(
             VoicePlay.Chime,
-            session.step(open.copy(checkItems = listOf("실내등이 켜져 있어요."), nowMs = 250)).voice,
+            session.step(open.copy(checkItems = listOf(lightItem()), nowMs = 250)).voice,
         )
         val finished = session.step(open.copy(checkItems = emptyList(), nowMs = 500))
         assertEquals(MiriPane.CHECK, finished.pane)
@@ -635,7 +636,7 @@ class MvpPhaseTest {
         later.step(open.copy(nowMs = 0))
         assertEquals(
             VoicePlay.Chime,
-            later.step(open.copy(checkItems = listOf("실내등이 켜져 있어요."), nowMs = 250)).voice,
+            later.step(open.copy(checkItems = listOf(lightItem()), nowMs = 250)).voice,
         )
         assertEquals(
             VoicePlay.Chime,
@@ -647,8 +648,8 @@ class MvpPhaseTest {
     fun aDoorCloseDoesNotChimeAgainWhenTheCardChanges() {
         val session = CardSession()
         val open = baseInput(GearPosition.PARK).copy(
-            checkItems = listOf("오른쪽 뒷문이 열려 있어요."),
-            f4 = "충전 60% · 반납 기준 80%",
+            checkItems = listOf(doorItem()),
+            f4 = chargeItem("충전 60% · 반납 기준 80%"),
             reshowCheck = true,
         )
         assertEquals(VoicePlay.Chime, session.step(open.copy(nowMs = 0)).voice)
@@ -659,7 +660,7 @@ class MvpPhaseTest {
         val followUp = session.step(
             open.copy(
                 checkItems = emptyList(),
-                f4 = "충전 59% · 반납 기준 80%",
+                f4 = chargeItem("충전 59% · 반납 기준 80%"),
                 nowMs = 5_280,
             ),
         )
@@ -670,21 +671,97 @@ class MvpPhaseTest {
             session.step(
                 open.copy(
                     checkItems = emptyList(),
-                    f4 = "충전 58% · 반납 기준 80%",
+                    f4 = chargeItem("충전 58% · 반납 기준 80%"),
                     nowMs = 9_000,
                 ),
             ).voice,
         )
         session.step(
             open.copy(
-                checkItems = listOf("실내등이 켜져 있어요."),
-                f4 = "충전 58% · 반납 기준 80%",
+                checkItems = listOf(lightItem()),
+                f4 = chargeItem("충전 58% · 반납 기준 80%"),
                 nowMs = 10_000,
             ),
         )
         assertEquals(
             VoicePlay.Chime,
-            session.step(open.copy(checkItems = emptyList(), f4 = "충전 58% · 반납 기준 80%", nowMs = 11_000)).voice,
+            session.step(open.copy(checkItems = emptyList(), f4 = chargeItem("충전 58% · 반납 기준 80%"), nowMs = 11_000)).voice,
+        )
+    }
+
+    @Test
+    fun statusBadgeFollowsTheItemKind() {
+        assertEquals("열림", CheckRules.statusBadge(CheckKind.DOOR))
+        assertEquals("열림", CheckRules.statusBadge(CheckKind.WINDOW))
+        assertEquals("켜짐", CheckRules.statusBadge(CheckKind.LIGHT))
+        assertEquals("부족", CheckRules.statusBadge(CheckKind.CHARGE))
+        assertEquals("부족", CheckRules.statusBadge(CheckKind.FUEL))
+        assertNull(CheckRules.chargeLine(ev = true, level = 80, target = 80))
+        assertNull(CheckRules.chargeLine(ev = true, level = null, target = 80))
+        assertEquals(CheckKind.CHARGE, CheckRules.chargeLine(ev = true, level = 62, target = 80)?.kind)
+        assertEquals(CheckKind.FUEL, CheckRules.chargeLine(ev = false, level = 10, target = 40)?.kind)
+    }
+
+    @Test
+    fun aChargePercentChangeDoesNotReplayTheCheckVoice() {
+        val session = CardSession()
+        val open = baseInput(GearPosition.PARK).copy(
+            checkItems = listOf(doorItem()),
+            f4 = chargeItem("충전 60% · 반납 기준 80%"),
+        )
+        assertEquals(VoicePlay.Clips(listOf("vo_check_done")), session.step(open.copy(nowMs = 0)).voice)
+        assertEquals(
+            VoicePlay.None,
+            session.step(open.copy(f4 = chargeItem("충전 59% · 반납 기준 80%"), nowMs = 250)).voice,
+        )
+
+        val reshown = CardSession()
+        val again = open.copy(reshowCheck = true)
+        assertEquals(VoicePlay.Chime, reshown.step(again.copy(nowMs = 0)).voice)
+        assertEquals(
+            VoicePlay.None,
+            reshown.step(again.copy(f4 = chargeItem("충전 59% · 반납 기준 80%"), nowMs = 250)).voice,
+        )
+    }
+
+    @Test
+    fun aDestinationKeyForTheSameRouteDoesNotConsumeD2() {
+        val session = CardSession()
+        val road = D1Face("pretend", listOf("톨게이트 2곳"), "vo_toll_2")
+        val byRoute = D2Rules.offer(evRearRight(true), DestinationRole.CHARGING, routeKey = "route-9")!!
+            .copy(routeId = "route-9")
+        val byPlace = byRoute.copy(routeKey = "강남 충전소@37.5000,127.0300")
+        assertEquals(
+            MiriPane.CHECK,
+            session.step(
+                baseInput(GearPosition.PARK).copy(
+                    d1 = road,
+                    d2 = byRoute,
+                    checkItems = listOf(doorItem()),
+                ),
+            ).pane,
+        )
+        session.step(baseInput(GearPosition.DRIVE).copy(d2 = byRoute))
+        session.step(baseInput(GearPosition.DRIVE).copy(d2 = byPlace))
+        assertEquals(
+            MiriPane.D2,
+            session.step(baseInput(GearPosition.PARK).copy(d2 = byPlace, nowMs = 1_000)).pane,
+        )
+
+        val changed = CardSession()
+        val other = byRoute.copy(routeKey = "route-10", routeId = "route-10")
+        changed.step(
+            baseInput(GearPosition.PARK).copy(
+                d1 = road,
+                d2 = byRoute,
+                checkItems = listOf(doorItem()),
+            ),
+        )
+        changed.step(baseInput(GearPosition.DRIVE).copy(d2 = byRoute))
+        changed.step(baseInput(GearPosition.DRIVE).copy(d2 = other))
+        assertEquals(
+            MiriPane.ICON,
+            changed.step(baseInput(GearPosition.PARK).copy(d2 = other, nowMs = 1_000)).pane,
         )
     }
 
@@ -736,6 +813,12 @@ class MvpPhaseTest {
         remainTime = 0,
         tollFare = 0,
     )
+
+    private fun doorItem(text: String = "오른쪽 뒷문이 열려 있어요.") = CheckItem(CheckKind.DOOR, text)
+
+    private fun lightItem(text: String = "실내등이 켜져 있어요.") = CheckItem(CheckKind.LIGHT, text)
+
+    private fun chargeItem(text: String) = CheckItem(CheckKind.CHARGE, text)
 
     private fun arrivalCue(routeId: String, remainMeters: Int) = DriveCueInput(
         nowMs = 0,

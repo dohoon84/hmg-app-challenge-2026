@@ -65,6 +65,12 @@ interface NavigationRepository {
      */
     fun requestCurrentLocation() {}
 
+    /**
+     * Issues a location read about 3 seconds after the link is READY, and only
+     * when [requestCurrentLocation] asked for one. Default does nothing.
+     */
+    fun pollLocation(nowMs: Long) {}
+
     /** Ask for [getBookmarkInfo]. The list arrives on the bookmark callback. */
     fun refreshBookmarks() {}
 }

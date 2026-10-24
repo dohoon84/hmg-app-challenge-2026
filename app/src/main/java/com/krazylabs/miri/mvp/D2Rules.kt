@@ -14,6 +14,8 @@ data class D2Face(
     val arrivalClips: List<String>,
     val port: PortSide?,
     val routeKey: String = "",
+    /** Road id that [routeKey] was promoted from, when the destination arrives later. */
+    val routeId: String = "",
 )
 
 /**

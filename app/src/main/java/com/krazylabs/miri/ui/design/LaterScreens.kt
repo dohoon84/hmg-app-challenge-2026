@@ -6,6 +6,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -18,6 +21,8 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import com.krazylabs.miri.R
+import com.krazylabs.miri.mvp.CheckItem
+import com.krazylabs.miri.mvp.CheckKind
 import com.krazylabs.miri.mvp.CheckRules
 import com.krazylabs.miri.ui.ShownCard
 import com.krazylabs.miri.ui.theme.IviTheme
@@ -154,22 +159,22 @@ private fun f3From(card: ShownCard?): F3Model {
 @Composable
 fun C1CheckScreen(card: ShownCard?, dark: Boolean) {
     val colors = IviTheme.colors
-    val items = if (card == null) {
-        listOf("오른쪽 뒷문", "실내등", "뒤쪽 왼쪽 독서등")
-    } else {
-        card.lines.filter { it != CheckRules.FOOTER && it != card.note }
-    }
-    val doorOpen = items.any { opensTheBody(it) }
+    val items = card?.checks?.takeIf { it.isNotEmpty() } ?: listOf(
+        CheckItem(CheckKind.DOOR, "오른쪽 뒷문"),
+        CheckItem(CheckKind.LIGHT, "실내등"),
+        CheckItem(CheckKind.LIGHT, "뒤쪽 왼쪽 독서등"),
+    )
+    val doorOpen = items.any { opensTheBody(it.text) }
     val car = when {
-        doorOpen && dark -> R.drawable.miri_car_port_dark
-        doorOpen -> R.drawable.miri_car_port_light
+        doorOpen && dark -> R.drawable.miri_car_rear_door_open_dark
+        doorOpen -> R.drawable.miri_car_rear_door_open_light
         dark -> R.drawable.miri_car_top_dark
         else -> R.drawable.miri_car_top_light
     }
     SpecFrame {
         Image(painterResource(car), null, Modifier.figma(110f, 40f, 620f, 1128f), contentScale = ContentScale.Crop)
-        items.forEachIndexed { index, line ->
-            val mark = bodyMark(line) ?: return@forEachIndexed
+        items.forEachIndexed { index, item ->
+            val mark = bodyMark(item.text) ?: return@forEachIndexed
             NumberBadge(mark.first, mark.second, "${index + 1}")
         }
         SpecIcon(R.drawable.miri_ic_parking, 880f, 48f, 32f, 32f, colors.frameSecondary, "정차")
@@ -177,11 +182,16 @@ fun C1CheckScreen(card: ShownCard?, dark: Boolean) {
         SpecText(card?.title ?: "반납 전 점검", 880f, 112f, MiriType.titleLargeNormal(), colors.frameInk)
         val rows = listOf(300f, 500f, 760f)
         val dividers = listOf(422f, 682f)
-        items.take(rows.size).forEachIndexed { index, line ->
+        items.take(rows.size).forEachIndexed { index, item ->
             val y = rows[index]
+            val line = item.text
             NumberBadge(880f, y, "${index + 1}")
-            SpecText(shortItem(line), 944f, y, MiriType.titleMediumStrong(), colors.frameInk)
-            StatusBadge(1558f, y, if (line.contains("등")) "켜짐" else "열림")
+            if (item.kind == CheckKind.CHARGE || item.kind == CheckKind.FUEL) {
+                ChargeLine(line, 944f, y)
+            } else {
+                SpecText(shortItem(line), 944f, y, MiriType.titleMediumStrong(), colors.frameInk)
+            }
+            StatusBadge(1558f, y, CheckRules.statusBadge(item.kind))
             if (line.contains("실내등")) {
                 SpecText("켜 둔 채 내리면 배터리가 약해질 수 있어요.", 944f, 558f, MiriType.bodySmallNormal(), colors.frameTertiary)
             }
@@ -219,12 +229,12 @@ fun C2DoneScreen(card: ShownCard?, dark: Boolean) {
 @Composable
 fun F4ChecklistScreen(card: ShownCard?, dark: Boolean) {
     val colors = IviTheme.colors
-    val car = if (dark) R.drawable.miri_car_port_dark else R.drawable.miri_car_port_light
+    val car = if (dark) R.drawable.miri_car_rear_door_open_dark else R.drawable.miri_car_rear_door_open_light
     val charge = card?.lines?.firstOrNull { it.contains("반납 기준") } ?: "충전 62% · 반납 기준 80%"
     val open = card?.lines?.firstOrNull { it.contains("문") || it.contains("트렁크") } ?: "오른쪽 뒷문"
     SpecFrame {
         Image(painterResource(car), null, Modifier.figma(110f, 40f, 620f, 1128f), contentScale = ContentScale.Crop)
-        Hotspot(571.92f, 548.72f)
+        Hotspot(564.5f, 678.5f)
         Hotspot(515.07f, 823.95f)
         SpecIcon(R.drawable.miri_ic_parking, 880f, 48f, 32f, 32f, colors.frameSecondary, "정차")
         SpecText("정차 중", 924f, 50f, MiriType.labelMedium(), colors.frameSecondary)
@@ -235,7 +245,10 @@ fun F4ChecklistScreen(card: ShownCard?, dark: Boolean) {
         )
         SpecIcon(R.drawable.miri_ic_door, 880f, 316f, 40f, 40f, colors.frameSecondary)
         SpecText(shortItem(open), 944f, 312f, MiriType.titleMediumStrong(), colors.frameInk)
-        StatusBadge(1558f, 312f, "열림")
+        val doorKind = card?.checks?.firstOrNull {
+            it.kind == CheckKind.DOOR || it.kind == CheckKind.WINDOW || it.kind == CheckKind.LIGHT
+        }?.kind ?: CheckKind.DOOR
+        StatusBadge(1558f, 312f, CheckRules.statusBadge(doorKind))
         Box(Modifier.figma(944f, 420f, 690f, 1f).background(colors.divider))
         SpecIcon(R.drawable.miri_ic_charge, 880f, 476f, 40f, 40f, colors.frameSecondary)
         SpecText("충전 · 반납 기준", 944f, 452f, MiriType.labelMedium(), colors.frameTertiary)
@@ -256,7 +269,7 @@ fun F4ChecklistScreen(card: ShownCard?, dark: Boolean) {
 }
 
 @Composable
-private fun BoxScope.ChargeLine(line: String) {
+private fun BoxScope.ChargeLine(line: String, x: Float = 944f, y: Float = 488f) {
     val colors = IviTheme.colors
     val parts = Regex("(\\d+%)").findAll(line).map { it.value }.toList()
     val annotated = buildAnnotatedString {
@@ -275,7 +288,7 @@ private fun BoxScope.ChargeLine(line: String) {
             withStyle(SpanStyle(color = colors.frameSecondary)) { append(rest) }
         }
     }
-    Text(annotated, Modifier.figma(944f, 488f, 500f, 44f), style = MiriType.titleMediumNormal(), maxLines = 1)
+    Text(annotated, Modifier.figma(x, y, 500f, 44f), style = MiriType.titleMediumNormal(), maxLines = 1)
 }
 
 @Composable
@@ -297,11 +310,13 @@ private fun BoxScope.StatusBadge(x: Float, y: Float, label: String) {
     val colors = IviTheme.colors
     Box(
         Modifier
-            .figma(x, y, 76f, 44f)
-            .background(colors.cautionBadge, RoundedCornerShape(px(12))),
+            .offset(px(x), px(y))
+            .height(px(44f))
+            .background(colors.cautionBadge, RoundedCornerShape(percent = 50))
+            .padding(horizontal = px(14f)),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = MiriType.bodyMediumNormal(), color = colors.onCautionBadge, maxLines = 1)
+        Text(label, style = MiriType.bodyMediumStrong(), color = colors.onCautionBadge, maxLines = 1)
     }
 }
 
@@ -313,7 +328,7 @@ private fun opensTheBody(line: String): Boolean {
 
 /** Car-body badge positions from the C1 mockup. A charge line has no mark. */
 private fun bodyMark(line: String): Pair<Float, Float>? = when {
-    line.contains("오른쪽 뒷문") -> 593.92f to 570.72f
+    line.contains("오른쪽 뒷문") -> 587f to 701f
     line.contains("실내등") -> 398f to 519.96f
     line.contains("뒤쪽 왼쪽") && line.contains("독서") -> 336f to 672.24f
     else -> null

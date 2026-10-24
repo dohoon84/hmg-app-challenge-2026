@@ -26,6 +26,7 @@ data class CardFace(
     val note: String? = null,
     val portName: String? = null,
     val showGuide: Boolean = false,
+    val checks: List<CheckItem> = emptyList(),
 )
 
 data class DeckStep(
@@ -42,11 +43,11 @@ data class DeckInput(
     val kind: String?,
     val returnSaved: Boolean,
     val showIntake: Boolean,
-    val checkItems: List<String>,
+    val checkItems: List<CheckItem>,
     val checkNote: String?,
     val checkTitle: String,
     val reshowCheck: Boolean,
-    val f4: String?,
+    val f4: CheckItem?,
     val d2: D2Face?,
     val f3: F3Face?,
     val d1: D1Face?,
@@ -71,6 +72,8 @@ class CardSession {
     private var checkShows = 0
     /** Door-close chimes that arrive on back-to-back ticks count as one event. */
     private var checkChimeAt: Long? = null
+    /** The opening CHECK utterance. Later line edits, including charge %, stay quiet. */
+    private var checkIntroduced = false
     /** A later content change on this check card is not another door close. */
     private var doorCloseChimed = false
     private val toldRoutes = linkedSetOf<String>()
@@ -93,6 +96,7 @@ class CardSession {
      * route set in Park and not yet shown keeps this key and opens at the next Park.
      */
     private var d2KeyInPark = ""
+    private var d2RouteInPark = ""
     /**
      * True when F3 was already pending as this park opened. A value applied
      * after the stop has started waits for the next park instead of burning
@@ -115,9 +119,16 @@ class CardSession {
         toldUnkeyedD2 = false
         parkD2Told = false
         d2KeyInPark = ""
+        d2RouteInPark = ""
         shownF3.clear()
+        f3Face = null
+        f3ReadyThisPark = false
+        parkOpen = false
+        spent = false
+        checkCount = -1
         checkShows = 0
         checkChimeAt = null
+        checkIntroduced = false
         doorCloseChimed = false
         deferred = null
         deferFromPrior = false
@@ -142,9 +153,13 @@ class CardSession {
         if (input.gear != GearPosition.PARK) parkD2Told = false
         if (input.gear == GearPosition.REVERSE) cameraCover = true
         if (moving) {
-            val drivingKey = input.d2?.routeKey?.takeIf { it.isNotEmpty() }.orEmpty()
-            if (drivingKey.isNotEmpty() && drivingKey != d2KeyInPark) toldD2 += drivingKey
+            val driving = input.d2
+            val drivingKey = driving?.routeKey?.takeIf { it.isNotEmpty() }.orEmpty()
+            val sameRoute = promotedRoute(driving)
+            if (drivingKey.isNotEmpty() && drivingKey != d2KeyInPark && !sameRoute) toldD2 += drivingKey
             if (drivingKey.isNotEmpty()) d2KeyInPark = drivingKey
+            val routeId = driving?.routeId.orEmpty()
+            if (routeId.isNotEmpty()) d2RouteInPark = routeId
             if (deferFromPrior && held != deferred) {
                 deferred = null
                 deferUsed = true
@@ -160,6 +175,7 @@ class CardSession {
         }
         if (input.gear == GearPosition.PARK) {
             d2KeyInPark = input.d2?.routeKey?.takeIf { it.isNotEmpty() }.orEmpty()
+            d2RouteInPark = input.d2?.routeId.orEmpty()
             if (parkD2Told && d2KeyInPark.isNotEmpty()) toldD2 += d2KeyInPark
         }
         if (input.gear != GearPosition.PARK || cameraCover || !input.edgesOpen) {
@@ -171,6 +187,7 @@ class CardSession {
             held = null
             checkCount = -1
             checkChimeAt = null
+            checkIntroduced = false
             doorCloseChimed = false
             voiceStamp = null
             f3ReadyThisPark = input.f3 != null
@@ -250,11 +267,15 @@ class CardSession {
         }
         if (id == CardId.F3) f3Face = face
         if (voice == VoicePlay.None && !closeHandled) {
-            val offered = once(stamp(id, face), intended(id, input))
-            voice = if (id == CardId.CHECK && offered == VoicePlay.Chime && doorCloseChimed) {
-                VoicePlay.None
+            voice = if (id == CardId.CHECK) {
+                if (checkIntroduced) {
+                    VoicePlay.None
+                } else {
+                    checkIntroduced = true
+                    once("check-open", intended(id, input))
+                }
             } else {
-                offered
+                once(stamp(id, face), intended(id, input))
             }
         }
         if (closeHandled) voiceStamp = stamp(id, face)
@@ -276,15 +297,23 @@ class CardSession {
 
     private fun rememberMiss(input: DeckInput) {
         val id = pick(input) ?: return
-        if (id != CardId.D1) input.d1?.routeId?.let { toldRoutes += it }
-        if (id == CardId.D1) {
-            input.d1?.routeId?.let { toldRoutes += it }
-            return
-        }
+        if (id == CardId.D1) return
         if (deferred == null && !deferUsed) {
             deferred = id
             deferFromPrior = false
         }
+    }
+
+    /**
+     * A route-id key and the destination key of that same route are one D2.
+     * A destination that arrives after the route id must not consume the card.
+     */
+    private fun promotedRoute(next: D2Face?): Boolean {
+        if (next == null) return false
+        if (next.routeKey == d2KeyInPark) return true
+        val routeId = next.routeId
+        if (routeId.isEmpty() || d2RouteInPark.isEmpty() || routeId != d2RouteInPark) return false
+        return d2KeyInPark == d2RouteInPark && next.routeKey != d2KeyInPark
     }
 
     private fun pick(input: DeckInput): CardId? {
@@ -319,14 +348,18 @@ class CardSession {
     private fun face(id: CardId, input: DeckInput): CardFace? = when (id) {
         CardId.CHECK -> {
             if (input.checkItems.isEmpty() && input.f4 == null) null
-            else CardFace(
-                pane = MiriPane.CHECK,
-                title = input.checkTitle,
-                lines = input.checkItems + listOfNotNull(input.f4),
-                footer = CheckRules.FOOTER,
-                badge = if (input.reshowCheck || checkShows > 1) CheckRules.badge(input.checkItems.size) else null,
-                note = input.checkNote,
-            )
+            else {
+                val rows = input.checkItems + listOfNotNull(input.f4)
+                CardFace(
+                    pane = MiriPane.CHECK,
+                    title = input.checkTitle,
+                    lines = rows.map { it.text },
+                    footer = CheckRules.FOOTER,
+                    badge = if (input.reshowCheck || checkShows > 1) CheckRules.badge(input.checkItems.size) else null,
+                    note = input.checkNote,
+                    checks = rows,
+                )
+            }
         }
         CardId.F1 -> CardFace(MiriPane.F1, "어떤 차로 타고 계세요?", emptyList())
         CardId.F2 -> CardFace(MiriPane.F2, F2Draft.TITLE, emptyList())
