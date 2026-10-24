@@ -32,7 +32,7 @@ fun D1RoadScreen(card: ShownCard?, dark: Boolean, onDone: () -> Unit = {}) {
             imageX = -874f, imageY = 48f, imageW = 1980f, imageH = 1114f,
             radius = 32f,
         )
-        Hotspot(537.3f, 501.96f)
+        Hotspot(513.54f, 514.21f)
         SpecIcon(R.drawable.miri_ic_parking, 880f, 48f, 32f, 32f, colors.frameSecondary, "정차")
         SpecText("정차 중 · 출발 전", 924f, 50f, MiriType.labelMedium(), colors.frameSecondary)
         SpecText(card?.title ?: "오늘 길", 880f, 112f, MiriType.titleLargeNormal(), colors.frameInk)

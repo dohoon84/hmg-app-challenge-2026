@@ -592,6 +592,85 @@ class MvpPhaseTest {
         )
     }
 
+    /**
+     * An extra stop, then a gear change, opens a park with no F3. Applying
+     * rent-3h in that park must not record the key. The next D→P shows F3,
+     * and the following tick (the offer goes null once the card is held)
+     * keeps the card.
+     */
+    @Test
+    fun f3AppliedAfterAnExtraStopShowsOnTheNextPark() {
+        val session = CardSession()
+        val rental = baseInput(GearPosition.PARK).copy(kind = "rental", returnSaved = true)
+        val driving = baseInput(GearPosition.DRIVE).copy(kind = "rental", returnSaved = true)
+        val f3 = F3Face("rent-3h", listOf("반납까지 약 18% 더 충전해야 해요."))
+        assertEquals(MiriPane.ICON, session.step(rental.copy(nowMs = 0)).pane)
+        session.step(driving)
+        assertEquals(MiriPane.ICON, session.step(rental.copy(nowMs = 1_000)).pane)
+        assertEquals(MiriPane.ICON, session.step(rental.copy(f3 = f3, nowMs = 1_200)).pane)
+        assertEquals(MiriPane.ICON, session.step(rental.copy(f3 = f3, nowMs = 1_500)).pane)
+        assertFalse(session.f3Shown().contains("rent-3h"))
+        session.step(driving.copy(f3 = f3))
+        assertEquals(MiriPane.F3, session.step(rental.copy(f3 = f3, nowMs = 2_000)).pane)
+        assertTrue(session.f3Shown().contains("rent-3h"))
+        assertEquals(MiriPane.F3, session.step(rental.copy(f3 = null, nowMs = 2_300)).pane)
+    }
+
+    @Test
+    fun aDoorCloseChimesOnceAcrossTwoTicks() {
+        val session = CardSession()
+        val open = baseInput(GearPosition.PARK).copy(
+            checkItems = listOf("오른쪽 뒷문이 열려 있어요.", "실내등이 켜져 있어요."),
+        )
+        assertEquals(MiriPane.CHECK, session.step(open.copy(nowMs = 0)).pane)
+        assertEquals(
+            VoicePlay.Chime,
+            session.step(open.copy(checkItems = listOf("실내등이 켜져 있어요."), nowMs = 250)).voice,
+        )
+        val finished = session.step(open.copy(checkItems = emptyList(), nowMs = 500))
+        assertEquals(MiriPane.CHECK, finished.pane)
+        assertEquals(VoicePlay.None, finished.voice)
+
+        val later = CardSession()
+        later.step(open.copy(nowMs = 0))
+        assertEquals(
+            VoicePlay.Chime,
+            later.step(open.copy(checkItems = listOf("실내등이 켜져 있어요."), nowMs = 250)).voice,
+        )
+        assertEquals(
+            VoicePlay.Chime,
+            later.step(open.copy(checkItems = emptyList(), nowMs = 1_200)).voice,
+        )
+    }
+
+    @Test
+    fun newRentalClearsDemoNumbersAndVoice() {
+        val cleared = ScenarioOverrides(
+            remainMeters = 400,
+            remainSeconds = 90,
+            returnInMinutes = 120,
+            chargeTargetPercent = 80,
+            pretendCharging = true,
+            pretendTolls = 2,
+            pretendHighways = 1,
+            armNewRental = true,
+            speechUsage = "navigation",
+            gearBackend = "aaos",
+            lightsUseDoorStandIn = true,
+        ).clearedForNewRental()
+        assertNull(cleared.remainMeters)
+        assertNull(cleared.remainSeconds)
+        assertNull(cleared.returnInMinutes)
+        assertNull(cleared.chargeTargetPercent)
+        assertFalse(cleared.pretendCharging)
+        assertNull(cleared.pretendTolls)
+        assertNull(cleared.pretendHighways)
+        assertFalse(cleared.armNewRental)
+        assertEquals("", cleared.speechUsage)
+        assertEquals("aaos", cleared.gearBackend)
+        assertTrue(cleared.lightsUseDoorStandIn)
+    }
+
     @Test
     fun driverDoorOrDriveClearsTheRearNote() {
         val note = RearDoorNote()

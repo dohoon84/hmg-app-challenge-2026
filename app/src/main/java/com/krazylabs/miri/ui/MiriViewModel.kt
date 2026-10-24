@@ -37,6 +37,7 @@ import com.krazylabs.miri.mvp.RentalOrigin
 import com.krazylabs.miri.mvp.ReturnForm
 import com.krazylabs.miri.mvp.ScenarioInput
 import com.krazylabs.miri.mvp.assembleReturnPlaces
+import com.krazylabs.miri.mvp.bookmarkRowLabel
 import com.krazylabs.miri.mvp.intakeVisible
 import com.krazylabs.miri.mvp.originRow
 import com.krazylabs.miri.mvp.toPlaceRequest
@@ -311,7 +312,7 @@ class MiriViewModel @Inject constructor(
     private fun publish() {
         val now = System.currentTimeMillis()
         if (!edgesOpen && edgesAtMs != 0L && now >= edgesAtMs) edgesOpen = true
-        val scenario = scenarioInput.overrides.value
+        var scenario = scenarioInput.overrides.value
         SpeechUsage.apply(scenario.speechUsage.ifBlank { BuildConfig.SPEECH_USAGE })
         val gear = drivingStateRepository.state.value.gear
         val moving = gear == GearPosition.DRIVE || gear == GearPosition.REVERSE
@@ -341,7 +342,11 @@ class MiriViewModel @Inject constructor(
             placeSheetOpen = false
             prefs.edit().remove(KEY_KIND).remove(KEY_MINUTE).remove(KEY_EPOCH_DAY).remove(KEY_DAY).putBoolean(KEY_OWN, false).apply()
             beginOriginRequest()
-            if (scenario.armNewRental) scenarioInput.update(scenario.copy(armNewRental = false))
+            if (scenario.armNewRental) {
+                scenario = scenario.clearedForNewRental()
+                scenarioInput.update(scenario)
+                SpeechUsage.apply(scenario.speechUsage.ifBlank { BuildConfig.SPEECH_USAGE })
+            }
         }
         if (gear != GearPosition.PARK) placeSheetOpen = false
         syncOrigin()
@@ -682,12 +687,12 @@ class MiriViewModel @Inject constructor(
         }
     }
 
-    private fun sheetChips(places: List<PlaceRequest>): List<PlaceChip> = places.mapNotNull { place ->
-        val label = place.name.ifBlank { place.address }.ifBlank { return@mapNotNull null }
+    private fun sheetChips(places: List<PlaceRequest>): List<PlaceChip> = places.map { place ->
+        val label = bookmarkRowLabel(place.name, place.address, place.latitude, place.longitude)
         PlaceChip(
-            id = place.poiId.ifBlank { place.name },
+            id = place.poiId.ifBlank { label },
             label = label,
-            caption = place.address.takeIf { it.isNotBlank() && it != label },
+            caption = place.address.trim().takeIf { it.isNotEmpty() && it != label },
         )
     }
 

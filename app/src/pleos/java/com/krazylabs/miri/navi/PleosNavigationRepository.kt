@@ -21,6 +21,7 @@ import com.krazylabs.miri.domain.PlaceRequest
 import com.krazylabs.miri.domain.TripEstimate
 import com.krazylabs.miri.mvp.TbtGuard
 import com.krazylabs.miri.mvp.countRoad
+import com.krazylabs.miri.mvp.bookmarkRowLabel
 import com.krazylabs.miri.mvp.navPlaceId
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -169,15 +170,24 @@ class PleosNavigationRepository @Inject constructor(
         }
 
         override fun onBookmarkInfo(list: List<BookmarkInfo>) {
-            val names = list.map { it.name.orEmpty() }
-            Log.i(NAV_TAG, "bookmarks count=${names.size} names=${names.joinToString(",")}")
+            Log.i(NAV_TAG, "bookmarks count=${list.size}")
+            list.forEach { item ->
+                Log.i(
+                    NAV_TAG,
+                    "bookmark lat=${item.latitude} lon=${item.longitude} " +
+                        "displayLat=${item.displayLatitude} displayLon=${item.displayLongitude} " +
+                        "name=${item.name} poiId=${item.poiId} poiSubId=${item.poiSubId} " +
+                        "address=${item.address} category=${item.category} provider=${item.poiProvider}",
+                )
+            }
             _bookmarks.value = list.map { item ->
-                val name = item.name.orEmpty()
+                val address = item.address.orEmpty()
+                val name = bookmarkRowLabel(item.name, address, item.latitude, item.longitude)
                 PlaceRequest(
                     latitude = item.latitude,
                     longitude = item.longitude,
                     name = name,
-                    address = item.address.orEmpty(),
+                    address = address,
                     poiId = navPlaceId("bookmark", item.poiId.orEmpty(), name, item.latitude, item.longitude),
                     poiSubId = item.poiSubId.orEmpty(),
                 )

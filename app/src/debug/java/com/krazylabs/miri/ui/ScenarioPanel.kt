@@ -1,15 +1,18 @@
 package com.krazylabs.miri.ui
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -36,6 +39,17 @@ fun ScenarioPanel(
     var seconds by rememberSaveable { mutableStateOf(overrides.remainSeconds?.toString().orEmpty()) }
     var returnMin by rememberSaveable { mutableStateOf(overrides.returnInMinutes?.toString().orEmpty()) }
     var target by rememberSaveable { mutableStateOf(overrides.chargeTargetPercent?.toString().orEmpty()) }
+    LaunchedEffect(
+        overrides.remainMeters,
+        overrides.remainSeconds,
+        overrides.returnInMinutes,
+        overrides.chargeTargetPercent,
+    ) {
+        meters = overrides.remainMeters?.toString().orEmpty()
+        seconds = overrides.remainSeconds?.toString().orEmpty()
+        returnMin = overrides.returnInMinutes?.toString().orEmpty()
+        target = overrides.chargeTargetPercent?.toString().orEmpty()
+    }
     Column(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = modifier.widthIn(max = 520.dp).fillMaxWidth(),
@@ -73,7 +87,10 @@ fun ScenarioPanel(
                 modifier = Modifier.weight(1f),
             )
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+        ) {
             TextButton(onClick = {
                 onChange(
                     overrides.copy(
@@ -96,7 +113,10 @@ fun ScenarioPanel(
             SpeechUsage.SONIFICATION -> false
             else -> BuildConfig.SPEECH_USAGE == SpeechUsage.NAVIGATION_GUIDANCE
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+        ) {
             TextButton(onClick = {
                 onChange(
                     overrides.copy(
@@ -112,11 +132,16 @@ fun ScenarioPanel(
             TextButton(onClick = {
                 onChange(overrides.copy(lightsUseDoorStandIn = !overrides.lightsUseDoorStandIn))
             }) { Text(if (overrides.lightsUseDoorStandIn) "문 대체 끔" else "실내등→문") }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = onRoad) { Text("오늘 길") }
             Button(onClick = onRoute) { Text("충전 경로") }
         }
         val gear = overrides.gearBackend.ifBlank { BuildConfig.GEAR_BACKEND }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+        ) {
             TextButton(onClick = {
                 onGearBackend(if (gear == GearBackend.PLEOS) GearBackend.AAOS else GearBackend.PLEOS)
             }) { Text(if (gear == GearBackend.PLEOS) "기어: PLEOS" else "기어: AAOS") }

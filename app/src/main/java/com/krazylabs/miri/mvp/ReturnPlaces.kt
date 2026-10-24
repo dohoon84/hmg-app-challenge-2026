@@ -69,6 +69,15 @@ fun straightLineLabel(
     toLongitude: Double,
 ): String = kmDistance(GeoEstimate.haversineMeters(fromLatitude, fromLongitude, toLatitude, toLongitude))
 
+/** Name, then address, then coordinates. A bookmark row is never blank. */
+fun bookmarkRowLabel(name: String?, address: String?, latitude: Double, longitude: Double): String {
+    val named = name?.trim().orEmpty()
+    if (named.isNotEmpty()) return named
+    val addressed = address?.trim().orEmpty()
+    if (addressed.isNotEmpty()) return addressed
+    return "$latitude,$longitude"
+}
+
 fun navPlaceId(prefix: String, poiId: String, name: String, latitude: Double, longitude: Double): String {
     val key = poiId.ifBlank { "$name:$latitude:$longitude" }
     return "$prefix:$key"

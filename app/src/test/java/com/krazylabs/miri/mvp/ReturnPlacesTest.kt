@@ -111,6 +111,13 @@ class ReturnPlacesTest {
     }
 
     @Test
+    fun aBookmarkRowUsesNameThenAddressThenCoordinates() {
+        assertEquals("집", bookmarkRowLabel(" 집 ", "서울", 37.1, 127.1))
+        assertEquals("서울시 강남구", bookmarkRowLabel("  ", "서울시 강남구", 37.1, 127.1))
+        assertEquals("37.5,127.0", bookmarkRowLabel(null, "", 37.5, 127.0))
+    }
+
+    @Test
     fun aForcedNewRentalOpensF1EvenWhenTheLockIsKnown() {
         assertTrue(intakeVisible(doorLocked = true, kind = null, ownCar = false, primed = false, forcedNewRental = true))
         assertFalse(intakeVisible(doorLocked = true, kind = "rental", ownCar = false, primed = false, forcedNewRental = true))

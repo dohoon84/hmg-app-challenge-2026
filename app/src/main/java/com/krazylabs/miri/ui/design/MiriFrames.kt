@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -24,6 +23,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.PlatformTextStyle
@@ -259,10 +260,24 @@ fun BoxScope.CroppedImage(
         Image(
             painter = painterResource(id),
             contentDescription = null,
-            modifier = Modifier
-                .offset(px(imageX - clipX), px(imageY - clipY))
-                .requiredSize(px(imageW), px(imageH)),
-            contentScale = ContentScale.FillBounds,
+            modifier = Modifier.layout { measurable, _ ->
+                // Figma px are physical pixels. Measure the artwork at that
+                // size and place it at the spec offset. A parent size() would
+                // squeeze it to the clip and the negative offset would push
+                // the lever out of view, leaving the marker on empty canvas.
+                val widthPx = (imageW / density).dp.roundToPx()
+                val heightPx = (imageH / density).dp.roundToPx()
+                val shiftX = ((imageX - clipX) / density).dp.roundToPx()
+                val shiftY = ((imageY - clipY) / density).dp.roundToPx()
+                val placeable = measurable.measure(Constraints.fixed(widthPx, heightPx))
+                layout(
+                    (clipW / density).dp.roundToPx(),
+                    (clipH / density).dp.roundToPx(),
+                ) {
+                    placeable.place(shiftX, shiftY)
+                }
+            },
+            contentScale = ContentScale.Crop,
         )
     }
 }

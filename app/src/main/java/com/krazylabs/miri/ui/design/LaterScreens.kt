@@ -154,15 +154,23 @@ private fun f3From(card: ShownCard?): F3Model {
 @Composable
 fun C1CheckScreen(card: ShownCard?, dark: Boolean) {
     val colors = IviTheme.colors
-    val car = if (dark) R.drawable.miri_car_port_dark else R.drawable.miri_car_port_light
-    val items = card?.lines?.filter { it != CheckRules.FOOTER && it != card.note }.orEmpty()
-        .ifEmpty { listOf("오른쪽 뒷문", "실내등", "뒤쪽 왼쪽 독서등") }
+    val items = if (card == null) {
+        listOf("오른쪽 뒷문", "실내등", "뒤쪽 왼쪽 독서등")
+    } else {
+        card.lines.filter { it != CheckRules.FOOTER && it != card.note }
+    }
+    val doorOpen = items.any { opensTheBody(it) }
+    val car = when {
+        doorOpen && dark -> R.drawable.miri_car_port_dark
+        doorOpen -> R.drawable.miri_car_port_light
+        dark -> R.drawable.miri_car_top_dark
+        else -> R.drawable.miri_car_top_light
+    }
     SpecFrame {
         Image(painterResource(car), null, Modifier.figma(110f, 40f, 620f, 1128f), contentScale = ContentScale.Crop)
-        val marks = listOf(593.92f to 570.72f, 398f to 519.96f, 336f to 672.24f)
-        items.take(3).forEachIndexed { index, _ ->
-            val (x, y) = marks[index]
-            NumberBadge(x, y, "${index + 1}")
+        items.forEachIndexed { index, line ->
+            val mark = bodyMark(line) ?: return@forEachIndexed
+            NumberBadge(mark.first, mark.second, "${index + 1}")
         }
         SpecIcon(R.drawable.miri_ic_parking, 880f, 48f, 32f, 32f, colors.frameSecondary, "정차")
         SpecText("정차 중", 924f, 50f, MiriType.labelMedium(), colors.frameSecondary)
@@ -295,6 +303,20 @@ private fun BoxScope.StatusBadge(x: Float, y: Float, label: String) {
     ) {
         Text(label, style = MiriType.bodyMediumNormal(), color = colors.onCautionBadge, maxLines = 1)
     }
+}
+
+/** Door, trunk, and hood lines use the open-door artwork. A window is not a door. */
+private fun opensTheBody(line: String): Boolean {
+    if (line.contains("창문")) return false
+    return line.contains("문") || line.contains("트렁크") || line.contains("보닛")
+}
+
+/** Car-body badge positions from the C1 mockup. A charge line has no mark. */
+private fun bodyMark(line: String): Pair<Float, Float>? = when {
+    line.contains("오른쪽 뒷문") -> 593.92f to 570.72f
+    line.contains("실내등") -> 398f to 519.96f
+    line.contains("뒤쪽 왼쪽") && line.contains("독서") -> 336f to 672.24f
+    else -> null
 }
 
 private fun shortItem(line: String): String = line

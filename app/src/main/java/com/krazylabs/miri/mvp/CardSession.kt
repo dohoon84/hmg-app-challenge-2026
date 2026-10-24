@@ -69,6 +69,8 @@ class CardSession {
     private var voiceStamp: String? = null
     private var checkCount = -1
     private var checkShows = 0
+    /** Door-close chimes that arrive on back-to-back ticks count as one event. */
+    private var checkChimeAt: Long? = null
     private val toldRoutes = linkedSetOf<String>()
     private val toldD2 = linkedSetOf<String>()
     /** An empty D2 key has no route to store. One show per rental, then [resetRental]. */
@@ -89,6 +91,12 @@ class CardSession {
      * route set in Park and not yet shown keeps this key and opens at the next Park.
      */
     private var d2KeyInPark = ""
+    /**
+     * True when F3 was already pending as this park opened. A value applied
+     * after the stop has started waits for the next park instead of burning
+     * the key on a card the current stop does not keep.
+     */
+    private var f3ReadyThisPark = false
     private var deferred: CardId? = null
     private var deferFromPrior = false
     private var deferUsed = false
@@ -107,6 +115,7 @@ class CardSession {
         d2KeyInPark = ""
         shownF3.clear()
         checkShows = 0
+        checkChimeAt = null
         deferred = null
         deferFromPrior = false
         deferUsed = false
@@ -158,7 +167,9 @@ class CardSession {
             spent = false
             held = null
             checkCount = -1
+            checkChimeAt = null
             voiceStamp = null
+            f3ReadyThisPark = input.f3 != null
         }
         // 새 대여 on C2 is the same park with the kind cleared. Leave the
         // finished check and open F1, as an open F2 already does.
@@ -211,7 +222,7 @@ class CardSession {
             if (id == CardId.CHECK) {
                 completion = true
                 held = null
-                val voice = once("check-done", VoicePlay.Chime)
+                val voice = checkChime(input.nowMs, once("check-done", VoicePlay.Chime))
                 return DeckStep(
                     MiriPane.CHECK,
                     CardFace(MiriPane.CHECK, input.checkTitle, listOf(CheckRules.DONE)),
@@ -223,13 +234,17 @@ class CardSession {
             return DeckStep(MiriPane.ICON, null, VoicePlay.None)
         }
         var voice: VoicePlay = VoicePlay.None
+        var closeHandled = false
         if (id == CardId.CHECK) {
             val count = input.checkItems.size
-            if (checkCount >= 0 && count < checkCount) voice = VoicePlay.Chime
+            if (checkCount >= 0 && count < checkCount) {
+                voice = checkChime(input.nowMs, VoicePlay.Chime)
+                closeHandled = true
+            }
             checkCount = count
         }
         if (id == CardId.F3) f3Face = face
-        if (voice == VoicePlay.None) voice = once(stamp(id, face), intended(id, input))
+        if (voice == VoicePlay.None && !closeHandled) voice = once(stamp(id, face), intended(id, input))
         return DeckStep(face.pane, face, voice)
     }
 
@@ -269,7 +284,7 @@ class CardSession {
         if (!input.ownCar && input.kind != null && !input.returnSaved) return CardId.F2
         val d2 = input.d2
         if (d2 != null && d2Unseen(d2.routeKey)) return CardId.D2
-        if (input.f3 != null) return CardId.F3
+        if (input.f3 != null && f3ReadyThisPark) return CardId.F3
         val d1 = input.d1
         if (input.edgesOpen && d1 != null && d1.routeId !in toldRoutes && toldRoutes.size < 3) {
             return CardId.D1
@@ -334,9 +349,21 @@ class CardSession {
     private fun d2Unseen(routeKey: String): Boolean =
         if (routeKey.isEmpty()) !toldUnkeyedD2 else routeKey !in toldD2
 
+    private fun checkChime(nowMs: Long, voice: VoicePlay): VoicePlay {
+        if (voice == VoicePlay.None) return voice
+        val last = checkChimeAt
+        if (last != null && nowMs - last < CHECK_CHIME_GAP_MS) return VoicePlay.None
+        checkChimeAt = nowMs
+        return voice
+    }
+
     private fun once(stamp: String, voice: VoicePlay): VoicePlay {
         if (voice == VoicePlay.None || voiceStamp == stamp) return VoicePlay.None
         voiceStamp = stamp
         return voice
+    }
+
+    private companion object {
+        const val CHECK_CHIME_GAP_MS = 800L
     }
 }

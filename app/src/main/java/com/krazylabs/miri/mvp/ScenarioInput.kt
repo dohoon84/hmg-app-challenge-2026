@@ -24,7 +24,20 @@ data class ScenarioOverrides(
     val speechUsage: String = "",
     /** Blank keeps [com.krazylabs.miri.domain.GearBackend] on the build-config default. */
     val gearBackend: String = "",
-)
+) {
+    /** Drops the panel's test numbers and voice so the next rental starts clean. */
+    fun clearedForNewRental() = copy(
+        remainMeters = null,
+        remainSeconds = null,
+        returnInMinutes = null,
+        chargeTargetPercent = null,
+        pretendCharging = false,
+        pretendTolls = null,
+        pretendHighways = null,
+        armNewRental = false,
+        speechUsage = "",
+    )
+}
 
 interface ScenarioInput {
     val overrides: StateFlow<ScenarioOverrides>
