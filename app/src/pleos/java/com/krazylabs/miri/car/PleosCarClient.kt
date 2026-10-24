@@ -2,6 +2,7 @@ package com.krazylabs.miri.car
 
 import android.car.Car
 import android.car.VehiclePropertyIds
+import com.krazylabs.miri.BuildConfig
 import android.car.drivingstate.CarUxRestrictions
 import android.car.drivingstate.CarUxRestrictionsManager
 import android.car.hardware.CarPropertyValue
@@ -80,6 +81,7 @@ class PleosCarClient internal constructor(
     private var restrictionMask = 0
     private var maxRestrictedStringLength = 0
     private var gearOverride: com.krazylabs.miri.domain.GearPosition? = null
+    private var debugCar: Car? = null
 
     private val portListener = object : PortListener {
         override fun onChange(propertyId: Int, value: Any?) {
@@ -130,6 +132,10 @@ class PleosCarClient internal constructor(
 
         override fun unbind() {
             unregisterManagers()
+        }
+
+        override fun attachCar(car: Car) {
+            debugCar = car
         }
     }
 
@@ -237,12 +243,36 @@ class PleosCarClient internal constructor(
     }
 
     private fun readIdentity(port: PropertyPort) {
+        val connector = readInts(port, VehiclePropertyIds.INFO_EV_CONNECTOR_TYPE)
         _identity.value = AaosIdentity(
             fuelTypes = readInts(port, VehiclePropertyIds.INFO_FUEL_TYPE),
             fuelDoor = readInt(port, VehiclePropertyIds.INFO_FUEL_DOOR_LOCATION),
             evPort = readInt(port, VehiclePropertyIds.INFO_EV_PORT_LOCATION),
-            connector = readInts(port, VehiclePropertyIds.INFO_EV_CONNECTOR_TYPE),
+            connector = connector,
         )
+        if (BuildConfig.DEBUG) {
+            try {
+                ConnectorProbe.log(debugCar, connector)
+            } catch (error: Throwable) {
+                // The identity read still stands when the diagnostic line fails.
+            }
+        }
+    }
+
+    /**
+     * Debug builds re-read the connector and log tag `MiriConnector`:
+     * CarPropertyManager, CarInfoManager.getEvConnectorTypes(), and the Pleos enum name.
+     * Release builds return null and do not log.
+     */
+    fun debugProbeConnectors(): String? {
+        checkMainThread()
+        if (!BuildConfig.DEBUG) return null
+        val port = propertyPort ?: return null
+        return try {
+            ConnectorProbe.log(debugCar, readInts(port, VehiclePropertyIds.INFO_EV_CONNECTOR_TYPE))
+        } catch (error: Throwable) {
+            null
+        }
     }
 
     internal fun readInt(port: PropertyPort, propertyId: Int): Int? =
@@ -294,6 +324,7 @@ class PleosCarClient internal constructor(
     }
 
     private fun disconnect() {
+        debugCar = null
         // Bump the generation before releasing so a listener re-entered from disconnect is stale.
         connectGen.incrementAndGet()
         unregisterManagers()
@@ -389,6 +420,9 @@ internal interface CarHost {
     fun bindProperties(port: PropertyPort)
     fun bindUx(car: Car)
     fun unbind()
+
+    /** Kept for the debug connector probe. Production bind does not require it. */
+    fun attachCar(car: Car) {}
 }
 
 /** One Car session. [disconnect] is safe to call again while a release is already in progress. */
@@ -430,6 +464,7 @@ private class AndroidCarLink(
 
     override fun bindSignals() {
         val manager = car.getCarManager(Car.PROPERTY_SERVICE) as? CarPropertyManager
+        host.attachCar(car)
         if (manager != null) {
             host.bindProperties(CarPropertyPort(manager))
         }
