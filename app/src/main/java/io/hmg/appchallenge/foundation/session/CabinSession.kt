@@ -12,6 +12,9 @@ import javax.inject.Singleton
 /**
  * Starts Vehicle, Car, and NaviHelper while the process is in the foreground
  * and releases them on stop so a later start is a new session.
+ *
+ * [ProbeNavigationHold] is false unless the pleosProbe activity turns it on.
+ * Release and the normal debug builds never set it, so they still release NaviHelper here.
  */
 @Singleton
 class CabinSession @Inject constructor(
@@ -29,7 +32,9 @@ class CabinSession @Inject constructor(
 
     override fun onStop(owner: LifecycleOwner) {
         announcer.onSuspend()
-        navigationRepository.stop()
+        if (!ProbeNavigationHold.keepRegistered) {
+            navigationRepository.stop()
+        }
         vehicleRepository.stop()
         drivingStateRepository.stop()
     }

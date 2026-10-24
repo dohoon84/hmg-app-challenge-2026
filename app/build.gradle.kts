@@ -105,6 +105,19 @@ android {
     }
 
     buildTypes {
+        // Debug-signed verification APK. Sources live in src/pleosProbe and are not
+        // packaged into pleosRelease. fakeProbe is disabled below.
+        create("probe") {
+            initWith(getByName("debug"))
+            matchingFallbacks += listOf("debug")
+            isDebuggable = true
+            versionNameSuffix = "-probe"
+            // Pleos Connect Emulator is arm64. Drop x86, x86_64, and armeabi-v7a
+            // from this APK only. No minify and no resource shrink.
+            ndk {
+                abiFilters += "arm64-v8a"
+            }
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
@@ -142,7 +155,7 @@ android {
 // fakeRelease would ship the in-memory cabin. The contest APK is pleos release only.
 androidComponents {
     beforeVariants(selector().all()) { variant ->
-        if (variant.name == "fakeRelease") {
+        if (variant.name == "fakeRelease" || variant.name == "fakeProbe") {
             variant.enable = false
         }
     }
@@ -205,6 +218,15 @@ val forbiddenPleosReleaseNames = listOf(
     "FakeVehicleRepository",
     "FakeNavigationRepository",
     "FakeDrivingStateRepository",
+    // pleosProbe only. A release dex that contains these was built from the wrong source set.
+    "SignalProbeActivity",
+    "NaviSignalProbe",
+    "VehicleSignalProbe",
+    "VoiceProbeActivity",
+    "VoiceProbe",
+    "AudioPlaybackProbe",
+    "FrontTaskProbe",
+    "CadenceTracker",
 )
 
 // Names the app may ship. Library merges (Vehicle binding, AndroidX receiver) are included.

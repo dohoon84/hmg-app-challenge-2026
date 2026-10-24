@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      pleosProbe only. This file is not merged into pleosRelease.
+      Read permissions for the signal probe. No CONTROL_CAR, no set APIs.
+      android.car.permission.CAR_INFO is intentionally absent from the release allowlist.
+    -->
+    <uses-permission android:name="android.car.permission.CAR_INFO" />
+    <!-- Pleos Gear.getCurrentGearSelectionState. Release does not call getGear(). -->
+    <uses-permission android:name="pleos.car.permission.CAR_POWERTRAIN" />
+    <!-- Charge-port read. Normal protection. Probe manifest only. -->
+    <uses-permission android:name="android.car.permission.CAR_ENERGY_PORTS" />
+    <!-- moveTaskToFront after R to P. Normal protection. Probe manifest only. -->
+    <uses-permission android:name="android.permission.REORDER_TASKS" />
+
+    <!--
+      Package visibility for the platform TTS engines. Not a permission.
+      Pleos TextToSpeech is not declared. This manifest is probe-only.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
+    <application>
+        <!--
+          Not a launcher icon. Start with am start -n
+          io.hmg.appchallenge.foundation/io.hmg.appchallenge.foundation.probe.SignalProbeActivity
+          distractionOptimized so the screen can stay up while Virtual Console moves the gear.
+        -->
+        <activity
+            android:name=".probe.SignalProbeActivity"
+            android:exported="true"
+            android:launchMode="singleTop">
+            <meta-data
+                android:name="distractionOptimized"
+                android:value="true" />
+        </activity>
+        <!-- autorun extra starts synthesis without a button press. -->
+        <activity
+            android:name=".probe.VoiceProbeActivity"
+            android:exported="true"
+            android:launchMode="singleTop">
+            <meta-data
+                android:name="distractionOptimized"
+                android:value="true" />
+        </activity>
+    </application>
+</manifest>
