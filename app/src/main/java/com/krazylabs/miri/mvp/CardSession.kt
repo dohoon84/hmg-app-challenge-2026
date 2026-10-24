@@ -71,6 +71,8 @@ class CardSession {
     private var checkShows = 0
     private val toldRoutes = linkedSetOf<String>()
     private val toldD2 = linkedSetOf<String>()
+    /** An empty D2 key has no route to store. One show per rental, then [resetRental]. */
+    private var toldUnkeyedD2 = false
     private val shownF3 = mutableSetOf<String>()
     private var deferred: CardId? = null
     private var deferFromPrior = false
@@ -85,6 +87,7 @@ class CardSession {
     fun resetRental() {
         toldRoutes.clear()
         toldD2.clear()
+        toldUnkeyedD2 = false
         shownF3.clear()
         checkShows = 0
         deferred = null
@@ -172,7 +175,7 @@ class CardSession {
         held = id
         heldAt = input.nowMs
         if (id == CardId.D1) input.d1?.routeId?.let { toldRoutes += it }
-        if (id == CardId.D2) input.d2?.routeKey?.takeIf { it.isNotEmpty() }?.let { toldD2 += it }
+        if (id == CardId.D2) rememberD2(input.d2?.routeKey.orEmpty())
         if (id == CardId.F3) input.f3?.let { shownF3 += F3Rules.coveredBy(it.key) }
         if (id == CardId.CHECK) checkShows += 1
         if (id == deferred) {
@@ -202,7 +205,7 @@ class CardSession {
         if (!input.ownCar && input.showIntake && input.kind == null) return CardId.F1
         if (!input.ownCar && input.kind != null && !input.returnSaved) return CardId.F2
         val d2 = input.d2
-        if (d2 != null && d2.routeKey !in toldD2) return CardId.D2
+        if (d2 != null && d2Unseen(d2.routeKey)) return CardId.D2
         if (input.f3 != null) return CardId.F3
         val d1 = input.d1
         if (input.edgesOpen && d1 != null && d1.routeId !in toldRoutes && toldRoutes.size < 3) {
@@ -258,6 +261,13 @@ class CardSession {
     }
 
     private fun stamp(id: CardId, face: CardFace): String = "$id:${face.title}:${face.lines}"
+
+    private fun rememberD2(routeKey: String) {
+        if (routeKey.isEmpty()) toldUnkeyedD2 = true else toldD2 += routeKey
+    }
+
+    private fun d2Unseen(routeKey: String): Boolean =
+        if (routeKey.isEmpty()) !toldUnkeyedD2 else routeKey !in toldD2
 
     private fun once(stamp: String, voice: VoicePlay): VoicePlay {
         if (voice == VoicePlay.None || voiceStamp == stamp) return VoicePlay.None

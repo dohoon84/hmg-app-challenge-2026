@@ -49,6 +49,7 @@ object F3Rules {
             val hours = totalMinutes / 60
             val minutes = totalMinutes % 60
             val left = when {
+                totalMinutes < 1 -> "곧"
                 hours > 0 && minutes > 0 -> "${hours}시간 ${minutes}분"
                 hours > 0 -> "${hours}시간"
                 else -> "${minutes}분"

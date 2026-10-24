@@ -1,8 +1,10 @@
 package com.krazylabs.miri.mvp
 
 import com.krazylabs.miri.domain.CarIdentity
+import com.krazylabs.miri.domain.DestinationSnapshot
 import com.krazylabs.miri.domain.FuelKind
 import com.krazylabs.miri.domain.PortSide
+import java.util.Locale
 
 data class D2Face(
     val title: String,
@@ -15,16 +17,18 @@ data class D2Face(
 )
 
 /**
- * One key for the D2 card and for D2-b. Empty when both parts are blank, and
- * nothing may be recorded in that case. The separator keeps "A"+"BC" distinct
- * from "AB"+"C".
+ * One key for the D2 card and for D2-b.
+ * A destination is its name plus lat/lon rounded to 4 decimals, so a cleared
+ * routeId or a reroute does not change the key. [routeId] is used only when
+ * there is no destination. An empty result is not recorded in the route set.
  */
 object RouteKey {
-    fun of(destinationName: String?, routeId: String?): String {
-        val name = destinationName?.trim().orEmpty()
-        val route = routeId?.trim().orEmpty()
-        if (name.isEmpty() && route.isEmpty()) return ""
-        return "$name+$route"
+    fun of(destination: DestinationSnapshot?, routeId: String?): String {
+        if (destination == null) return routeId?.trim().orEmpty()
+        val name = destination.name.trim()
+        val lat = "%.4f".format(Locale.US, destination.latitude)
+        val lon = "%.4f".format(Locale.US, destination.longitude)
+        return "$name@$lat,$lon"
     }
 }
 

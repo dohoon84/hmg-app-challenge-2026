@@ -89,13 +89,14 @@ class ClipCuePlayerTest {
     }
 
     @Test
-    fun mayDuckIsRequestedBeforePlaybackAndAbandonedAfter() {
+    fun mayDuckIsRequestedAfterTheLeadingSilence() {
         val harness = Harness(ready = true, clipResId = 12)
         harness.player.clips(listOf("vo_fuel_electric"))
-        assertEquals(1, harness.focus.requests)
+        assertEquals(0, harness.focus.requests)
         assertEquals(0, harness.opened.size)
-        assertEquals(0, harness.focus.abandons)
+        assertEquals(FocusedAnnouncer.LEADING_SILENCE_MS, harness.scheduler.delayMs)
         harness.scheduler.fire()
+        assertEquals(1, harness.focus.requests)
         assertEquals(1, harness.clips.single().plays)
         assertEquals(0, harness.focus.abandons)
         harness.clips.single().finish()
@@ -104,14 +105,49 @@ class ClipCuePlayerTest {
 
     @Test
     fun deniedFocusDoesNotPlay() {
-        val harness = Harness(ready = true, clipResId = 12, grant = false)
-        harness.player.clips(listOf("vo_fuel_electric"))
-        harness.player.chime()
-        assertEquals(2, harness.focus.requests)
-        assertEquals(2, harness.focus.abandons)
-        assertEquals(0, harness.tts.warmUps)
-        assertEquals(0, harness.chime.plays)
-        assertEquals(0, harness.opened.size)
+        val clips = Harness(ready = true, clipResId = 12, grant = false)
+        clips.player.clips(listOf("vo_fuel_electric"))
+        assertEquals(0, clips.focus.requests)
+        clips.scheduler.fire()
+        assertEquals(1, clips.focus.requests)
+        assertEquals(1, clips.focus.abandons)
+        assertEquals(0, clips.opened.size)
+        assertEquals(0, clips.chime.plays)
+        val chime = Harness(ready = true, clipResId = 12, grant = false)
+        chime.player.chime()
+        assertEquals(1, chime.focus.requests)
+        assertEquals(1, chime.focus.abandons)
+        assertEquals(0, chime.chime.plays)
+    }
+
+    @Test
+    fun threeSentencesRingTheChimeOnce() {
+        val harness = Harness(ready = false, clipResId = 0)
+        harness.player.clips(listOf("vo_fuel_electric", "vo_charge_port_rear_right", "vo_connector_dc_combo"))
+        harness.scheduler.fire()
+        harness.scheduler.fire()
+        assertEquals(1, harness.chime.plays)
+        harness.chime.finish()
+        harness.scheduler.fire()
+        assertEquals(1, harness.chime.plays)
+        harness.scheduler.fire()
+        assertEquals(1, harness.chime.plays)
+        assertEquals(0, harness.tts.speaks)
+        assertNull(harness.scheduler.pending)
+    }
+
+    @Test
+    fun ttsStopEndsTheBatchAndAbandonsFocus() {
+        val harness = Harness(ready = true, clipResId = 0)
+        harness.player.clips(listOf(VoiceClips.H1, "vo_charge_port_left"))
+        harness.scheduler.fire()
+        assertEquals(1, harness.tts.speaks)
+        assertEquals(1, harness.focus.requests)
+        harness.tts.interrupt()
+        assertEquals(1, harness.focus.abandons)
+        harness.tts.complete()
+        harness.scheduler.fire()
+        assertEquals(1, harness.tts.speaks)
         assertNull(harness.scheduler.pending)
     }
 
@@ -259,6 +295,7 @@ class ClipCuePlayerTest {
         private var speaking = false
         private var failed = false
         private var onDone: (() -> Unit)? = null
+        private var onStopped: (() -> Unit)? = null
         private val readyListeners = mutableListOf<() -> Unit>()
 
         override fun warmUp() {
@@ -297,6 +334,14 @@ class ClipCuePlayerTest {
             }
             speaking = true
             this.onDone = onDone
+            this.onStopped = onStop
+        }
+
+        fun interrupt() {
+            val callback = onStopped
+            onStopped = null
+            speaking = false
+            callback?.invoke()
         }
 
         override fun stop() {
@@ -306,6 +351,7 @@ class ClipCuePlayerTest {
             speaking = false
             failed = false
             onDone = null
+            onStopped = null
         }
 
         override fun shutdown() {

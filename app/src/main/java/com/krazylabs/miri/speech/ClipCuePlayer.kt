@@ -16,9 +16,11 @@ import java.util.concurrent.atomic.AtomicBoolean
  * still plays. The turn-signal prompt uses [chime] only, one ring per call.
  *
  * [SpeechFocus.requestMayDuck] asks for
- * [android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK] before any
- * clip, speech, or chime, and [SpeechFocus.abandon] runs when the batch ends
- * or [stop] runs. Any focus loss stops the clip and TTS.
+ * [android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK] after the
+ * leading silence, at the first audible step. A turn-signal [chime] has no
+ * silence, so it requests immediately before the chime. [SpeechFocus.abandon]
+ * runs when the batch ends, TTS reports stop, or [stop] runs. Any focus loss
+ * stops the clip and TTS. TTS [SpeechEngine.speak]'s onStop ends the batch too.
  */
 class ClipCuePlayer(
     private val chime: ChimePlayer,
@@ -74,7 +76,6 @@ class ClipCuePlayer(
         stop()
         batchChimed = false
         val gen = generation
-        if (!acquire(gen)) return
         val steps = ArrayList<Step>(keys.size)
         for (key in keys) {
             val id = clipId(key)
@@ -88,6 +89,7 @@ class ClipCuePlayer(
             }
         }
         if (steps.isEmpty()) {
+            if (!acquire(gen)) return
             chime.play { release(gen) }
             return
         }
@@ -147,6 +149,7 @@ class ClipCuePlayer(
         val delay = if (leading) FocusedAnnouncer.LEADING_SILENCE_MS else GAP_MS
         ticket = scheduler.post(delay) {
             if (gen != generation) return@post
+            if (!holdingFocus && !acquire(gen)) return@post
             val waited = waitedMs + delay
             when (val step = steps[index]) {
                 is Step.Clip -> {
@@ -213,7 +216,9 @@ class ClipCuePlayer(
                 onError = {
                     if (gen == generation) ringOnce(gen) { onFinished() }
                 },
-                onStop = { },
+                onStop = {
+                    if (gen == generation) stop()
+                },
             )
         } catch (error: Throwable) {
             tts.stop()

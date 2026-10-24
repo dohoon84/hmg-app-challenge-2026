@@ -17,7 +17,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.widthIn
+import com.krazylabs.miri.BuildConfig
 import com.krazylabs.miri.mvp.ScenarioOverrides
+import com.krazylabs.miri.speech.SpeechUsage
 
 @Composable
 fun ScenarioPanel(
@@ -86,7 +88,23 @@ fun ScenarioPanel(
                 Text("톨 2 · 고속 1")
             }
         }
+        val guidance = when (overrides.speechUsage) {
+            SpeechUsage.NAVIGATION_GUIDANCE -> true
+            SpeechUsage.SONIFICATION -> false
+            else -> BuildConfig.SPEECH_USAGE == SpeechUsage.NAVIGATION_GUIDANCE
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = {
+                onChange(
+                    overrides.copy(
+                        speechUsage = if (guidance) {
+                            SpeechUsage.SONIFICATION
+                        } else {
+                            SpeechUsage.NAVIGATION_GUIDANCE
+                        },
+                    ),
+                )
+            }) { Text(if (guidance) "음성: 내비 안내" else "음성: 효과음") }
             Button(onClick = { onChange(overrides.copy(armNewRental = true)) }) { Text("새 대여") }
             TextButton(onClick = {
                 onChange(overrides.copy(lightsUseDoorStandIn = !overrides.lightsUseDoorStandIn))

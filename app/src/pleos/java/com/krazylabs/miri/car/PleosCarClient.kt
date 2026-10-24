@@ -2,7 +2,6 @@ package com.krazylabs.miri.car
 
 import android.car.Car
 import android.car.VehiclePropertyIds
-import com.krazylabs.miri.BuildConfig
 import android.car.drivingstate.CarUxRestrictions
 import android.car.drivingstate.CarUxRestrictionsManager
 import android.car.hardware.CarPropertyValue
@@ -81,7 +80,6 @@ class PleosCarClient internal constructor(
     private var restrictionMask = 0
     private var maxRestrictedStringLength = 0
     private var gearOverride: com.krazylabs.miri.domain.GearPosition? = null
-    private var debugCar: Car? = null
 
     private val portListener = object : PortListener {
         override fun onChange(propertyId: Int, value: Any?) {
@@ -135,7 +133,7 @@ class PleosCarClient internal constructor(
         }
 
         override fun attachCar(car: Car) {
-            debugCar = car
+            ConnectorDebug.attach(car)
         }
     }
 
@@ -250,13 +248,7 @@ class PleosCarClient internal constructor(
             evPort = readInt(port, VehiclePropertyIds.INFO_EV_PORT_LOCATION),
             connector = connector,
         )
-        if (BuildConfig.DEBUG) {
-            try {
-                ConnectorProbe.log(debugCar, connector)
-            } catch (error: Throwable) {
-                // The identity read still stands when the diagnostic line fails.
-            }
-        }
+        ConnectorDebug.log(connector)
     }
 
     /**
@@ -266,12 +258,9 @@ class PleosCarClient internal constructor(
      */
     fun debugProbeConnectors(): String? {
         checkMainThread()
-        if (!BuildConfig.DEBUG) return null
         val port = propertyPort ?: return null
-        return try {
-            ConnectorProbe.log(debugCar, readInts(port, VehiclePropertyIds.INFO_EV_CONNECTOR_TYPE))
-        } catch (error: Throwable) {
-            null
+        return ConnectorDebug.probe {
+            readInts(port, VehiclePropertyIds.INFO_EV_CONNECTOR_TYPE)
         }
     }
 
@@ -324,7 +313,7 @@ class PleosCarClient internal constructor(
     }
 
     private fun disconnect() {
-        debugCar = null
+        ConnectorDebug.clear()
         // Bump the generation before releasing so a listener re-entered from disconnect is stale.
         connectGen.incrementAndGet()
         unregisterManagers()

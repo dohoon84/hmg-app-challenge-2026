@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.krazylabs.miri.BuildConfig
+import com.krazylabs.miri.mvp.CardVoiceGate
 import com.krazylabs.miri.domain.GearPosition
 import com.krazylabs.miri.domain.PlaceRequest
 import com.krazylabs.miri.domain.TripEstimate
@@ -44,6 +45,7 @@ import com.krazylabs.miri.speech.SpeechEngine
 import com.krazylabs.miri.speech.SpeechFocus
 import com.krazylabs.miri.speech.SpeechHalt
 import com.krazylabs.miri.speech.SpeechScheduler
+import com.krazylabs.miri.speech.SpeechUsage
 import com.krazylabs.miri.vehicle.VehicleRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -101,6 +103,7 @@ class MiriViewModel @Inject constructor(
     private val player = ClipCuePlayer(context, chime, scheduler, tts, focus)
     private val speechFocus = focus
     private val speechHalt = SpeechHalt()
+    private val cardVoice = CardVoiceGate()
     private var ticker: Job? = null
     private val driveCue = DriveCueEngine()
     private val form = ReturnForm()
@@ -250,6 +253,7 @@ class MiriViewModel @Inject constructor(
         val now = System.currentTimeMillis()
         if (!edgesOpen && edgesAtMs != 0L && now >= edgesAtMs) edgesOpen = true
         val scenario = scenarioInput.overrides.value
+        SpeechUsage.apply(scenario.speechUsage.ifBlank { BuildConfig.SPEECH_USAGE })
         val gear = drivingStateRepository.state.value.gear
         val moving = gear == GearPosition.DRIVE || gear == GearPosition.REVERSE
         if (moving && !wasMoving) {
@@ -286,7 +290,7 @@ class MiriViewModel @Inject constructor(
             else -> DestinationRole.OTHER
         }
         val identity = snapshot.identity
-        val routeKey = RouteKey.of(destination?.name, road.routeId)
+        val routeKey = RouteKey.of(destination, road.routeId)
         val navVoice = speechFocus.navigationOrAssistantActive()
         val d2 = D2Rules.offer(identity, role, specAgrees = CarSpec.agrees(identity), routeKey = routeKey)
         val remainMeters = scenario.remainMeters ?: destination?.remainDistance
@@ -386,12 +390,20 @@ class MiriViewModel @Inject constructor(
                 showGuide = scenario.showReturnGuide,
             ),
         )
+        val cardOpen = hostVisible && step.card != null && cue.kind == CueKind.NONE
+        val voice = cardVoice.decide(
+            offered = if (cardOpen) step.voice else VoicePlay.None,
+            cardOpen = cardOpen,
+            moving = moving || !hostVisible,
+            navSpeaking = navVoice,
+            nowMs = now,
+        )
         if (speechHalt.shouldStop(hostVisible, gear, navVoice)) player.stop()
         if (hostVisible) {
             when (cue.kind) {
                 CueKind.CHIME -> player.chime()
                 CueKind.CLIPS -> player.clips(cue.clips)
-                CueKind.NONE -> play(step.voice)
+                CueKind.NONE -> play(voice)
             }
         }
         _ui.value = MiriUi(
