@@ -115,6 +115,8 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // M6 can flip this to NAVIGATION_GUIDANCE. The debug panel overrides it at runtime.
         buildConfigField("String", "SPEECH_USAGE", "\"SONIFICATION\"")
+        // F3 '반납 장소로 안내'. Debug overrides this to true. Release stays false.
+        buildConfigField("boolean", "RETURN_GUIDANCE", "false")
     }
 
     // AAOS Car API (GEAR_SELECTION, CarUxRestrictions, INFO_* identity).
@@ -176,6 +178,9 @@ android {
     }
 
     buildTypes {
+        debug {
+            buildConfigField("boolean", "RETURN_GUIDANCE", "true")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
@@ -385,7 +390,25 @@ tasks.register("checkPleosReleaseContents") {
         if (logHit != null) {
             throw GradleException("release sources log a bookmark field: $logHit")
         }
+        val guidance = pleosReleaseReturnGuidance()
+        if (guidance != "false") {
+            throw GradleException("pleos release RETURN_GUIDANCE must be false, was $guidance")
+        }
     }
+}
+
+/** The flag packaged into the pleos release APK. Debug sets the same field to true. */
+fun Project.pleosReleaseReturnGuidance(): String {
+    val buildConfig = layout.buildDirectory.file(
+        "generated/source/buildConfig/pleos/release/com/krazylabs/miri/BuildConfig.java",
+    ).get().asFile
+    if (!buildConfig.isFile) {
+        throw GradleException("pleos release BuildConfig not found at $buildConfig")
+    }
+    val match = Regex("""boolean\s+RETURN_GUIDANCE\s*=\s*(true|false)""")
+        .find(buildConfig.readText())
+        ?: throw GradleException("pleos release BuildConfig has no RETURN_GUIDANCE")
+    return match.groupValues[1]
 }
 
 /** A Log call in main, pleos, or release must not print bookmark coordinates or names. */

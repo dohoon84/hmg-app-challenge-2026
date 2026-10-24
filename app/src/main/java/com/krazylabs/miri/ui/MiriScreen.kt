@@ -97,7 +97,12 @@ fun MiriRoute(
             )
             MiriPane.D1 -> D1RoadScreen(ui.card, dark, onDone = viewModel::dismissCard)
             MiriPane.D2 -> D2ChargeScreen(ui.card, dark)
-            MiriPane.F3 -> F3ReturnScreen(ui.card, dark, onGuide = viewModel::requestReturnGuide)
+            MiriPane.F3 -> F3ReturnScreen(
+                ui.card,
+                dark,
+                onGuide = viewModel::requestReturnGuide,
+                guideNote = ui.guideNote,
+            )
             MiriPane.CHECK -> CheckPane(ui.card, dark)
         }
         if (ui.showScenarioPanel && demoOpen) {

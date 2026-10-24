@@ -24,6 +24,7 @@ import com.krazylabs.miri.R
 import com.krazylabs.miri.mvp.CheckItem
 import com.krazylabs.miri.mvp.CheckKind
 import com.krazylabs.miri.mvp.CheckRules
+import com.krazylabs.miri.mvp.ReturnGuidanceFeature
 import com.krazylabs.miri.ui.ShownCard
 import com.krazylabs.miri.ui.theme.IviTheme
 
@@ -56,6 +57,8 @@ fun F3ReturnScreen(
     onGuide: () -> Unit = {},
     onDone: () -> Unit = {},
     model: F3Model? = null,
+    guideNote: String = "",
+    showReturnGuide: Boolean = ReturnGuidanceFeature.visible(),
 ) {
     val colors = IviTheme.colors
     val face = model ?: f3From(card)
@@ -90,7 +93,18 @@ fun F3ReturnScreen(
             SpecText(face.rightValue.orEmpty(), 1180f, 656f, MiriType.titleMediumStrong(), colors.frameInk)
         }
         SpecButton("다 봤어요", 880f, 1062f, 352f, kind = SpecButtonKind.Point, onClick = onDone)
-        SpecButton("반납 장소로 안내", 1256f, 1062f, 378f, kind = SpecButtonKind.Dashed, onClick = onGuide)
+        if (showReturnGuide) {
+            if (guideNote.isNotBlank()) {
+                SpecText(
+                    guideNote, 1256f, 990f, MiriType.bodySmallNormal(), colors.frameTertiary,
+                    w = 378f, h = 56f, maxLines = 2,
+                )
+            }
+            SpecButton(
+                "반납 장소로 안내", 1256f, 1062f, 378f,
+                kind = SpecButtonKind.Dashed, onClick = onGuide,
+            )
+        }
     }
 }
 

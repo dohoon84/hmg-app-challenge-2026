@@ -30,6 +30,7 @@ import com.krazylabs.miri.mvp.F3Face
 import com.krazylabs.miri.mvp.F3Rules
 import com.krazylabs.miri.mvp.MiriPane
 import com.krazylabs.miri.mvp.RearDoorNote
+import com.krazylabs.miri.mvp.ReturnGuidanceFeature
 import com.krazylabs.miri.mvp.RentalArm
 import com.krazylabs.miri.mvp.RouteKey
 import com.krazylabs.miri.mvp.NearbyPlace
@@ -111,6 +112,7 @@ data class MiriUi(
     val demoCaption: String = "",
     val demoCaptions: Boolean = false,
     val demoPlaying: Boolean = false,
+    val guideNote: String = "",
 )
 
 @HiltViewModel
@@ -147,6 +149,7 @@ class MiriViewModel @Inject constructor(
     private var forceIntake = false
     private var origin = readOrigin()
     private var placeSheetOpen = false
+    private var guideNote = ""
     private var edgesOpen = true
     private var edgesAtMs = 0L
     private var hostVisible = true
@@ -330,7 +333,12 @@ class MiriViewModel @Inject constructor(
 
     fun requestDemoRoad() = demo.requestDemoRoad()
 
-    fun requestReturnGuide() = demo.requestReturnGuide(returnPlace())
+    fun requestReturnGuide() {
+        guideNote = ReturnGuidanceFeature.offer(returnPlace()) { place ->
+            demo.requestReturnGuide(place)
+        }
+        publish()
+    }
 
     fun dismissCard() {
         session.dismissD1()
@@ -547,6 +555,7 @@ class MiriViewModel @Inject constructor(
             demoCaption = playback.caption.value,
             demoCaptions = playback.captionsOn.value,
             demoPlaying = playback.running.value,
+            guideNote = guideNote,
         )
     }
 
