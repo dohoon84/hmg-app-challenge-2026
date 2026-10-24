@@ -98,6 +98,14 @@ data class IviColors(
      */
     val informativeNegative: Color,
     val statusNeutral: Color,
+    /** Point color. Light is #00796D. Dark is the mockup teal. Never #FF8A00 in light text. */
+    val accent: Color,
+    val onAccent: Color,
+    val accentContainer: Color,
+    /** App-area background measured from the 1682×1210 frames. */
+    val canvas: Color,
+    val track: Color,
+    val outline: Color,
 )
 
 private const val TEXT_SECONDARY = 0.84f
@@ -127,6 +135,12 @@ fun iviColors(context: Context): IviColors {
         onDrivingAlert = color(R.color.ivi_on_driving_alert),
         informativeNegative = color(R.color.ivi_informative_negative),
         statusNeutral = text.copy(alpha = TEXT_TERTIARY),
+        accent = color(R.color.ivi_accent),
+        onAccent = color(R.color.ivi_on_accent),
+        accentContainer = color(R.color.ivi_accent_container),
+        canvas = color(R.color.ivi_canvas),
+        track = color(R.color.ivi_track),
+        outline = color(R.color.ivi_outline),
     )
 }
 

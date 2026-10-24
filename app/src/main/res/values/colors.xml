@@ -25,4 +25,11 @@
     <color name="ivi_driving_alert_container">@color/ivi_driving_alert</color>
     <!-- Text on the driving-alert fill. -->
     <color name="ivi_on_driving_alert">#121417</color>
+    <!-- App canvas and accent. Light accent is #00796D. #FF8A00 is never a light text color. -->
+    <color name="ivi_accent">#00796D</color>
+    <color name="ivi_on_accent">#FFFFFF</color>
+    <color name="ivi_accent_container">#DDF6F2</color>
+    <color name="ivi_canvas">#F7F8FA</color>
+    <color name="ivi_track">#EDEEF2</color>
+    <color name="ivi_outline">#C5C8CE</color>
 </resources>

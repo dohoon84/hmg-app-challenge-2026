@@ -65,9 +65,16 @@ data class ShownCard(
     val note: String? = null,
     val portName: String? = null,
     val showGuide: Boolean = false,
+    /** SOC or fuel percent for the D2 hero. Null when the car has not reported one. */
+    val chargePercent: Int? = null,
 )
 
-data class PlaceChip(val id: String, val label: String)
+data class PlaceChip(
+    val id: String,
+    val label: String,
+    val caption: String? = null,
+    val distance: String? = null,
+)
 
 data class MiriUi(
     val pane: MiriPane = MiriPane.F1,
@@ -376,7 +383,14 @@ class MiriViewModel @Inject constructor(
             draft = form.draft,
             simulator = simulator.enabled,
             lamps = lamps,
-            card = step.card?.toShown(),
+            card = step.card?.toShown()?.let { face ->
+                if (step.pane == MiriPane.D2) {
+                    val percent = if (identity.evOnly) snapshot.socPercent else snapshot.fuelPercent
+                    face.copy(chargePercent = percent)
+                } else {
+                    face
+                }
+            },
             places = placeChips(),
             scenario = scenarioInput.overrides.value,
             showScenarioPanel = BuildConfig.DEBUG,

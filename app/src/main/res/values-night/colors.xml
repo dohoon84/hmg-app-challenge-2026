@@ -18,4 +18,10 @@
     <color name="ivi_driving_alert_container">@color/ivi_surface_primary</color>
     <!-- Dark warning text stays the official alert orange. -->
     <color name="ivi_on_driving_alert">@color/ivi_driving_alert</color>
+    <color name="ivi_accent">#2DD4BF</color>
+    <color name="ivi_on_accent">#121417</color>
+    <color name="ivi_accent_container">#0F3A36</color>
+    <color name="ivi_canvas">#1D1E21</color>
+    <color name="ivi_track">#313236</color>
+    <color name="ivi_outline">#686A72</color>
 </resources>
