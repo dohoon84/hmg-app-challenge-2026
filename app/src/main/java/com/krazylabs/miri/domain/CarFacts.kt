@@ -48,8 +48,8 @@ object CarFacts {
     const val PORT_REAR = 6
 
     /**
-     * [connector] is the CarPropertyManager array (VHAL [ConnectorCodes]).
-     * CCS1 and CCS2 set [CarIdentity.connectorDcCombo]. CHAdeMO, AC, Tesla, and unknown do not.
+     * [connector] is the raw CarPropertyManager array ([ConnectorCodes.DC_COMBO] is {5, 6}).
+     * CCS1 and CCS2 set [CarIdentity.connectorDcCombo]. CHAdeMO (4), AC (1–3), Tesla (7), and unknown do not.
      */
     fun from(
         fuelTypes: IntArray,
@@ -60,7 +60,7 @@ object CarFacts {
         fuels = fuelTypes.toList().mapNotNull(::fuel).distinct(),
         fuelDoor = fuelDoor?.let(::port),
         evPort = evPort?.let(::port),
-        connectorDcCombo = ConnectorCodes.dcCombo(ConnectorCodes.fromVhal(connector)),
+        connectorDcCombo = ConnectorCodes.dcCombo(connector),
     )
 
     fun fuel(code: Int): FuelKind? = when (code) {

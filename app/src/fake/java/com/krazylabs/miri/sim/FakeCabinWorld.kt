@@ -159,7 +159,7 @@ class FakeCabinWorld @Inject constructor() : CabinSimulator {
                 fuelTypes = intArrayOf(CarFacts.FUEL_ELECTRIC),
                 fuelDoor = null,
                 evPort = CarFacts.PORT_REAR_RIGHT,
-                connector = intArrayOf(ConnectorCodes.VHAL_IEC_TYPE_1_CCS_DC),
+                connector = intArrayOf(ConnectorCodes.IEC_TYPE_1_CCS_DC),
             ),
             seats = seatSupport(
                 occupancyAreas = setOf(SeatId.DRIVER, SeatId.PASSENGER),
