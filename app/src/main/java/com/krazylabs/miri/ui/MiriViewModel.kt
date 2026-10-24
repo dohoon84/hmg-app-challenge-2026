@@ -32,10 +32,13 @@ import com.krazylabs.miri.mvp.RearDoorNote
 import com.krazylabs.miri.mvp.RentalArm
 import com.krazylabs.miri.mvp.RouteKey
 import com.krazylabs.miri.mvp.NearbyPlace
+import com.krazylabs.miri.mvp.PLACE_DEST_ID
+import com.krazylabs.miri.mvp.RentalOrigin
 import com.krazylabs.miri.mvp.ReturnForm
 import com.krazylabs.miri.mvp.ScenarioInput
 import com.krazylabs.miri.mvp.assembleReturnPlaces
 import com.krazylabs.miri.mvp.intakeVisible
+import com.krazylabs.miri.mvp.originRow
 import com.krazylabs.miri.mvp.toPlaceRequest
 import com.krazylabs.miri.mvp.ScenarioOverrides
 import com.krazylabs.miri.mvp.TodayRoad
@@ -93,9 +96,13 @@ data class MiriUi(
     val simulator: Boolean = false,
     val lamps: TurnLamps = TurnLamps(),
     val card: ShownCard? = null,
-    val places: List<PlaceChip> = listOf(PlaceChip(F2Draft.PLACE_PICKUP, F2Draft.PICKUP_LABEL)),
+    val places: List<PlaceChip> = listOf(PlaceChip(F2Draft.PLACE_PICKUP, F2Draft.PICKUP_LABEL, caption = "위치 확인 중")),
     val scenario: ScenarioOverrides = ScenarioOverrides(),
     val showScenarioPanel: Boolean = false,
+    val placeSearchEnabled: Boolean = true,
+    val placeSheetOpen: Boolean = false,
+    val bookmarks: List<PlaceChip> = emptyList(),
+    val sheetRecents: List<PlaceChip> = emptyList(),
 )
 
 @HiltViewModel
@@ -128,6 +135,8 @@ class MiriViewModel @Inject constructor(
     private var ownCar = prefs.getBoolean(KEY_OWN, false)
     private var kind = prefs.getString(KEY_KIND, null)
     private var forceIntake = false
+    private var origin = readOrigin()
+    private var placeSheetOpen = false
     private var edgesOpen = true
     private var edgesAtMs = 0L
     private var hostVisible = true
@@ -157,6 +166,7 @@ class MiriViewModel @Inject constructor(
                 today,
             )
         }
+        if (origin.pending) navigationRepository.requestCurrentLocation()
         armTicker()
     }
 
@@ -213,7 +223,7 @@ class MiriViewModel @Inject constructor(
             .putString(KEY_KIND, kind)
             .remove(KEY_MINUTE)
             .apply()
-        rememberOrigin()
+        beginOriginRequest()
         publish()
     }
 
@@ -239,6 +249,20 @@ class MiriViewModel @Inject constructor(
 
     fun selectPlace(placeId: String) {
         form.selectPlace(placeId)
+        placeSheetOpen = false
+        publish()
+    }
+
+    fun openPlaceSheet() {
+        if (drivingStateRepository.state.value.gear != GearPosition.PARK) return
+        form.closeDateSheet()
+        placeSheetOpen = true
+        navigationRepository.refreshBookmarks()
+        publish()
+    }
+
+    fun closePlaceSheet() {
+        placeSheetOpen = false
         publish()
     }
 
@@ -279,6 +303,11 @@ class MiriViewModel @Inject constructor(
 
     fun requestReturnGuide() = demo.requestReturnGuide(returnPlace())
 
+    fun dismissCard() {
+        session.dismissD1()
+        publish()
+    }
+
     private fun publish() {
         val now = System.currentTimeMillis()
         if (!edgesOpen && edgesAtMs != 0L && now >= edgesAtMs) edgesOpen = true
@@ -309,9 +338,13 @@ class MiriViewModel @Inject constructor(
             kind = null
             form.reset()
             forceIntake = true
+            placeSheetOpen = false
             prefs.edit().remove(KEY_KIND).remove(KEY_MINUTE).remove(KEY_EPOCH_DAY).remove(KEY_DAY).putBoolean(KEY_OWN, false).apply()
+            beginOriginRequest()
             if (scenario.armNewRental) scenarioInput.update(scenario.copy(armNewRental = false))
         }
+        if (gear != GearPosition.PARK) placeSheetOpen = false
+        syncOrigin()
         val lamps = lampOverride.value ?: snapshot.turnLamps
         val destination = navigationRepository.destination.value
         val road = navigationRepository.road.value
@@ -467,6 +500,10 @@ class MiriViewModel @Inject constructor(
             places = placeChips(),
             scenario = scenarioInput.overrides.value,
             showScenarioPanel = BuildConfig.DEBUG,
+            placeSearchEnabled = gear == GearPosition.PARK,
+            placeSheetOpen = placeSheetOpen,
+            bookmarks = sheetChips(navigationRepository.bookmarks.value),
+            sheetRecents = sheetChips(navigationRepository.recentPlaces.value),
         )
     }
 
@@ -530,49 +567,128 @@ class MiriViewModel @Inject constructor(
 
     private fun returnPlace(): PlaceRequest? {
         val savedId = form.saved?.placeId ?: form.draft.placeId
-        if (savedId != F2Draft.PLACE_PICKUP) {
-            navigationRepository.recentPlaces.value.firstOrNull { it.poiId == savedId || it.name == savedId }
-                ?.let { return it }
-            return demo.demoReturnPlaces().firstOrNull { it.id == savedId || it.name == savedId }
-                ?.toPlaceRequest()
+        if (savedId == F2Draft.PLACE_PICKUP) {
+            val lat = origin.latitude
+            val lon = origin.longitude
+            if (!origin.located || lat == null || lon == null) return null
+            return PlaceRequest(lat, lon, F2Draft.PICKUP_LABEL, origin.address)
         }
-        val lat = prefs.getString(KEY_LAT, null)?.toDoubleOrNull()
-        val lon = prefs.getString(KEY_LON, null)?.toDoubleOrNull()
-        if (lat != null && lon != null) return PlaceRequest(lat, lon, F2Draft.PICKUP_LABEL)
-        demo.demoReturnPlaces().firstOrNull { it.id == F2Draft.PLACE_PICKUP }?.let { return it.toPlaceRequest() }
-        return navigationRepository.here.value?.let {
-            PlaceRequest(it.latitude, it.longitude, F2Draft.PICKUP_LABEL, it.address)
+        if (savedId == PLACE_DEST_ID) {
+            val destination = navigationRepository.destination.value ?: return null
+            val name = destination.name.ifBlank { destination.address }.ifBlank { "목적지" }
+            return PlaceRequest(destination.latitude, destination.longitude, name, destination.address, poiId = PLACE_DEST_ID)
         }
+        knownPlaces().firstOrNull { it.poiId == savedId || it.name == savedId }?.let { return it }
+        return demo.demoReturnPlaces().firstOrNull { it.id == savedId }?.toPlaceRequest()
     }
 
-    private fun rememberOrigin() {
+    private fun knownPlaces(): List<PlaceRequest> =
+        navigationRepository.recentPlaces.value + navigationRepository.bookmarks.value
+
+    private fun beginOriginRequest() {
+        origin = origin.begin(navigationRepository.hereSerial.value)
+        prefs.edit()
+            .remove(KEY_LAT)
+            .remove(KEY_LON)
+            .remove(KEY_ADDR)
+            .putBoolean(KEY_ORIGIN_WAIT, true)
+            .apply()
+        navigationRepository.requestCurrentLocation()
+        syncOrigin()
+    }
+
+    private fun syncOrigin() {
+        if (!origin.pending) return
         val here = navigationRepository.here.value ?: return
+        val next = origin.arrive(
+            navigationRepository.hereSerial.value,
+            here.latitude,
+            here.longitude,
+            here.address,
+        )
+        if (next.pending) return
+        origin = next
         prefs.edit()
             .putString(KEY_LAT, here.latitude.toString())
             .putString(KEY_LON, here.longitude.toString())
+            .putString(KEY_ADDR, here.address)
+            .putBoolean(KEY_ORIGIN_WAIT, false)
             .apply()
+    }
+
+    private fun readOrigin(): RentalOrigin {
+        val lat = prefs.getString(KEY_LAT, null)?.toDoubleOrNull()
+        val lon = prefs.getString(KEY_LON, null)?.toDoubleOrNull()
+        val pending = prefs.getBoolean(KEY_ORIGIN_WAIT, false)
+        return RentalOrigin(
+            latitude = lat,
+            longitude = lon,
+            address = prefs.getString(KEY_ADDR, "").orEmpty(),
+            pending = pending,
+            seenSerial = if (pending) navigationRepository.hereSerial.value else 0L,
+        )
     }
 
     private fun placeChips(): List<PlaceChip> {
         val here = navigationRepository.here.value
-        val nearby = navigationRepository.recentPlaces.value.map { place ->
+        val destination = navigationRepository.destination.value?.let { place ->
+            val name = place.name.ifBlank { place.address }.ifBlank { return@let null }
+            NearbyPlace(
+                id = PLACE_DEST_ID,
+                name = name,
+                caption = if (place.name.isNotBlank()) place.address else "",
+                latitude = place.latitude,
+                longitude = place.longitude,
+            )
+        }
+        val recents = navigationRepository.recentPlaces.value.mapNotNull { place ->
+            val name = place.name.ifBlank { place.address }.ifBlank { return@mapNotNull null }
             NearbyPlace(
                 id = place.poiId.ifBlank { place.name },
-                name = place.name,
+                name = name,
                 caption = place.address.ifBlank { "최근 목적지" },
                 latitude = place.latitude,
                 longitude = place.longitude,
             )
         }
+        val selectedId = form.saved?.placeId ?: form.draft.placeId
+        val selected = (navigationRepository.bookmarks.value + navigationRepository.recentPlaces.value)
+            .firstOrNull { it.poiId == selectedId }
+            ?.let { place ->
+                val name = place.name.ifBlank { place.address }.ifBlank { return@let null }
+                NearbyPlace(
+                    id = place.poiId.ifBlank { place.name },
+                    name = name,
+                    caption = place.address,
+                    latitude = place.latitude,
+                    longitude = place.longitude,
+                )
+            }
         return assembleReturnPlaces(
-            origin = null,
-            nearby = nearby,
+            origin = originRow(origin, here?.latitude, here?.longitude),
+            destination = destination,
+            recents = recents,
+            selected = selected,
             hereLatitude = here?.latitude,
             hereLongitude = here?.longitude,
             demo = demo.demoReturnPlaces(),
         ).map { place ->
-            PlaceChip(place.id, place.name, caption = place.caption, distance = place.distance)
+            PlaceChip(
+                place.id,
+                place.name,
+                caption = place.caption.takeIf { it.isNotBlank() },
+                distance = place.distance,
+            )
         }
+    }
+
+    private fun sheetChips(places: List<PlaceRequest>): List<PlaceChip> = places.mapNotNull { place ->
+        val label = place.name.ifBlank { place.address }.ifBlank { return@mapNotNull null }
+        PlaceChip(
+            id = place.poiId.ifBlank { place.name },
+            label = label,
+            caption = place.address.takeIf { it.isNotBlank() && it != label },
+        )
     }
 
     private fun d1Lines(tolls: Int, highways: Int): List<String> {
@@ -603,6 +719,8 @@ class MiriViewModel @Inject constructor(
         const val KEY_PLACE = "place"
         const val KEY_LAT = "origin_lat"
         const val KEY_LON = "origin_lon"
+        const val KEY_ADDR = "origin_address"
+        const val KEY_ORIGIN_WAIT = "origin_wait"
         const val KIND_RENTAL = "rental"
         const val KIND_SHARE = "share"
         const val SETTLE_MS = 2_500L

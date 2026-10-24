@@ -420,6 +420,32 @@ class MvpPhaseTest {
     }
 
     @Test
+    fun newRentalOnTheFinishedCheckReturnsToF1() {
+        val session = CardSession()
+        val door = baseInput(GearPosition.PARK).copy(
+            kind = "rental",
+            returnSaved = true,
+            checkItems = listOf("오른쪽 뒷문이 열려 있어요."),
+        )
+        assertEquals(MiriPane.CHECK, session.step(door).pane)
+        val done = session.step(door.copy(checkItems = emptyList()))
+        assertEquals(listOf(CheckRules.DONE), done.card?.lines)
+        assertEquals(MiriPane.CHECK, session.step(door.copy(checkItems = emptyList(), nowMs = 1_000)).pane)
+        session.resetRental()
+        assertEquals(MiriPane.F1, session.step(baseInput(GearPosition.PARK, showIntake = true)).pane)
+    }
+
+    @Test
+    fun destinationArrivingAfterResumeStillArmsD2() {
+        val session = CardSession()
+        val parked = baseInput(GearPosition.PARK).copy(kind = "rental", returnSaved = true)
+        assertEquals(MiriPane.ICON, session.step(parked.copy(visible = false)).pane)
+        session.onResume()
+        val charging = D2Rules.offer(evRearRight(true), DestinationRole.CHARGING, routeKey = "charge-late")!!
+        assertEquals(MiriPane.D2, session.step(parked.copy(d2 = charging, nowMs = 1_000)).pane)
+    }
+
+    @Test
     fun lateDestinationInTheSameParkDoesNotShowD2Again() {
         val session = CardSession()
         val route = D2Rules.offer(evRearRight(true), DestinationRole.CHARGING, routeKey = "route-1")!!

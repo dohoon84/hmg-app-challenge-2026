@@ -5,12 +5,14 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -22,6 +24,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import com.krazylabs.miri.R
 import com.krazylabs.miri.mvp.F2Draft
+import com.krazylabs.miri.mvp.PLACE_SEARCH
+import com.krazylabs.miri.mvp.PLACE_SEARCH_EMPTY
 import com.krazylabs.miri.ui.PlaceChip
 import com.krazylabs.miri.ui.theme.IviTheme
 
@@ -37,6 +41,12 @@ fun F2ReturnScreen(
     onDone: () -> Unit,
     onCloseDates: () -> Unit = {},
     sheetPressedOffset: Int? = null,
+    searchEnabled: Boolean = true,
+    placeSheetOpen: Boolean = false,
+    bookmarks: List<PlaceChip> = emptyList(),
+    sheetRecents: List<PlaceChip> = emptyList(),
+    onOpenSearch: () -> Unit = {},
+    onCloseSearch: () -> Unit = {},
 ) {
     val colors = IviTheme.colors
     val today = clock.today()
@@ -68,8 +78,13 @@ fun F2ReturnScreen(
                 Box(Modifier.figma(880f, 474f + index * 168f, 754f, 1f).background(colors.divider))
             }
         }
-        SpecIcon(R.drawable.miri_ic_annotation, 880f, 840f, 32f, 32f, colors.frameTertiary)
-        SpecText("장소를 모르면 시각만 저장해요.", 928f, 840f, MiriType.bodySmallNormal(), colors.frameTertiary)
+        val searchY = 312f + places.size * 168f
+        FinderRow(searchY, searchEnabled, onOpenSearch)
+        val hintY = (searchY + 168f).coerceAtLeast(840f)
+        if (hintY <= 1120f) {
+            SpecIcon(R.drawable.miri_ic_annotation, 880f, hintY, 32f, 32f, colors.frameTertiary)
+            SpecText("장소를 모르면 시각만 저장해요.", 928f, hintY, MiriType.bodySmallNormal(), colors.frameTertiary)
+        }
         SpecButton(
             label = "다 됐어요",
             x = 48f,
@@ -88,6 +103,9 @@ fun F2ReturnScreen(
                 onPick = onDate,
                 onClose = onCloseDates,
             )
+        }
+        if (placeSheetOpen) {
+            PlaceSheet(bookmarks, sheetRecents, onPlace, onCloseSearch)
         }
     }
 }
@@ -230,6 +248,80 @@ private fun BoxScope.PlaceRow(place: PlaceChip, y: Float, selected: Boolean, onC
             Box(Modifier.figma(520f, 48f, 250f, 52f), contentAlignment = Alignment.CenterEnd) {
                 DistanceRun(distance, emphasize = selected)
             }
+        }
+    }
+}
+
+@Composable
+private fun BoxScope.FinderRow(y: Float, enabled: Boolean, onClick: () -> Unit) {
+    val colors = IviTheme.colors
+    Box(
+        Modifier
+            .figma(864f, y, 786f, 156f)
+            .clip(RoundedCornerShape(px(24)))
+            .quietClick(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        SpecText(
+            PLACE_SEARCH,
+            16f,
+            56f,
+            MiriType.titleMediumStrong(),
+            if (enabled) colors.frameInk else colors.frameTertiary,
+        )
+    }
+}
+
+@Composable
+private fun BoxScope.PlaceSheet(
+    bookmarks: List<PlaceChip>,
+    recents: List<PlaceChip>,
+    onPlace: (String) -> Unit,
+    onClose: () -> Unit,
+) {
+    val colors = IviTheme.colors
+    Box(Modifier.figma(0, 0, 1682, 1210).background(colors.overlay).quietClick(onClick = onClose))
+    Box(
+        Modifier
+            .figma(0f, 600f, 1682f, 610f)
+            .clip(RoundedCornerShape(topStart = px(40), topEnd = px(40)))
+            .background(colors.popup),
+    ) {
+        SpecText(PLACE_SEARCH, 48f, 56f, MiriType.titleLargeNormal(), colors.frameInk)
+        Column(
+            Modifier
+                .offset(px(48f), px(140f))
+                .size(px(1586f), px(400f))
+                .verticalScroll(rememberScrollState()),
+        ) {
+            if (bookmarks.isEmpty() && recents.isEmpty()) {
+                Text(PLACE_SEARCH_EMPTY, style = MiriType.bodyLargeNormal(), color = colors.frameSecondary)
+            } else {
+                if (bookmarks.isNotEmpty()) {
+                    Text("즐겨찾기", style = MiriType.labelMedium(), color = colors.frameTertiary)
+                    bookmarks.forEach { place -> SheetPlace(place) { onPlace(place.id) } }
+                }
+                if (recents.isNotEmpty()) {
+                    Text("최근 목적지", style = MiriType.labelMedium(), color = colors.frameTertiary, modifier = Modifier.padding(top = px(24)))
+                    recents.forEach { place -> SheetPlace(place) { onPlace(place.id) } }
+                }
+            }
+        }
+    }
+    SpecButton("닫기", 1414f, 640f, 220f, kind = SpecButtonKind.Filled, onClick = onClose)
+}
+
+@Composable
+private fun SheetPlace(place: PlaceChip, onClick: () -> Unit) {
+    val colors = IviTheme.colors
+    Column(
+        Modifier
+            .padding(top = px(20))
+            .quietClick(onClick = onClick),
+    ) {
+        Text(place.label, style = MiriType.titleMediumStrong(), color = colors.frameInk, maxLines = 1)
+        place.caption?.takeIf { it.isNotBlank() }?.let { caption ->
+            Text(caption, style = MiriType.bodySmallNormal(), color = colors.frameTertiary, maxLines = 1)
         }
     }
 }

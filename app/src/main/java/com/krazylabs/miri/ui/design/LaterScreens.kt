@@ -85,9 +85,7 @@ fun F3ReturnScreen(
             SpecText(face.rightValue.orEmpty(), 1180f, 656f, MiriType.titleMediumStrong(), colors.frameInk)
         }
         SpecButton("다 봤어요", 880f, 1062f, 352f, kind = SpecButtonKind.Point, onClick = onDone)
-        if (card?.showGuide != false) {
-            SpecButton("반납 장소로 안내", 1256f, 1062f, 378f, kind = SpecButtonKind.Dashed, onClick = onGuide)
-        }
+        SpecButton("반납 장소로 안내", 1256f, 1062f, 378f, kind = SpecButtonKind.Dashed, onClick = onGuide)
     }
 }
 

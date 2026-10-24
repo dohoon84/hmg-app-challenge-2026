@@ -2,10 +2,12 @@ package com.krazylabs.miri.ui.design
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -44,7 +46,9 @@ fun D1RoadScreen(card: ShownCard?, dark: Boolean, onDone: () -> Unit = {}) {
         Box(Modifier.figma(880f, 580f, 754f, 1f).background(colors.divider))
         SpecText("이 차에서 다른 점", 880f, 636f, MiriType.labelMedium(), colors.frameTertiary)
         SpecText(note, 880f, 676f, MiriType.titleLargeNormal(), colors.frameInk)
-        SpecButton("다 봤어요", 880f, 1062f, 352f, kind = SpecButtonKind.Point, onClick = onDone)
+        SequenceDots()
+        SpecButton("다음", 880f, 1062f, 352f, kind = SpecButtonKind.Point, onClick = onDone)
+        SpecText("넘기지 않아도 저절로 넘어가요", 1256f, 1100f, MiriType.labelMedium(), colors.frameTertiary)
     }
 }
 
@@ -82,6 +86,29 @@ fun D2ChargeScreen(card: ShownCard?, dark: Boolean, onDone: () -> Unit = {}) {
             Pill(880f, 975.95f, it)
         }
         SpecButton("다 봤어요", 880f, 1062f, 352f, kind = SpecButtonKind.Point, onClick = onDone)
+    }
+}
+
+/** D1 in the rental sequence is page 3 of 4. */
+@Composable
+private fun androidx.compose.foundation.layout.BoxScope.SequenceDots() {
+    val colors = IviTheme.colors
+    Row(
+        Modifier.figma(880f, 1010f, 108f, 12f),
+        horizontalArrangement = Arrangement.spacedBy(px(12)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        repeat(4) { index ->
+            val current = index == 2
+            Box(
+                Modifier
+                    .size(width = px(if (current) 36f else 12f), height = px(12f))
+                    .background(
+                        if (current) colors.accent else colors.frameQuaternary,
+                        RoundedCornerShape(px(6)),
+                    ),
+            )
+        }
     }
 }
 

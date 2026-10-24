@@ -44,7 +44,7 @@ class DebugDemoActions @Inject constructor(
 /** The three F2 rows from the light mockup, with the labels the frame uses. */
 fun debugReturnPlaces(): List<ReturnPlace> = listOf(
     ReturnPlace(
-        id = F2Draft.PLACE_PICKUP,
+        id = "daechi",
         name = "대치동 공영주차장",
         caption = "대여한 곳",
         latitude = 37.4995,

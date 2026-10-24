@@ -110,6 +110,17 @@ class CardSession {
         deferred = null
         deferFromPrior = false
         deferUsed = false
+        completion = false
+        held = null
+        voiceStamp = null
+    }
+
+    /** D1's 다음 closes the card the way the timer does. */
+    fun dismissD1() {
+        if (held != CardId.D1) return
+        spent = true
+        held = null
+        voiceStamp = null
     }
 
     fun f3Shown(): Set<String> = shownF3
@@ -147,6 +158,13 @@ class CardSession {
             spent = false
             held = null
             checkCount = -1
+            voiceStamp = null
+        }
+        // 새 대여 on C2 is the same park with the kind cleared. Leave the
+        // finished check and open F1, as an open F2 already does.
+        if (completion && !input.ownCar && input.showIntake && input.kind == null) {
+            completion = false
+            held = null
             voiceStamp = null
         }
         if (completion) {

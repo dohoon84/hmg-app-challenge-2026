@@ -2,14 +2,17 @@ package com.krazylabs.miri.navi
 
 import ai.pleos.playground.navi.constants.NaviErrorCode
 import ai.pleos.playground.navi.constants.RouteOption
+import ai.pleos.playground.navi.data.BookmarkInfo
 import ai.pleos.playground.navi.data.DestinationArrivedInfo
 import ai.pleos.playground.navi.data.DestinationInfo
 import ai.pleos.playground.navi.data.RouteInfo
+import ai.pleos.playground.navi.data.RouteStartInfo
 import ai.pleos.playground.navi.data.TripInfo
 import ai.pleos.playground.navi.data.TripRequest
 import ai.pleos.playground.navi.helper.NaviHelper
 import ai.pleos.playground.navi.helper.listener.NaviHelperEventListener
 import android.content.Context
+import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.krazylabs.miri.domain.ArrivalSnapshot
 import com.krazylabs.miri.domain.DestinationSnapshot
@@ -18,6 +21,7 @@ import com.krazylabs.miri.domain.PlaceRequest
 import com.krazylabs.miri.domain.TripEstimate
 import com.krazylabs.miri.mvp.TbtGuard
 import com.krazylabs.miri.mvp.countRoad
+import com.krazylabs.miri.mvp.navPlaceId
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -63,8 +67,15 @@ class PleosNavigationRepository @Inject constructor(
     override val chargingStation: StateFlow<Boolean> = _charging
     private val _recents = MutableStateFlow<List<PlaceRequest>>(emptyList())
     override val recentPlaces: StateFlow<List<PlaceRequest>> = _recents
+    private val _bookmarks = MutableStateFlow<List<PlaceRequest>>(emptyList())
+    override val bookmarks: StateFlow<List<PlaceRequest>> = _bookmarks
     private val _here = MutableStateFlow<HereFix?>(null)
     override val here: StateFlow<HereFix?> = _here
+    private val _hereSerial = MutableStateFlow(0L)
+    override val hereSerial: StateFlow<Long> = _hereSerial
+    private val wantLocation = AtomicBoolean(false)
+    /** A resume or reconnect still needs getDestinationInfo after the link is READY. */
+    private val destinationAfterReady = AtomicBoolean(false)
     private val tbt = TbtGuard()
     private var routing = false
 
@@ -127,20 +138,47 @@ class PleosNavigationRepository @Inject constructor(
             _road.update { it.copy(tolls = tolls, highways = highways, routing = routing) }
         }
 
+        override fun onDestinationChanged() {
+            rereadDestination()
+        }
+
+        override fun onRouteStarted(info: RouteStartInfo) {
+            rereadDestination()
+        }
+
         override fun onCurrentLocationInfo(info: ai.pleos.playground.navi.data.CurrentLocationInfo) {
             val id = info.routeId
             _road.update { it.copy(routeId = id) }
             _here.value = HereFix(info.latitude, info.longitude, info.address.orEmpty())
+            _hereSerial.value = _hereSerial.value + 1
+            wantLocation.set(false)
         }
 
         override fun onRecentDestinationInfo(list: List<ai.pleos.playground.navi.data.RecentDestinationInfo>) {
-            _recents.value = list.take(3).map { item ->
+            _recents.value = list.take(RECENT_CAP).map { item ->
+                val name = item.name.orEmpty()
                 PlaceRequest(
                     latitude = item.latitude,
                     longitude = item.longitude,
-                    name = item.name.orEmpty(),
+                    name = name,
                     address = item.address.orEmpty(),
-                    poiId = item.poiId.orEmpty(),
+                    poiId = navPlaceId("recent", item.poiId.orEmpty(), name, item.latitude, item.longitude),
+                    poiSubId = item.poiSubId.orEmpty(),
+                )
+            }
+        }
+
+        override fun onBookmarkInfo(list: List<BookmarkInfo>) {
+            val names = list.map { it.name.orEmpty() }
+            Log.i(NAV_TAG, "bookmarks count=${names.size} names=${names.joinToString(",")}")
+            _bookmarks.value = list.map { item ->
+                val name = item.name.orEmpty()
+                PlaceRequest(
+                    latitude = item.latitude,
+                    longitude = item.longitude,
+                    name = name,
+                    address = item.address.orEmpty(),
+                    poiId = navPlaceId("bookmark", item.poiId.orEmpty(), name, item.latitude, item.longitude),
                     poiSubId = item.poiSubId.orEmpty(),
                 )
             }
@@ -153,6 +191,7 @@ class PleosNavigationRepository @Inject constructor(
 
     override fun start() {
         if (!started.compareAndSet(false, true)) return
+        destinationAfterReady.set(true)
         val created = NaviHelper(appContext)
         helper = created
         _link.value = LinkState.CONNECTING
@@ -163,6 +202,9 @@ class PleosNavigationRepository @Inject constructor(
                     if (!started.get() || helper !== created) return@initialize
                     _link.value = LinkState.READY
                     readDestination(created)
+                    if (destinationAfterReady.getAndSet(false)) readDestination(created)
+                    readLocation(created)
+                    readBookmarks(created)
                 },
                 { error ->
                     if (!started.get() || helper !== created) return@initialize
@@ -251,14 +293,18 @@ class PleosNavigationRepository @Inject constructor(
     }
 
     override fun refreshRoute() {
-        val current = helper ?: return
-        if (_link.value != LinkState.READY) return
+        val current = helper
+        if (current == null || _link.value != LinkState.READY) {
+            destinationAfterReady.set(true)
+            return
+        }
         listOf(
             { current.getRouteStateInfo() },
             { current.getTBTInfo() },
             { current.getDestinationInfo() },
             { current.getCurrentLocationInfo() },
             { current.getRecentDestinationInfo() },
+            { current.getBookmarkInfo() },
         ).forEach { call ->
             try {
                 call()
@@ -268,6 +314,26 @@ class PleosNavigationRepository @Inject constructor(
         }
     }
 
+    override fun requestCurrentLocation() {
+        wantLocation.set(true)
+        val current = helper ?: return
+        readLocation(current)
+    }
+
+    override fun refreshBookmarks() {
+        val current = helper ?: return
+        readBookmarks(current)
+    }
+
+    private fun rereadDestination() {
+        val current = helper
+        if (current == null || !started.get() || _link.value != LinkState.READY) {
+            destinationAfterReady.set(true)
+            return
+        }
+        readDestination(current)
+    }
+
     private fun readDestination(target: NaviHelper) {
         if (!started.get() || helper !== target || _link.value != LinkState.READY) return
         try {
@@ -275,5 +341,28 @@ class PleosNavigationRepository @Inject constructor(
         } catch (error: Throwable) {
             _status.value = error.message ?: error.javaClass.simpleName
         }
+    }
+
+    private fun readLocation(target: NaviHelper) {
+        if (!wantLocation.get() || !started.get() || helper !== target || _link.value != LinkState.READY) return
+        try {
+            target.getCurrentLocationInfo()
+        } catch (error: Throwable) {
+            _status.value = error.message ?: error.javaClass.simpleName
+        }
+    }
+
+    private fun readBookmarks(target: NaviHelper) {
+        if (!started.get() || helper !== target || _link.value != LinkState.READY) return
+        try {
+            target.getBookmarkInfo()
+        } catch (error: Throwable) {
+            _status.value = error.message ?: error.javaClass.simpleName
+        }
+    }
+
+    private companion object {
+        const val NAV_TAG = "MiriNav"
+        const val RECENT_CAP = 20
     }
 }

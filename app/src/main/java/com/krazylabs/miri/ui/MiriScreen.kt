@@ -85,17 +85,22 @@ fun MiriRoute(
                 onPlace = viewModel::selectPlace,
                 onDone = viewModel::confirmReturn,
                 onCloseDates = viewModel::closeDates,
+                searchEnabled = ui.placeSearchEnabled,
+                placeSheetOpen = ui.placeSheetOpen,
+                bookmarks = ui.bookmarks,
+                sheetRecents = ui.sheetRecents,
+                onOpenSearch = viewModel::openPlaceSheet,
+                onCloseSearch = viewModel::closePlaceSheet,
             )
-            MiriPane.D1 -> D1RoadScreen(ui.card, dark)
+            MiriPane.D1 -> D1RoadScreen(ui.card, dark, onDone = viewModel::dismissCard)
             MiriPane.D2 -> D2ChargeScreen(ui.card, dark)
             MiriPane.F3 -> F3ReturnScreen(ui.card, dark, onGuide = viewModel::requestReturnGuide)
             MiriPane.CHECK -> CheckPane(ui.card, dark)
         }
-        if (ui.showScenarioPanel) {
+        if (ui.showScenarioPanel && demoOpen) {
             DemoDock(
-                open = demoOpen,
-                onToggle = { demoOpen = !demoOpen },
-                modifier = Modifier.align(Alignment.BottomEnd),
+                onClose = { demoOpen = false },
+                modifier = Modifier.align(Alignment.TopEnd),
             ) {
                 ScenarioPanel(
                     overrides = ui.scenario,
@@ -130,37 +135,33 @@ private fun CheckPane(card: ShownCard?, dark: Boolean) {
 }
 
 /**
- * Debug-only dock. Collapsed to a small control. A long-press on the canvas opens it too.
- * The open card stays in the corner and does not cover the frame.
+ * Debug-only dock. Hidden until a long-press on the canvas. No collapsed chip,
+ * so the panel never sits on a footer line.
  */
 @Composable
 private fun DemoDock(
-    open: Boolean,
-    onToggle: () -> Unit,
+    onClose: () -> Unit,
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
     val colors = IviTheme.colors
-    Column(modifier.padding(20.dp), horizontalAlignment = Alignment.End) {
-        if (open) {
-            Column(
-                Modifier
-                    .widthIn(max = 460.dp)
-                    .heightIn(max = 460.dp)
-                    .verticalScroll(rememberScrollState())
-                    .background(colors.track, RoundedCornerShape(24.dp))
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                content()
-            }
-        }
+    Column(
+        modifier
+            .padding(16.dp)
+            .widthIn(max = 460.dp)
+            .heightIn(max = 460.dp)
+            .verticalScroll(rememberScrollState())
+            .background(colors.track, RoundedCornerShape(24.dp))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalAlignment = Alignment.End,
+    ) {
+        content()
         Text(
-            if (open) "데모 닫기" else "데모",
+            "데모 닫기",
             modifier = Modifier
-                .padding(top = 8.dp)
-                .background(colors.track, RoundedCornerShape(16.dp))
-                .quietClick(onClick = onToggle)
+                .background(colors.canvas, RoundedCornerShape(16.dp))
+                .quietClick(onClick = onClose)
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             color = colors.textTertiary,
             fontFamily = AstaSans,
