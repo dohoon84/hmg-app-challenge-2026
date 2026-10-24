@@ -9,6 +9,10 @@
     <uses-permission android:name="android.car.permission.CAR_INFO" />
     <!-- Pleos Gear.getCurrentGearSelectionState. Release does not call getGear(). -->
     <uses-permission android:name="pleos.car.permission.CAR_POWERTRAIN" />
+    <!-- Charge-port read. Normal protection. Probe manifest only. -->
+    <uses-permission android:name="android.car.permission.CAR_ENERGY_PORTS" />
+    <!-- moveTaskToFront after R to P. Normal protection. Probe manifest only. -->
+    <uses-permission android:name="android.permission.REORDER_TASKS" />
 
     <!--
       Package visibility for the platform TTS engines. Not a permission.
@@ -28,7 +32,8 @@
         -->
         <activity
             android:name=".probe.SignalProbeActivity"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="singleTop">
             <meta-data
                 android:name="distractionOptimized"
                 android:value="true" />

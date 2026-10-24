@@ -1,7 +1,9 @@
 package io.hmg.appchallenge.foundation.probe
 
+import android.app.Activity
 import android.app.Application
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.PermissionInfo
 import android.os.Handler
@@ -38,6 +40,12 @@ internal class SignalProbe(context: Context) {
     val lines = mutableStateListOf<String>()
     var holdInBackground by mutableStateOf(true)
         private set
+    var frontTest by mutableStateOf(false)
+        private set
+    var reorderToFront by mutableStateOf(false)
+        private set
+    var cadencePoll by mutableStateOf(false)
+        private set
     var jsonDirectory by mutableStateOf("")
         private set
 
@@ -50,6 +58,9 @@ internal class SignalProbe(context: Context) {
     }
     private val navi = NaviSignalProbe(appContext, log) { !activityInForeground }
     private val vehicle = VehicleSignalProbe(appContext, log) { !activityInForeground }
+    private var host: Activity? = null
+    private val front = FrontTaskProbe(log) { host }
+    private val audio = AudioPlaybackProbe(appContext, log)
 
     @Volatile
     private var activityInForeground = true
@@ -92,9 +103,35 @@ internal class SignalProbe(context: Context) {
                     "The probe NaviHelper is separate and follows the same flag. Vehicle and Car in CabinSession still stop.",
             ),
         )
+        vehicle.onReverseToPark = front::onReverseToPark
+        audio.start()
         navi.start()
         vehicle.start()
         ProcessLifecycleOwner.get().lifecycle.addObserver(processObserver)
+    }
+
+    fun attachHost(activity: Activity) {
+        host = activity
+    }
+
+    fun onHostResume() = front.onHostResume()
+
+    fun onHostPause() = front.onHostPause()
+
+    fun setFrontFromIntent(intent: Intent) {
+        if (intent.hasExtra(EXTRA_FRONT)) updateFrontTest(intent.getBooleanExtra(EXTRA_FRONT, false))
+        if (intent.hasExtra(EXTRA_REORDER)) updateReorderToFront(intent.getBooleanExtra(EXTRA_REORDER, false))
+    }
+
+    fun setCadenceFromIntent(intent: Intent) {
+        if (intent.hasExtra(EXTRA_CADENCE)) updateCadencePoll(intent.getBooleanExtra(EXTRA_CADENCE, false))
+    }
+
+    fun requestRouteFromIntent(intent: Intent) {
+        val lat = extraDouble(intent, EXTRA_LAT) ?: return
+        val lon = extraDouble(intent, EXTRA_LON) ?: return
+        val name = intent.getStringExtra(EXTRA_NAME)?.takeIf { it.isNotBlank() } ?: "adb destination"
+        navi.requestDestination(lat, lon, name)
     }
 
     fun onActivityStart() {
@@ -137,9 +174,41 @@ internal class SignalProbe(context: Context) {
 
     fun readVehicle() = vehicle.readAgain()
 
+    fun updateFrontTest(enabled: Boolean) {
+        if (frontTest == enabled) return
+        frontTest = enabled
+        front.enabled = enabled
+        log.write(
+            FrontTaskProbe.TAG,
+            "front_test",
+            bg = !activityInForeground,
+            fields = ProbeClocks.fields() + mapOf("enabled" to enabled, "reorderToFront" to reorderToFront),
+        )
+    }
+
+    fun updateReorderToFront(enabled: Boolean) {
+        if (reorderToFront == enabled) return
+        reorderToFront = enabled
+        front.reorderToFront = enabled
+        log.write(
+            FrontTaskProbe.TAG,
+            "reorder_to_front",
+            bg = !activityInForeground,
+            fields = ProbeClocks.fields() + mapOf("enabled" to enabled, "frontTest" to frontTest),
+        )
+    }
+
+    fun updateCadencePoll(enabled: Boolean) {
+        if (cadencePoll == enabled) return
+        cadencePoll = enabled
+        navi.setCadencePoll(enabled)
+    }
+
     fun release() {
         if (!started) return
         started = false
+        audio.release()
+        front.release()
         val process = ProcessLifecycleOwner.get().lifecycle
         val processInBackground = !process.currentState.isAtLeast(Lifecycle.State.STARTED)
         process.removeObserver(processObserver)
@@ -190,6 +259,17 @@ internal class SignalProbe(context: Context) {
         return if (flags == 0) baseName else "$baseName|flags=$flags"
     }
 
+    private fun extraDouble(intent: Intent, key: String): Double? {
+        if (!intent.hasExtra(key)) return null
+        return when (val value = intent.extras?.get(key)) {
+            is Float -> value.toDouble()
+            is Double -> value
+            is String -> value.toDoubleOrNull()
+            is Int -> value.toDouble()
+            else -> null
+        }
+    }
+
     private fun push(line: String) {
         lines.add(0, line)
         while (lines.size > UI_LINES) {
@@ -212,7 +292,16 @@ internal class SignalProbe(context: Context) {
             "pleos.car.permission.CAR_DRIVE",
             "pleos.car.permission.NAVI_ROUTE",
             "pleos.car.permission.NAVI_ROUTE_SEARCH",
+            "android.car.permission.CAR_ENERGY_PORTS",
+            "android.permission.REORDER_TASKS",
             "ai.pleos.playground.service.vehicle.VEHICLE_BINDING",
         )
+
+        const val EXTRA_FRONT = "frontTest"
+        const val EXTRA_REORDER = "reorderToFront"
+        const val EXTRA_CADENCE = "cadencePoll"
+        const val EXTRA_LAT = "destLat"
+        const val EXTRA_LON = "destLon"
+        const val EXTRA_NAME = "destName"
     }
 }

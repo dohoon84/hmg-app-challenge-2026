@@ -41,6 +41,10 @@ internal class VehicleSignalProbe(
     private var car: Car? = null
     private var manager: CarPropertyManager? = null
     private var gearCallbackRegistered = false
+    private var portCallbackRegistered = false
+    private var lastAaosGear: Int? = null
+    private var lastPleosGear: String? = null
+    var onReverseToPark: ((String, String, String) -> Unit)? = null
     private var vehicle: Vehicle? = null
     private var pleosGear: Gear? = null
     private var pleosFuel: Fuel? = null
@@ -55,6 +59,8 @@ internal class VehicleSignalProbe(
         override fun onChangeEvent(value: CarPropertyValue<*>) {
             if (value.propertyId != VehiclePropertyIds.GEAR_SELECTION) return
             val raw = value.value as? Int
+            val previous = lastAaosGear
+            lastAaosGear = raw
             gear(
                 "change",
                 mapOf(
@@ -64,8 +70,13 @@ internal class VehicleSignalProbe(
                     "status" to value.status,
                     "raw" to raw,
                     "name" to gearName(raw),
+                    "previousRaw" to previous,
+                    "previousName" to gearName(previous),
                 ),
             )
+            if (isReverseToPark(previous, raw)) {
+                onReverseToPark?.invoke("CarPropertyManager.GEAR_SELECTION", "REVERSE", "PARK")
+            }
         }
 
         override fun onErrorEvent(propId: Int, areaId: Int) {
@@ -83,14 +94,21 @@ internal class VehicleSignalProbe(
 
     private val pleosGearListener = object : GearSelectionListener {
         override fun onSelected(selected: VehicleGear?) {
+            val name = selected?.name
+            val previous = lastPleosGear
+            lastPleosGear = name
             gear(
                 "change",
                 mapOf(
                     "source" to "Vehicle.getGear",
-                    "name" to (selected?.name ?: "null"),
+                    "name" to (name ?: "null"),
+                    "previousName" to previous,
                     "rawId" to selected?.let { gearRawId(it) },
                 ),
             )
+            if (isPleosReverseToPark(previous, name)) {
+                onReverseToPark?.invoke("Vehicle.getGear", "GEAR_REVERSE", "GEAR_PARK")
+            }
         }
 
         override fun onFailed(error: Exception) {
@@ -233,6 +251,7 @@ internal class VehicleSignalProbe(
                     }
                     info("car_connect", mapOf("result" to "ready"))
                     registerGearCallback()
+                    registerPortCallbacks()
                     readAaos("car_ready")
                 },
             )
@@ -260,6 +279,7 @@ internal class VehicleSignalProbe(
         specs().forEach { spec -> readProperty(property, spec, reason) }
         readOptionalInt(property, "CURRENT_GEAR", reason)
         readGearSnapshot(property, reason)
+        readChargePorts(reason)
     }
 
     @RequiresApi(Build.VERSION_CODES.R)
@@ -341,6 +361,7 @@ internal class VehicleSignalProbe(
                 return
             }
             val raw = property.getIntProperty(id, 0)
+            if (lastAaosGear == null) lastAaosGear = raw
             gear(
                 "read",
                 mapOf(
@@ -397,6 +418,8 @@ internal class VehicleSignalProbe(
     private fun registerListeners() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             registerGearCallback()
+            registerPortCallbacks()
+            readChargePorts("register")
         }
         registerPleosListeners()
     }
@@ -450,8 +473,16 @@ internal class VehicleSignalProbe(
                     gear("unregister", probeFailure(error))
                 }
             }
+            if (property != null && portCallbackRegistered) {
+                try {
+                    property.unregisterCallback(portCallback)
+                } catch (error: Throwable) {
+                    port("unregister", probeFailure(error))
+                }
+            }
         }
         gearCallbackRegistered = false
+        portCallbackRegistered = false
         val gearApi = pleosGear
         if (gearApi != null && pleosGearRegistered) {
             try {
@@ -711,8 +742,136 @@ internal class VehicleSignalProbe(
             mapOf("name" to entry.name, "ordinal" to entry.ordinal)
         }
 
+    private val portCallback = object : CarPropertyManager.CarPropertyEventCallback {
+        override fun onChangeEvent(value: CarPropertyValue<*>) {
+            port(
+                "change",
+                portValueFields(value) + mapOf("result" to "change"),
+            )
+        }
+
+        override fun onErrorEvent(propId: Int, areaId: Int) {
+            port(
+                "error",
+                ProbeClocks.fields() + mapOf(
+                    "result" to "error",
+                    "property" to portName(propId),
+                    "propertyId" to propId,
+                    "areaId" to areaId,
+                ),
+            )
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    private fun registerPortCallbacks() {
+        val property = manager ?: return
+        if (portCallbackRegistered) return
+        PORTS.forEach { spec ->
+            try {
+                val registered = property.registerCallback(
+                    portCallback,
+                    spec.id,
+                    CarPropertyManager.SENSOR_RATE_ONCHANGE,
+                )
+                portCallbackRegistered = portCallbackRegistered || registered
+                port(
+                    "register",
+                    ProbeClocks.fields() + mapOf(
+                        "property" to spec.name,
+                        "propertyId" to spec.id,
+                        "permission" to Car.PERMISSION_ENERGY_PORTS,
+                        "result" to if (registered) "registered" else "rejected",
+                    ),
+                )
+            } catch (error: Throwable) {
+                port("register", ProbeClocks.fields() + probeFailure(error) + mapOf("property" to spec.name))
+            }
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    private fun readChargePorts(reason: String) {
+        val property = manager
+        if (property == null) {
+            port("read", ProbeClocks.fields() + mapOf("result" to "car_not_ready", "reason" to reason))
+            return
+        }
+        val granted = ContextCompat.checkSelfPermission(appContext, Car.PERMISSION_ENERGY_PORTS) ==
+            PackageManager.PERMISSION_GRANTED
+        PORTS.forEach { spec ->
+            val base = ProbeClocks.fields() + mapOf(
+                "property" to spec.name,
+                "propertyId" to spec.id,
+                "permission" to Car.PERMISSION_ENERGY_PORTS,
+                "granted" to granted,
+                "reason" to reason,
+            )
+            try {
+                val config = property.getCarPropertyConfig(spec.id)
+                if (config == null) {
+                    port("read", base + mapOf("result" to "unavailable", "detail" to "no CarPropertyConfig"))
+                    return@forEach
+                }
+                val areas = config.areaIds.toList().ifEmpty { listOf(0) }
+                areas.forEach { area ->
+                    val available = try {
+                        property.isPropertyAvailable(spec.id, area)
+                    } catch (error: Throwable) {
+                        port("read", base + probeFailure(error) + mapOf("areaId" to area, "detail" to "isPropertyAvailable"))
+                        false
+                    }
+                    if (!available) {
+                        port(
+                            "read",
+                            base + mapOf(
+                                "result" to "unavailable",
+                                "areaId" to area,
+                                "propertyType" to config.propertyType?.name,
+                                "access" to config.access,
+                            ),
+                        )
+                        return@forEach
+                    }
+                    val value = property.getProperty<Any>(spec.id, area)
+                    port("read", base + portValueFields(value) + mapOf("result" to "ok", "propertyType" to config.propertyType?.name))
+                }
+            } catch (error: Throwable) {
+                port("read", base + probeFailure(error))
+            }
+        }
+    }
+
+    private fun portValueFields(value: CarPropertyValue<*>): Map<String, Any?> = ProbeClocks.fields() + mapOf(
+        "property" to portName(value.propertyId),
+        "propertyId" to value.propertyId,
+        "areaId" to value.areaId,
+        "status" to value.status,
+        "statusName" to portStatusName(value.status),
+        "value" to value.value,
+        "valueClass" to (value.value?.javaClass?.name ?: "null"),
+        "carTimestampNanos" to value.timestamp,
+    )
+
+    private fun portStatusName(status: Int): String = when (status) {
+        CarPropertyValue.STATUS_AVAILABLE -> "AVAILABLE"
+        CarPropertyValue.STATUS_ERROR -> "ERROR"
+        CarPropertyValue.STATUS_UNAVAILABLE -> "UNAVAILABLE"
+        else -> "UNKNOWN_$status"
+    }
+
+    private fun portName(propertyId: Int): String = when (propertyId) {
+        VehiclePropertyIds.EV_CHARGE_PORT_OPEN -> "EV_CHARGE_PORT_OPEN"
+        VehiclePropertyIds.EV_CHARGE_PORT_CONNECTED -> "EV_CHARGE_PORT_CONNECTED"
+        else -> "UNKNOWN_$propertyId"
+    }
+
+    private fun port(event: String, fields: Map<String, Any?>) {
+        log.write(TAG_PORT, event, background(), fields)
+    }
+
     private fun gear(event: String, fields: Map<String, Any?>) {
-        log.write(TAG_GEAR, event, background(), fields)
+        log.write(TAG_GEAR, event, background(), ProbeClocks.fields() + fields)
     }
 
     private fun info(event: String, fields: Map<String, Any?>) {
@@ -729,8 +888,15 @@ internal class VehicleSignalProbe(
         val unitNote: String,
     )
 
+    private data class PortSpec(val name: String, val id: Int)
+
     private companion object {
         const val TAG_GEAR = "PROBE_GEAR"
         const val TAG_INFO = "PROBE_INFO"
+        const val TAG_PORT = "PROBE_PORT"
+        val PORTS = listOf(
+            PortSpec("EV_CHARGE_PORT_OPEN", VehiclePropertyIds.EV_CHARGE_PORT_OPEN),
+            PortSpec("EV_CHARGE_PORT_CONNECTED", VehiclePropertyIds.EV_CHARGE_PORT_CONNECTED),
+        )
     }
 }

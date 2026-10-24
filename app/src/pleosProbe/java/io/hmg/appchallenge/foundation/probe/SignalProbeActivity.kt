@@ -49,7 +49,11 @@ class SignalProbeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         onBackPressedDispatcher.addCallback(this, rootBack)
+        probe.attachHost(this)
+        probe.setFrontFromIntent(intent)
         probe.start()
+        probe.setCadenceFromIntent(intent)
+        if (savedInstanceState == null) probe.requestRouteFromIntent(intent)
         setContent {
             FoundationTheme {
                 ProbeScreen(
@@ -69,9 +73,27 @@ class SignalProbeActivity : ComponentActivity() {
         permissions.launch(SignalProbe.PERMISSIONS)
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        probe.setFrontFromIntent(intent)
+        probe.setCadenceFromIntent(intent)
+        probe.requestRouteFromIntent(intent)
+    }
+
     override fun onStart() {
         super.onStart()
         probe.onActivityStart()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        probe.onHostResume()
+    }
+
+    override fun onPause() {
+        probe.onHostPause()
+        super.onPause()
     }
 
     override fun onStop() {
@@ -125,6 +147,33 @@ private fun ProbeScreen(
                 },
             )
         }
+        ProbeSwitch(
+            checked = probe.frontTest,
+            onChecked = probe::updateFrontTest,
+            label = if (probe.frontTest) {
+                "R→P 후 1.5초 뒤 moveTaskToFront"
+            } else {
+                "R→P 화면 복귀 꺼짐"
+            },
+        )
+        ProbeSwitch(
+            checked = probe.reorderToFront,
+            onChecked = probe::updateReorderToFront,
+            label = if (probe.reorderToFront) {
+                "이어서 REORDER_TO_FRONT"
+            } else {
+                "REORDER_TO_FRONT 꺼짐"
+            },
+        )
+        ProbeSwitch(
+            checked = probe.cadencePoll,
+            onChecked = probe::updateCadencePoll,
+            label = if (probe.cadencePoll) {
+                "1Hz로 남은 거리 다시 요청"
+            } else {
+                "1Hz 남은 거리 폴링 꺼짐"
+            },
+        )
         ProbeButton("경로: 제주공항 렌터카 (33.5059, 126.4929)", onJeju)
         ProbeButton("경로: 주유소 이름", onGas)
         ProbeButton("SIMULATION_GUIDING", onSimulation)
@@ -139,6 +188,18 @@ private fun ProbeScreen(
                 style = MaterialTheme.typography.bodySmall,
             )
         }
+    }
+}
+
+@Composable
+private fun ProbeSwitch(checked: Boolean, onChecked: (Boolean) -> Unit, label: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Switch(checked = checked, onCheckedChange = onChecked)
+        Text(label)
     }
 }
 

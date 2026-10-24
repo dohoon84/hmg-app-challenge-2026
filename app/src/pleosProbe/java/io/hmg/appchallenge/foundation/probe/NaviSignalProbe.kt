@@ -38,6 +38,9 @@ import ai.pleos.playground.navi.data.WaypointInfo
 import ai.pleos.playground.navi.helper.NaviHelper
 import ai.pleos.playground.navi.helper.listener.NaviHelperEventListener
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import java.lang.reflect.Modifier
 
 /**
@@ -51,9 +54,12 @@ internal class NaviSignalProbe(
     private val background: () -> Boolean,
 ) {
     private val appContext = context.applicationContext
+    private val main = Handler(Looper.getMainLooper())
     private val gate = Any()
+    private val cadence = CadenceTracker()
     private var helper: NaviHelper? = null
     private var listenerAttached = false
+    private var cadencePolling = false
 
     private val listener = object : NaviHelperEventListener {
         override fun onRouteStarted(routeStartInfo: RouteStartInfo) {
@@ -162,6 +168,12 @@ internal class NaviSignalProbe(
 
         override fun onDestinationInfo(destinationInfo: DestinationInfo) {
             event("onDestinationInfo", destinationFields(destinationInfo))
+            noteCadence(
+                "onDestinationInfo",
+                remainDistance = destinationInfo.remainDistance,
+                remainTime = destinationInfo.remainTime,
+                extra = mapOf("name" to destinationInfo.name),
+            )
         }
 
         override fun onWayPointInfo(waypointInfo: List<WaypointInfo>) {
@@ -185,6 +197,17 @@ internal class NaviSignalProbe(
                             "dump" to point.toString(),
                         )
                     },
+                    "remainDistances" to waypointInfo.map { it.remainDistance },
+                    "remainTimes" to waypointInfo.map { it.remainTime },
+                ),
+            )
+            noteCadence(
+                "onWayPointInfo",
+                remainDistance = waypointInfo.firstOrNull()?.remainDistance,
+                remainTime = waypointInfo.firstOrNull()?.remainTime,
+                extra = mapOf(
+                    "count" to waypointInfo.size,
+                    "remainDistances" to waypointInfo.map { it.remainDistance },
                 ),
             )
         }
@@ -243,7 +266,19 @@ internal class NaviSignalProbe(
                 "onCameraAlert",
                 mapOf(
                     "count" to cameraAlert.size,
-                    "items" to cameraAlert.map { it.toString() },
+                    "items" to cameraAlert.map { item ->
+                        mapOf(
+                            "id" to item.id,
+                            "type" to item.type.name,
+                            "status" to item.status,
+                            "speedLimit" to item.speedLimit,
+                            "remainDistance" to item.remainDistance,
+                            "sectionAvrSpeed" to item.sectionAvrSpeed,
+                            "isOverSpeed" to item.isOverSpeed,
+                            "isOverSectionAvrSpeed" to item.isOverSectionAvrSpeed,
+                            "dump" to item.toString(),
+                        )
+                    },
                 ),
             )
         }
@@ -255,6 +290,16 @@ internal class NaviSignalProbe(
                     "destination" to drivingState(drivingInfo.destination),
                     "waypoints" to drivingInfo.waypoints.map { drivingState(it) },
                     "dump" to drivingInfo.toString(),
+                ),
+            )
+            noteCadence(
+                "onDrivingInfo",
+                remainDistance = drivingInfo.destination.distance,
+                remainTime = drivingInfo.destination.duration,
+                extra = mapOf(
+                    "distanceField" to "DrivingState.distance",
+                    "timeField" to "DrivingState.duration",
+                    "waypointDistances" to drivingInfo.waypoints.map { it.distance },
                 ),
             )
         }
@@ -279,6 +324,16 @@ internal class NaviSignalProbe(
                     "dump" to tbtInfo.joinToString(prefix = "[", postfix = "]") { it.toString() },
                 ),
             )
+            noteCadence(
+                "onTBTInfo",
+                remainDistance = tbtInfo.firstOrNull()?.distance,
+                remainTime = null,
+                extra = mapOf(
+                    "count" to tbtInfo.size,
+                    "distances" to tbtInfo.map { it.distance },
+                    "note" to "TBT distance is the distance to that maneuver, not the destination.",
+                ),
+            )
         }
 
         override fun onChargerOperatorInfo(chargerOperator: List<ChargerOperator>) {
@@ -301,6 +356,7 @@ internal class NaviSignalProbe(
                             "id" to item.id,
                             "type" to item.type.name,
                             "remainDistance" to item.remainDistance,
+                            "dump" to item.toString(),
                         )
                     },
                 ),
@@ -322,6 +378,23 @@ internal class NaviSignalProbe(
                     "dump" to tripInfo.toString(),
                 ),
             )
+            noteCadence(
+                "onTripInfo",
+                remainDistance = tripInfo.distance,
+                remainTime = tripInfo.eta,
+                extra = mapOf(
+                    "distanceField" to "TripInfo.distance",
+                    "timeField" to "TripInfo.eta",
+                ),
+            )
+        }
+    }
+
+    private val cadencePoll = object : Runnable {
+        override fun run() {
+            if (!cadencePolling) return
+            pollRemaining()
+            main.postDelayed(this, CADENCE_POLL_MS)
         }
     }
 
@@ -345,6 +418,18 @@ internal class NaviSignalProbe(
             event("initialize", probeFailure(error))
         }
         logSimulationApi(created)
+        event(
+            "road_callbacks",
+            mapOf(
+                "logged" to listOf(
+                    "onCameraAlert",
+                    "onCautionPointInfo",
+                    "onCurrentRoadSpeedLimit",
+                    "onCurrentLocationInfo",
+                ),
+                "note" to "NaviHelper 3.0.5 has no other road-info listener methods. Camera and caution payloads are field-dumped.",
+            ),
+        )
     }
 
     fun onProcessBackground(hold: Boolean) {
@@ -365,6 +450,29 @@ internal class NaviSignalProbe(
 
     fun requestJejuRental() {
         requestRoute(JEJU_LAT, JEJU_LON, JEJU_NAME, "request_route_jeju")
+    }
+
+    fun requestDestination(latitude: Double, longitude: Double, name: String) {
+        requestRoute(latitude, longitude, name, "request_route_adb")
+    }
+
+    fun setCadencePoll(enabled: Boolean) {
+        if (cadencePolling == enabled) {
+            cadenceLog("poll_mode", mapOf("enabled" to enabled, "result" to "unchanged"))
+            return
+        }
+        cadencePolling = enabled
+        main.removeCallbacks(cadencePoll)
+        cadenceLog(
+            "poll_mode",
+            mapOf(
+                "enabled" to enabled,
+                "intervalMs" to CADENCE_POLL_MS,
+                "calls" to listOf("getDestinationInfo", "getTBTInfo", "getWaypointInfo"),
+                "note" to "No getDrivingInfo and no getTripInfo. requestTrip is not polled. Callbacks still arrive on PROBE_CADENCE.",
+            ),
+        )
+        if (enabled) main.post(cadencePoll)
     }
 
     fun requestGasStationByName() {
@@ -474,6 +582,8 @@ internal class NaviSignalProbe(
     }
 
     fun release() {
+        cadencePolling = false
+        main.removeCallbacks(cadencePoll)
         val created = synchronized(gate) {
             val current = helper
             helper = null
@@ -710,12 +820,51 @@ internal class NaviSignalProbe(
         "remainDestinationChargingValue" to info.remainDestinationChargingValue,
     )
 
+    private fun pollRemaining() {
+        val created = synchronized(gate) { helper }
+        if (created == null) {
+            cadenceLog("poll_tick", mapOf("result" to "not_ready"))
+            return
+        }
+        listOf(
+            "getDestinationInfo" to { created.getDestinationInfo() },
+            "getTBTInfo" to { created.getTBTInfo() },
+            "getWaypointInfo" to { created.getWaypointInfo() },
+        ).forEach { (name, block) ->
+            try {
+                block()
+                cadenceLog("poll_tick", mapOf("call" to name, "result" to "called", "origin" to "poll"))
+            } catch (error: Throwable) {
+                cadenceLog("poll_tick", probeFailure(error) + mapOf("call" to name, "origin" to "poll"))
+            }
+        }
+    }
+
+    private fun noteCadence(eventName: String, remainDistance: Any?, remainTime: Any?, extra: Map<String, Any?>) {
+        val elapsed = SystemClock.elapsedRealtime()
+        cadenceLog(
+            eventName,
+            ProbeClocks.fields(elapsed) + cadence.mark(eventName, elapsed) + mapOf(
+                "origin" to "callback",
+                "remainDistance" to remainDistance,
+                "remainTime" to remainTime,
+            ) + extra,
+        )
+    }
+
+    private fun cadenceLog(eventName: String, fields: Map<String, Any?>) {
+        val stamped = if (fields.containsKey("elapsedRealtimeMs")) fields else ProbeClocks.fields() + fields
+        log.write(TAG_CADENCE, eventName, background(), stamped)
+    }
+
     private fun event(name: String, fields: Map<String, Any?> = emptyMap()) {
         log.write(TAG, name, background(), fields)
     }
 
     private companion object {
         const val TAG = "PROBE_NAVI"
+        const val TAG_CADENCE = "PROBE_CADENCE"
+        const val CADENCE_POLL_MS = 1_000L
         const val JEJU_LAT = 33.5059
         const val JEJU_LON = 126.4929
         const val JEJU_NAME = "제주공항 렌터카"
