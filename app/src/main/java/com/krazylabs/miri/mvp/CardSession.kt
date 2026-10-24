@@ -169,6 +169,12 @@ class CardSession {
             spent = true
             return DeckStep(MiriPane.ICON, null, VoicePlay.None)
         }
+        // A new rental clears the kind while this park is still F2. Drop the
+        // hold so the same stop opens F1 again.
+        if (held == CardId.F2 && input.kind == null) {
+            held = null
+            voiceStamp = null
+        }
         if (!input.visible) {
             rememberMiss(input)
             return DeckStep(MiriPane.ICON, null, VoicePlay.None)

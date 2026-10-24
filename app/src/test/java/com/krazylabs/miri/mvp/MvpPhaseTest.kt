@@ -412,6 +412,14 @@ class MvpPhaseTest {
     }
 
     @Test
+    fun clearingTheKindWhileF2IsOpenReturnsToF1() {
+        val session = CardSession()
+        assertEquals(MiriPane.F1, session.step(baseInput(GearPosition.PARK, showIntake = true)).pane)
+        assertEquals(MiriPane.F2, session.step(baseInput(GearPosition.PARK).copy(kind = "rental")).pane)
+        assertEquals(MiriPane.F1, session.step(baseInput(GearPosition.PARK, showIntake = true)).pane)
+    }
+
+    @Test
     fun lateDestinationInTheSameParkDoesNotShowD2Again() {
         val session = CardSession()
         val route = D2Rules.offer(evRearRight(true), DestinationRole.CHARGING, routeKey = "route-1")!!

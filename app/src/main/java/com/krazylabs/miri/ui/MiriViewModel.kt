@@ -31,8 +31,12 @@ import com.krazylabs.miri.mvp.MiriPane
 import com.krazylabs.miri.mvp.RearDoorNote
 import com.krazylabs.miri.mvp.RentalArm
 import com.krazylabs.miri.mvp.RouteKey
+import com.krazylabs.miri.mvp.NearbyPlace
 import com.krazylabs.miri.mvp.ReturnForm
 import com.krazylabs.miri.mvp.ScenarioInput
+import com.krazylabs.miri.mvp.assembleReturnPlaces
+import com.krazylabs.miri.mvp.intakeVisible
+import com.krazylabs.miri.mvp.toPlaceRequest
 import com.krazylabs.miri.mvp.ScenarioOverrides
 import com.krazylabs.miri.mvp.TodayRoad
 import com.krazylabs.miri.mvp.TripOnce
@@ -123,6 +127,7 @@ class MiriViewModel @Inject constructor(
     private val zone = ZoneId.of("Asia/Seoul")
     private var ownCar = prefs.getBoolean(KEY_OWN, false)
     private var kind = prefs.getString(KEY_KIND, null)
+    private var forceIntake = false
     private var edgesOpen = true
     private var edgesAtMs = 0L
     private var hostVisible = true
@@ -192,12 +197,14 @@ class MiriViewModel @Inject constructor(
 
     fun chooseOwnCar() {
         ownCar = true
+        forceIntake = false
         prefs.edit().putBoolean(KEY_OWN, true).remove(KEY_KIND).apply()
         kind = null
         publish()
     }
 
     fun chooseKind(rental: Boolean) {
+        forceIntake = false
         kind = if (rental) KIND_RENTAL else KIND_SHARE
         ownCar = false
         form.reset()
@@ -301,6 +308,7 @@ class MiriViewModel @Inject constructor(
             session.resetRental()
             kind = null
             form.reset()
+            forceIntake = true
             prefs.edit().remove(KEY_KIND).remove(KEY_MINUTE).remove(KEY_EPOCH_DAY).remove(KEY_DAY).putBoolean(KEY_OWN, false).apply()
             if (scenario.armNewRental) scenarioInput.update(scenario.copy(armNewRental = false))
         }
@@ -393,7 +401,13 @@ class MiriViewModel @Inject constructor(
                 ownCar = ownCar,
                 kind = kind,
                 returnSaved = form.saved != null,
-                showIntake = if (snapshot.doorLocked == null) kind == null else rental.primed(),
+                showIntake = intakeVisible(
+                    doorLocked = snapshot.doorLocked,
+                    kind = kind,
+                    ownCar = ownCar,
+                    primed = rental.primed(),
+                    forcedNewRental = forceIntake,
+                ),
                 checkItems = if (drove && !moving) items else emptyList(),
                 checkNote = rearNote.observe(snapshot.doors, moving),
                 checkTitle = if (navigationRepository.arrival.value != null) {
@@ -517,14 +531,18 @@ class MiriViewModel @Inject constructor(
     private fun returnPlace(): PlaceRequest? {
         val savedId = form.saved?.placeId ?: form.draft.placeId
         if (savedId != F2Draft.PLACE_PICKUP) {
-            return navigationRepository.recentPlaces.value.firstOrNull { it.poiId == savedId }
-                ?: navigationRepository.recentPlaces.value.firstOrNull { it.name == savedId }
+            navigationRepository.recentPlaces.value.firstOrNull { it.poiId == savedId || it.name == savedId }
+                ?.let { return it }
+            return demo.demoReturnPlaces().firstOrNull { it.id == savedId || it.name == savedId }
+                ?.toPlaceRequest()
         }
-        val lat = prefs.getString(KEY_LAT, null)?.toDoubleOrNull() ?: return navigationRepository.here.value?.let {
+        val lat = prefs.getString(KEY_LAT, null)?.toDoubleOrNull()
+        val lon = prefs.getString(KEY_LON, null)?.toDoubleOrNull()
+        if (lat != null && lon != null) return PlaceRequest(lat, lon, F2Draft.PICKUP_LABEL)
+        demo.demoReturnPlaces().firstOrNull { it.id == F2Draft.PLACE_PICKUP }?.let { return it.toPlaceRequest() }
+        return navigationRepository.here.value?.let {
             PlaceRequest(it.latitude, it.longitude, F2Draft.PICKUP_LABEL, it.address)
         }
-        val lon = prefs.getString(KEY_LON, null)?.toDoubleOrNull() ?: return null
-        return PlaceRequest(lat, lon, F2Draft.PICKUP_LABEL)
     }
 
     private fun rememberOrigin() {
@@ -536,10 +554,25 @@ class MiriViewModel @Inject constructor(
     }
 
     private fun placeChips(): List<PlaceChip> {
-        val recents = navigationRepository.recentPlaces.value.take(3).map {
-            PlaceChip(it.poiId.ifEmpty { it.name }, it.name)
+        val here = navigationRepository.here.value
+        val nearby = navigationRepository.recentPlaces.value.map { place ->
+            NearbyPlace(
+                id = place.poiId.ifBlank { place.name },
+                name = place.name,
+                caption = place.address.ifBlank { "최근 목적지" },
+                latitude = place.latitude,
+                longitude = place.longitude,
+            )
         }
-        return listOf(PlaceChip(F2Draft.PLACE_PICKUP, F2Draft.PICKUP_LABEL)) + recents
+        return assembleReturnPlaces(
+            origin = null,
+            nearby = nearby,
+            hereLatitude = here?.latitude,
+            hereLongitude = here?.longitude,
+            demo = demo.demoReturnPlaces(),
+        ).map { place ->
+            PlaceChip(place.id, place.name, caption = place.caption, distance = place.distance)
+        }
     }
 
     private fun d1Lines(tolls: Int, highways: Int): List<String> {

@@ -30,7 +30,9 @@ fun F1KindScreen(
             clipX = 822f, clipY = 0f, clipW = 860f, clipH = 1210f,
             imageX = 62f, imageY = 0f, imageW = 2151f, imageH = 1210f,
         )
-        EdgeFade(822f, 0f, 260f, 1210f, toRight = false)
+        // Light spec mats 140px. Dark spec mats 260px. The wider dark fade
+        // washes the light render into the canvas.
+        EdgeFade(822f, 0f, if (dark) 260f else 140f, 1210f, toRight = false)
         SpecIcon(R.drawable.miri_ic_parking, 48f, 48f, 32f, 32f, colors.frameSecondary, "정차")
         SpecText("정차 중", 92f, 50f, MiriType.labelMedium(), colors.frameSecondary)
         SpecText("어떤 차로 타고 계세요?", 48f, 132f, MiriType.headlineSmallStrong(), colors.frameInk)

@@ -83,6 +83,25 @@ if (releaseStorePath != null && !hasReleaseSigning) {
     logger.warn("Release signing is incomplete. The release APK will be unsigned.")
 }
 
+fun localProp(name: String): String? =
+    localProperties.getProperty(name)?.takeIf { it.isNotBlank() }
+        ?: System.getenv(name)?.takeIf { it.isNotBlank() }
+
+val debugStorePath = localProp("DEBUG_STORE_FILE")
+val debugStorePassword = localProp("DEBUG_STORE_PASSWORD")
+val debugKeyAlias = localProp("DEBUG_KEY_ALIAS")
+val debugKeyPassword = localProp("DEBUG_KEY_PASSWORD")
+val debugStoreFile = debugStorePath?.let { rootProject.file(it) }
+val hasDebugSigning = debugStoreFile != null &&
+    debugStoreFile.isFile &&
+    debugStorePassword != null &&
+    debugKeyAlias != null &&
+    debugKeyPassword != null
+
+if (debugStorePath != null && !hasDebugSigning) {
+    logger.warn("Debug signing is incomplete. The debug APK will use the Android debug key.")
+}
+
 android {
     namespace = "com.krazylabs.miri"
     compileSdk = 34
@@ -134,6 +153,18 @@ android {
     }
 
     signingConfigs {
+        // Debug only. A box may set DEBUG_STORE_* in local.properties (gitignored)
+        // so emulator installs share one signature. Missing values keep the
+        // Android debug key. Release signing below is unchanged. No keystore
+        // is committed.
+        getByName("debug") {
+            if (hasDebugSigning) {
+                storeFile = debugStoreFile
+                storePassword = debugStorePassword
+                keyAlias = debugKeyAlias
+                keyPassword = debugKeyPassword
+            }
+        }
         if (hasReleaseSigning) {
             create("release") {
                 storeFile = releaseStoreFile
