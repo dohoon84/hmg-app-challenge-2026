@@ -153,6 +153,8 @@ private fun DrivingStatus(ui: FoundationUi) {
         Text(
             text = ui.restrictions.clip(stringResource(R.string.door_open_alert), preserve = true),
             style = IviType.drivingMain,
+            // Driving-alert exception: #FF8A00 in both themes, including light.
+            // Light status text and icons do not use this orange.
             color = IviTheme.colors.drivingAlert,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

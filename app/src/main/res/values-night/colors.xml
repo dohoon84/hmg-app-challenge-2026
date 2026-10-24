@@ -2,8 +2,16 @@
 <resources>
     <color name="launcher_background">#121417</color>
     <color name="ivi_surface_primary">#121417</color>
+    <color name="ivi_surface_high">#1C2128</color>
     <color name="ivi_text_primary">#FFFFFF</color>
+    <color name="ivi_button_basic">#F2F3F5</color>
+    <color name="ivi_button_on_basic">#121417</color>
+    <color name="ivi_status_success">#00E074</color>
+    <color name="ivi_status_caution">#FF8A00</color>
+    <color name="ivi_status_caution_container">#3A2200</color>
+    <!-- Icon only. Never text. Dark matches status/caution. -->
+    <color name="ivi_status_caution_icon">#FF8A00</color>
     <color name="ivi_informative_negative">#FF4C28</color>
-    <color name="ivi_team_status_negative_legacy">#FF4C28</color>
+    <color name="ivi_status_error">@color/ivi_informative_negative</color>
     <color name="ivi_driving_alert">#FF8A00</color>
 </resources>

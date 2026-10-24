@@ -2,8 +2,8 @@ package io.hmg.appchallenge.foundation.speech
 
 /**
  * Foreground announcements. [onSuspend] stops output, drops audio focus, and
- * shuts the engine down. [onForeground] only clears that gate. It does not
- * replay the last utterance or pre-create the engine.
+ * shuts the engine down. [onForeground] clears that gate and pre-warms the
+ * engine. It does not replay the last utterance.
  */
 interface CabinAnnouncer {
     fun announce(text: String)
@@ -14,12 +14,17 @@ interface CabinAnnouncer {
 
 /**
  * Platform [android.speech.tts.TextToSpeech]. The Pleos TTS SDK is not used.
- * [speak] creates the engine on first use. Completion is reported on the caller
- * thread the implementation chooses; [io.hmg.appchallenge.foundation.speech.FocusedAnnouncer]
- * expects those callbacks on the main thread.
+ * [warmUp] binds the engine without speaking. [speak] requires [ready].
+ * Completion is reported on the caller thread the implementation chooses;
+ * [io.hmg.appchallenge.foundation.speech.FocusedAnnouncer] expects those
+ * callbacks on the main thread.
  */
 interface SpeechEngine {
     val ready: Boolean
+
+    /** Idempotent. Starts binding so a later [speak] can succeed. */
+    fun warmUp()
+
     fun speak(
         text: String,
         onDone: () -> Unit,

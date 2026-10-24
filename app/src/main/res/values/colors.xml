@@ -1,12 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Single source for IviColors. Compose reads these. Do not copy the hex into Kotlin. -->
     <color name="launcher_background">#FFFFFF</color>
     <color name="ivi_surface_primary">#FFFFFF</color>
+    <color name="ivi_surface_high">#F2F3F5</color>
     <color name="ivi_text_primary">#121417</color>
-    <!-- App-defined. Not an official Pleos token. The guide has no red informative color. Same in light and dark. -->
-    <color name="ivi_informative_negative">#FF4C28</color>
-    <!-- Previous team status/negative. Light keeps the contrast value. Night overrides. Not the error red. -->
-    <color name="ivi_team_status_negative_legacy">#FE3D16</color>
-    <!-- Pleos driving alert. Same in light and dark. -->
+    <color name="ivi_button_basic">#121417</color>
+    <color name="ivi_button_on_basic">#FFFFFF</color>
+    <color name="ivi_status_success">#02C265</color>
+    <!-- Text and icons. App-adjusted orange/700, not an official Pleos swatch. -->
+    <color name="ivi_status_caution">#9A4A00</color>
+    <color name="ivi_status_caution_container">#FFF0DE</color>
+    <!-- Icon only. Never text. App-adjusted orange/600, not an official Pleos swatch. -->
+    <color name="ivi_status_caution_icon">#BD6600</color>
+    <!--
+      App-defined, not an official Pleos token. The guide has no red informative color.
+      Light is red/700 so text and icons clear 4.5:1. Do not use #FF8A00 or #FF4C28
+      for light text or icons. ivi_driving_alert is the driving-alert exception.
+    -->
+    <color name="ivi_informative_negative">#BE250A</color>
+    <color name="ivi_status_error">@color/ivi_informative_negative</color>
+    <!-- Driving alert. Same in light and dark. Not a light status text color. -->
     <color name="ivi_driving_alert">#FF8A00</color>
 </resources>

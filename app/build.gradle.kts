@@ -1,3 +1,4 @@
+import com.android.build.api.artifact.SingleArtifact
 import org.gradle.api.Action
 import org.gradle.api.execution.TaskExecutionGraph
 import org.gradle.api.tasks.Copy
@@ -140,11 +141,16 @@ android {
 }
 
 // fakeRelease would ship the in-memory cabin. The contest APK is pleos release only.
+// The merged manifest is the public variant artifact, not an AGP intermediates path.
+val pleosReleaseMergedManifest = objects.fileProperty()
 androidComponents {
     beforeVariants(selector().all()) { variant ->
         if (variant.name == "fakeRelease") {
             variant.enable = false
         }
+    }
+    onVariants(selector().withName("pleosRelease")) { variant ->
+        pleosReleaseMergedManifest.set(variant.artifacts.get(SingleArtifact.MERGED_MANIFEST))
     }
 }
 
@@ -210,6 +216,9 @@ val forbiddenPleosReleaseNames = listOf(
 // Names the app may ship. Library merges (Vehicle binding, AndroidX receiver) are included.
 // The post-2026-10-27 approval list is not published yet, so this is the read-only set
 // justified in the pleos manifest. Delete a line there and here together.
+// pleos has no applicationIdSuffix. The fake suffix must not be part of this name.
+val pleosApplicationId = android.defaultConfig.applicationId
+    ?: throw GradleException("applicationId is required for the pleos permission allowlist")
 val allowedPleosReleasePermissions = setOf(
     "pleos.car.permission.CAR_DOORS",
     "pleos.car.permission.CAR_WINDOWS",
@@ -221,22 +230,26 @@ val allowedPleosReleasePermissions = setOf(
     "pleos.car.permission.NAVI_ROUTE_SEARCH",
     "android.car.permission.CAR_POWERTRAIN",
     "android.car.permission.CAR_ENERGY",
+    // Merged from the Vehicle SDK AAR. Confirm against the post-2026-10-27 approval list.
     "ai.pleos.playground.service.vehicle.VEHICLE_BINDING",
-    "io.hmg.appchallenge.foundation.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+    "$pleosApplicationId.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
 )
 
 tasks.register("checkPleosReleaseContents") {
     group = "verification"
     description = "Fail the pleos release APK when it contains the fake flavor or an extra permission."
     dependsOn("assemblePleosRelease")
+    inputs.file(pleosReleaseMergedManifest)
     doLast {
         // Dex class-name scan is valid only while release isMinifyEnabled is false.
         // R8 would rename these classes and this check would pass silently.
         // A minified build needs a mapping-file check instead.
         // Resource strings (main strings.xml simulator copy) are not scanned.
-        val mergedManifest = layout.buildDirectory.file(
-            "intermediates/merged_manifests/pleosRelease/processPleosReleaseManifest/AndroidManifest.xml",
-        ).get().asFile
+        val mergedManifest = pleosReleaseMergedManifest.orNull?.asFile
+            ?: throw GradleException(
+                "pleos release merged manifest is not wired. " +
+                    "checkPleosReleaseContents reads SingleArtifact.MERGED_MANIFEST.",
+            )
         if (!mergedManifest.isFile) {
             throw GradleException("merged pleos release manifest not found at $mergedManifest")
         }

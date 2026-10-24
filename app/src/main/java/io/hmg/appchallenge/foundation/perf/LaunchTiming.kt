@@ -9,24 +9,31 @@ import io.hmg.appchallenge.foundation.BuildConfig
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Debug-only elapsed time from process start to the first drawn frame.
+ * Elapsed time from process start to the first drawn frame.
  * [Process.getStartElapsedRealtime] includes zygote fork and bindApplication.
- * The callback is the next Choreographer frame, then [Activity.reportFullyDrawn].
- * Release builds keep the call and do not log.
+ * The callback is the next Choreographer frame, about one frame before the first
+ * draw has fully completed. [Activity.reportFullyDrawn] runs in debug and release
+ * so a release Macrobenchmark can see fully drawn. The elapsed log is debug-only.
  */
 object LaunchTiming {
     private val reported = AtomicBoolean(false)
 
     fun onFirstDraw(activity: Activity) {
-        if (!BuildConfig.DEBUG) return
         val started = Process.getStartElapsedRealtime()
         Choreographer.getInstance().postFrameCallback {
             if (!reported.compareAndSet(false, true)) return@postFrameCallback
-            val elapsed = SystemClock.elapsedRealtime() - started
-            Log.i(TAG, "first draw ${elapsed}ms budget ${PerformanceBudget.LAUNCH_MS}ms")
-            try {
-                activity.reportFullyDrawn()
-            } catch (error: Throwable) {
+            report(activity, SystemClock.elapsedRealtime() - started)
+        }
+    }
+
+    private fun report(activity: Activity, elapsedMs: Long) {
+        if (BuildConfig.DEBUG) {
+            Log.i(TAG, "first draw ${elapsedMs}ms budget ${PerformanceBudget.LAUNCH_MS}ms")
+        }
+        try {
+            activity.reportFullyDrawn()
+        } catch (error: Throwable) {
+            if (BuildConfig.DEBUG) {
                 Log.w(TAG, "reportFullyDrawn", error)
             }
         }

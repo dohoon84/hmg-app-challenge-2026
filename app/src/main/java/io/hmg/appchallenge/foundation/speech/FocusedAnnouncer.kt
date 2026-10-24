@@ -5,11 +5,15 @@ import androidx.annotation.MainThread
 
 /**
  * Asks for transient ducking focus, waits [LEADING_SILENCE_MS], then speaks.
- * A ready [SpeechEngine] is preferred. Init failure, a missing engine, a synchronous
- * speak error, or an async utterance error falls back to [ChimePlayer]. Both paths
- * share this focus and the leading gap. Focus is released when speech or the chime
- * finishes, and also on stop, suspend, or any focus loss. A new announcement abandons
- * the previous grant before requesting another one.
+ * A ready [SpeechEngine] is preferred. The engine is warmed on [onForeground] and
+ * again at the start of [announce], so binding overlaps the focus request and the
+ * leading silence. If it is still not ready, this waits until [ENGINE_READY_WAIT_MS]
+ * from the focus grant (the silence counts toward that cap) and then falls back to
+ * [ChimePlayer]. Init failure, a synchronous speak error, or an async utterance
+ * error also falls back to the chime. Both paths share this focus and the leading
+ * gap. Focus is released when speech or the chime finishes, and also on stop,
+ * suspend, or any focus loss. A new announcement abandons the previous grant
+ * before requesting another one.
  * Navigation guidance or the assistant already playing cancels the turn.
  */
 class FocusedAnnouncer(
@@ -30,6 +34,8 @@ class FocusedAnnouncer(
         checkMainThread()
         if (suspended) return
         if (focus.navigationOrAssistantActive()) return
+        // Binding starts before focus is requested so init overlaps the grant and the silence.
+        tts.warmUp()
         // Drop the previous grant before the new request so focus requests do not stack.
         endTurn()
         val gen = generation
@@ -50,7 +56,7 @@ class FocusedAnnouncer(
                 endTurn()
                 return@post
             }
-            playSelected(text, gen)
+            playWhenReady(text, gen, waitedMs = leadingSilenceMs)
         }
     }
 
@@ -65,6 +71,11 @@ class FocusedAnnouncer(
         checkMainThread()
         suspended = true
         endTurn()
+        // The process memory budget is 400MB and nothing speaks off-screen, so the
+        // binding is dropped here. The next onForeground pre-warms, and announce waits
+        // up to ENGINE_READY_WAIT_MS before the chime. Keeping the binding across
+        // suspend would make the first utterance instant but hold the TTS service
+        // for the process lifetime.
         tts.shutdown()
     }
 
@@ -72,10 +83,36 @@ class FocusedAnnouncer(
     override fun onForeground() {
         checkMainThread()
         suspended = false
+        tts.warmUp()
+    }
+
+    /**
+     * [waitedMs] is time since the focus grant. The leading silence is the first slice.
+     * One extra delay covers the rest of [ENGINE_READY_WAIT_MS]. A leading silence
+     * already past that cap chimes immediately.
+     */
+    private fun playWhenReady(text: String, gen: Int, waitedMs: Long) {
+        if (!tts.ready && waitedMs < ENGINE_READY_WAIT_MS) {
+            val remaining = ENGINE_READY_WAIT_MS - waitedMs
+            ticket = scheduler.post(remaining) {
+                if (gen != generation || suspended) return@post
+                if (focus.navigationOrAssistantActive()) {
+                    endTurn()
+                    return@post
+                }
+                playWhenReady(text, gen, waitedMs = waitedMs + remaining)
+            }
+            return
+        }
+        playSelected(text, gen)
     }
 
     private fun playSelected(text: String, gen: Int) {
         val token = ++outputToken
+        if (!tts.ready) {
+            fallbackToChime(token, gen)
+            return
+        }
         try {
             tts.speak(
                 text,
@@ -132,5 +169,13 @@ class FocusedAnnouncer(
 
     companion object {
         const val LEADING_SILENCE_MS = 175L
+
+        /**
+         * Bound on waiting for [SpeechEngine.ready], measured from the focus grant.
+         * 1500ms is the product cap (about 1.5s). It includes [LEADING_SILENCE_MS].
+         * It is not 1500ms added after the silence. A ready engine speaks when the
+         * silence ends. A slow engine gets one more delay of the remainder, then the chime.
+         */
+        const val ENGINE_READY_WAIT_MS = 1_500L
     }
 }
