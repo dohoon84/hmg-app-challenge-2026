@@ -16,7 +16,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.SemanticsPropertyKey
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
@@ -226,15 +229,19 @@ fun C1CheckScreen(card: ShownCard?, dark: Boolean) {
         items.take(rows.size).forEachIndexed { index, item ->
             val y = rows[index]
             val line = item.text
-            NumberBadge(880f, y, "${index + 1}")
-            if (item.kind == CheckKind.CHARGE || item.kind == CheckKind.FUEL) {
-                ChargeLine(line, 944f, y)
+            if (item.settled) {
+                ResolvedCheckRow(880f, y - 6f, shortItem(line), CheckRules.statusBadge(item.kind, settled = true))
             } else {
-                SpecText(shortItem(line), 944f, y, MiriType.titleMediumStrong(), colors.frameInk)
-            }
-            StatusBadge(1558f, y, CheckRules.statusBadge(item.kind, item.settled))
-            if (line.contains("실내등")) {
-                SpecText("켜 둔 채 내리면 배터리가 약해질 수 있어요.", 944f, 558f, MiriType.bodySmallNormal(), colors.frameTertiary)
+                NumberBadge(880f, y, "${index + 1}")
+                if (item.kind == CheckKind.CHARGE || item.kind == CheckKind.FUEL) {
+                    ChargeLine(line, 944f, y)
+                } else {
+                    SpecText(shortItem(line), 944f, y, MiriType.titleMediumStrong(), colors.frameInk)
+                }
+                StatusBadge(1558f, y, CheckRules.statusBadge(item.kind))
+                if (line.contains("실내등")) {
+                    SpecText("켜 둔 채 내리면 배터리가 약해질 수 있어요.", 944f, 558f, MiriType.bodySmallNormal(), colors.frameTertiary)
+                }
             }
             dividers.getOrNull(index)?.let { divider ->
                 Box(Modifier.figma(944f, divider, 690f, 1f).background(colors.divider))
@@ -289,12 +296,23 @@ fun C2DoneScreen(card: ShownCard?, dark: Boolean) {
 @Composable
 fun F4ChecklistScreen(card: ShownCard?, dark: Boolean) {
     val colors = IviTheme.colors
-    val car = if (dark) R.drawable.miri_car_rear_door_open_dark else R.drawable.miri_car_rear_door_open_light
+    val doorItem = card?.checks?.firstOrNull {
+        it.kind == CheckKind.DOOR || it.kind == CheckKind.WINDOW || it.kind == CheckKind.LIGHT
+    }
+    val doorKind = doorItem?.kind ?: CheckKind.DOOR
+    val doorSettled = doorItem?.settled == true
+    val showOpenDoor = !doorSettled || !opensTheBody(doorItem?.text.orEmpty())
+    val car = when {
+        !showOpenDoor && dark -> R.drawable.miri_car_top_dark
+        !showOpenDoor -> R.drawable.miri_car_top_light
+        dark -> R.drawable.miri_car_rear_door_open_dark
+        else -> R.drawable.miri_car_rear_door_open_light
+    }
     val charge = card?.lines?.firstOrNull { it.contains("반납 기준") } ?: "충전 62% · 반납 기준 80%"
     val open = card?.lines?.firstOrNull { it.contains("문") || it.contains("트렁크") } ?: "오른쪽 뒷문"
     SpecFrame {
         Image(painterResource(car), null, Modifier.figma(110f, 40f, 620f, 1128f), contentScale = ContentScale.Crop)
-        Hotspot(564.5f, 678.5f)
+        if (showOpenDoor) Hotspot(564.5f, 678.5f)
         Hotspot(515.07f, 823.95f)
         SpecIcon(R.drawable.miri_ic_parking, 880f, 48f, 32f, 32f, colors.frameSecondary, "정차")
         SpecText("정차 중", 924f, 50f, MiriType.labelMedium(), colors.frameSecondary)
@@ -303,22 +321,19 @@ fun F4ChecklistScreen(card: ShownCard?, dark: Boolean) {
             card?.badge ?: "아직 확인할 곳이 2개 남아 있어요.",
             880f, 180f, MiriType.bodyMediumNormal(), colors.frameSecondary,
         )
-        SpecIcon(R.drawable.miri_ic_door, 880f, 316f, 40f, 40f, colors.frameSecondary)
-        SpecText(shortItem(open), 944f, 312f, MiriType.titleMediumStrong(), colors.frameInk)
-        val doorKind = card?.checks?.firstOrNull {
-            it.kind == CheckKind.DOOR || it.kind == CheckKind.WINDOW || it.kind == CheckKind.LIGHT
-        }?.kind ?: CheckKind.DOOR
-        StatusBadge(1558f, 312f, CheckRules.statusBadge(doorKind))
+        if (doorSettled) {
+            ResolvedCheckRow(880f, 306f, shortItem(open), CheckRules.statusBadge(doorKind, settled = true))
+        } else {
+            SpecIcon(R.drawable.miri_ic_door, 880f, 316f, 40f, 40f, colors.frameSecondary)
+            SpecText(shortItem(open), 944f, 312f, MiriType.titleMediumStrong(), colors.frameInk)
+            StatusBadge(1558f, 312f, CheckRules.statusBadge(doorKind))
+        }
         Box(Modifier.figma(944f, 420f, 690f, 1f).background(colors.divider))
         SpecIcon(R.drawable.miri_ic_charge, 880f, 476f, 40f, 40f, colors.frameSecondary)
         SpecText("충전 · 반납 기준", 944f, 452f, MiriType.labelMedium(), colors.frameTertiary)
         ChargeLine(charge)
         Box(Modifier.figma(944f, 590f, 690f, 1f).background(colors.divider))
-        Box(Modifier.figma(880f, 626f, 754f, 64f).alpha(0.45f)) {
-            SpecIcon(R.drawable.miri_ic_check_40, 0f, 10f, 40f, 40f, colors.accent)
-            SpecText("실내등", 64f, 6f, MiriType.titleMediumStrong(), colors.frameTertiary)
-            SpecText("꺼졌어요", 664f, 14f, MiriType.bodySmallNormal(), colors.frameTertiary)
-        }
+        ResolvedCheckRow(880f, 626f, "실내등", "꺼졌어요")
         Box(Modifier.figma(880f, 770f, 754f, 1f).background(colors.divider))
         SpecIcon(R.drawable.miri_ic_window, 880f, 804f, 32f, 32f, colors.frameSecondary)
         SpecText("창문은 신호가 없어요. 봐 주세요.", 928f, 802f, MiriType.bodySmallNormal(), colors.frameSecondary)
@@ -365,6 +380,33 @@ private fun BoxScope.NumberBadge(x: Float, y: Float, label: String) {
     }
 }
 
+/** Resolved check row. Same tokens as F4's dimmed `꺼졌어요` line. */
+internal object CheckRowStyle {
+    const val CAUTION = "caution-badge"
+    const val SETTLED = "settled-row"
+    const val CHECK = "settled-check"
+    const val ALPHA = 0.45f
+    val alphaKey = SemanticsPropertyKey<Float>("SettledAlpha")
+}
+
+@Composable
+private fun BoxScope.ResolvedCheckRow(x: Float, y: Float, title: String, label: String) {
+    val colors = IviTheme.colors
+    Box(
+        Modifier
+            .figma(x, y, 754f, 64f)
+            .alpha(CheckRowStyle.ALPHA)
+            .semantics { this[CheckRowStyle.alphaKey] = CheckRowStyle.ALPHA }
+            .testTag(CheckRowStyle.SETTLED),
+    ) {
+        Box(Modifier.figma(0f, 10f, 40f, 40f).testTag(CheckRowStyle.CHECK)) {
+            SpecIcon(R.drawable.miri_ic_check_40, 0f, 0f, 40f, 40f, colors.accent)
+        }
+        SpecText(title, 64f, 6f, MiriType.titleMediumStrong(), colors.frameTertiary)
+        SpecText(label, 664f, 14f, MiriType.bodySmallNormal(), colors.frameTertiary)
+    }
+}
+
 @Composable
 private fun BoxScope.StatusBadge(x: Float, y: Float, label: String) {
     val colors = IviTheme.colors
@@ -373,7 +415,8 @@ private fun BoxScope.StatusBadge(x: Float, y: Float, label: String) {
             .offset(px(x), px(y))
             .height(px(44f))
             .background(colors.cautionBadge, RoundedCornerShape(percent = 50))
-            .padding(horizontal = px(14f)),
+            .padding(horizontal = px(14f))
+            .testTag(CheckRowStyle.CAUTION),
         contentAlignment = Alignment.Center,
     ) {
         Text(label, style = MiriType.bodyMediumStrong(), color = colors.onCautionBadge, maxLines = 1)

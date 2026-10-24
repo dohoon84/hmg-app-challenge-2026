@@ -103,6 +103,35 @@ class DashedGuideButtonTest {
     }
 
     @Test
+    fun aSettledRearDoorDimsWithACheckInsteadOfTheCautionPill() {
+        rule.setContent {
+            FoundationTheme {
+                Box(Modifier.requiredSize(1682.dp, 1210.dp)) {
+                    C1CheckScreen(
+                        card = ShownCard(
+                            title = "반납 전 점검",
+                            lines = listOf("오른쪽 뒷문이 열려 있어요."),
+                            checks = listOf(
+                                CheckItem(CheckKind.DOOR, "오른쪽 뒷문이 열려 있어요.", settled = true),
+                            ),
+                        ),
+                        dark = false,
+                    )
+                }
+            }
+        }
+        rule.onNodeWithText("닫힘").assertExists()
+        rule.onAllNodesWithText("열림").assertCountEquals(0)
+        rule.onAllNodesWithTag(CheckRowStyle.CAUTION).assertCountEquals(0)
+        rule.onNodeWithTag(CheckRowStyle.CHECK).assertExists()
+        rule.onNodeWithTag(CheckRowStyle.SETTLED).assert(
+            SemanticsMatcher("settled row alpha") { node ->
+                node.config.getOrNull(CheckRowStyle.alphaKey) == CheckRowStyle.ALPHA
+            },
+        )
+    }
+
+    @Test
     fun aHiddenGuideOmitsTheButtonAndTheNote() {
         rule.setContent {
             FoundationTheme {

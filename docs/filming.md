@@ -59,7 +59,7 @@ PUT /vehicle/ev-battery?field=soc&value=60
 | 충전 | 0:49–0:53 | 4초 | 없음 | 앱 화면 없음. 이 컷만 SOC 60. `PUT /vehicle/ev-battery?field=soc&value=60`. 충전구 클로즈업과 시스템 배터리 패널은 앱이 만들지 않음. 다음 앱 컷 전에 다시 80 | 없음 |
 | F3 | 0:53–1:02 | 9초 | `F3` | 제품 F3 한 장. 히어로는 `11:03쯤 출발하면`, 아래 `반납 12:00`, `가는 데 약 42분`. F2와 같은 시각. 점선 안내 버튼은 숨김. SOC 80 | `adb shell am broadcast -n com.krazylabs.miri/.mvp.FilmingReceiver -a com.krazylabs.miri.action.AUTOPLAY --ez start true --es profile storyboard-v1 --es step F3` |
 | 주행 3 | 1:02–1:04 | 2초 | 없음 | 앱 화면 없음. 편집용 운전석 도로. SOC 80 | 없음 |
-| C1 | 1:04–1:11.5 | 7.5초 | `C1` | `반납 전 점검`, 오른쪽 뒷문 열림. 6초 뒤 문을 닫으면 차 그림이 닫힌 탑뷰로 바뀌고 배지는 `닫힘`. 그 상태를 1.5초 유지한 뒤 점검 끝. SOC 80 | `adb shell am broadcast -n com.krazylabs.miri/.mvp.FilmingReceiver -a com.krazylabs.miri.action.AUTOPLAY --ez start true --es profile storyboard-v1 --es step C1` |
+| C1 | 1:04–1:11.5 | 7.5초 | `C1` | `반납 전 점검`, 오른쪽 뒷문 열림. 6초 뒤 문을 닫으면 줄이 남고 흐려진다. 청록 체크와 회색 `닫힘`이 보이며 주황 배지는 없다. 차 그림은 닫힌 탑뷰. 그 상태를 1.5초 유지한 뒤 점검 끝. SOC 80 | `adb shell am broadcast -n com.krazylabs.miri/.mvp.FilmingReceiver -a com.krazylabs.miri.action.AUTOPLAY --ez start true --es profile storyboard-v1 --es step C1` |
 | C2 | 1:11.5–1:15.5 | 4초 | `C2` | `점검 끝. 좋은 하루 보내세요.` 주행거리 줄은 적산 차이. 차이가 0이면 줄을 숨김. SOC 80 | `adb shell am broadcast -n com.krazylabs.miri/.mvp.FilmingReceiver -a com.krazylabs.miri.action.AUTOPLAY --ez start true --es profile storyboard-v1 --es step C2` |
 | 엔딩 | 1:15.5–1:20.5 | 5초 | 없음 | 앱 화면 없음. 편집 카드 `미리가 먼저 챙겨 줘요` | 없음 |
 
