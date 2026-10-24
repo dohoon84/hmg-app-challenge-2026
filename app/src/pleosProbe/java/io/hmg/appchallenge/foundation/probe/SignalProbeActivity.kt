@@ -1,5 +1,6 @@
 package io.hmg.appchallenge.foundation.probe
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
@@ -59,6 +60,9 @@ class SignalProbeActivity : ComponentActivity() {
                     onSimulation = probe::trySimulation,
                     onPoll = probe::pollNavi,
                     onVehicle = probe::readVehicle,
+                    onVoice = {
+                        startActivity(Intent(this, VoiceProbeActivity::class.java))
+                    },
                 )
             }
         }
@@ -90,6 +94,7 @@ private fun ProbeScreen(
     onSimulation: () -> Unit,
     onPoll: () -> Unit,
     onVehicle: () -> Unit,
+    onVoice: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -125,6 +130,7 @@ private fun ProbeScreen(
         ProbeButton("SIMULATION_GUIDING", onSimulation)
         ProbeButton("get*Info 폴링", onPoll)
         ProbeButton("차량 정보 다시 읽기", onVehicle)
+        ProbeButton("음성 프로브 (ko-KR)", onVoice)
         Text("최근 로그", style = MaterialTheme.typography.titleMedium)
         SelectionContainer {
             Text(

@@ -222,6 +222,8 @@ val forbiddenPleosReleaseNames = listOf(
     "SignalProbeActivity",
     "NaviSignalProbe",
     "VehicleSignalProbe",
+    "VoiceProbeActivity",
+    "VoiceProbe",
 )
 
 // Names the app may ship. Library merges (Vehicle binding, AndroidX receiver) are included.
