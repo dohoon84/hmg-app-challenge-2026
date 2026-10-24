@@ -54,6 +54,8 @@ data class DeckInput(
     val nowMs: Long,
     val cardMs: Long,
     val showGuide: Boolean,
+    /** Return-card distance. Null hides the sentence. */
+    val tripLine: String? = null,
 )
 
 /**
@@ -207,7 +209,7 @@ class CardSession {
         if (completion) {
             return DeckStep(
                 MiriPane.CHECK,
-                CardFace(MiriPane.CHECK, input.checkTitle, listOf(CheckRules.DONE)),
+                CardFace(MiriPane.CHECK, input.checkTitle, doneLines(input)),
                 VoicePlay.None,
             )
         }
@@ -251,7 +253,7 @@ class CardSession {
                 val voice = checkChime(input.nowMs, once("check-done", VoicePlay.Chime))
                 return DeckStep(
                     MiriPane.CHECK,
-                    CardFace(MiriPane.CHECK, input.checkTitle, listOf(CheckRules.DONE)),
+                    CardFace(MiriPane.CHECK, input.checkTitle, doneLines(input)),
                     voice,
                 )
             }
@@ -349,6 +351,9 @@ class CardSession {
         CardId.F3 -> input.f3 != null
         CardId.D1, null -> false
     }
+
+    private fun doneLines(input: DeckInput): List<String> =
+        listOf(CheckRules.DONE) + listOfNotNull(input.tripLine)
 
     private fun face(id: CardId, input: DeckInput): CardFace? = when (id) {
         CardId.CHECK -> {

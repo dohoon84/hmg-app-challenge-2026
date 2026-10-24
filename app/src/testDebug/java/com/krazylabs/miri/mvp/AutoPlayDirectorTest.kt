@@ -51,6 +51,8 @@ class AutoPlayDirectorTest {
         val over = cabin.overlay(live)
         assertEquals(60, over.socPercent)
         assertTrue(over.socReadable)
+        assertEquals(ScriptedCabinFeed.START_KM, over.odometerKm)
+        assertTrue(over.odometerReadable)
         assertTrue(over.doors.getValue(DoorId.ROW_2_RIGHT).open)
         assertFalse(over.doors.getValue(DoorId.ROW_1_LEFT).open)
         assertEquals(live.identity, over.identity)
@@ -113,6 +115,22 @@ class AutoPlayDirectorTest {
         assertFalse(cabin.engaged)
         assertFalse(director.running.value)
         assertTrue(host.clears >= 1)
+    }
+
+    @Test
+    fun drivingRaisesTheStandInOdometer() = runTest {
+        val cabin = ScriptedCabinFeed()
+        val director = AutoPlayDirector.forTest(cabin) {}
+        director.play(RecordingHost(), this, GearPosition.PARK)
+        advanceUntilIdle()
+        val drives = AutoPlayScript.steps.filterIsInstance<AutoStep.Gear>().count { it.gear == GearPosition.DRIVE }
+        assertEquals(4, drives)
+        assertEquals(
+            ScriptedCabinFeed.START_KM + drives * ScriptedCabinFeed.DRIVE_STEP_KM,
+            cabin.odometerKm,
+            0.01f,
+        )
+        assertFalse(cabin.engaged)
     }
 
     private class RecordingHost : DemoPlaybackHost {

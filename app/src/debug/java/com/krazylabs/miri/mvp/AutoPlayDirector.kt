@@ -126,6 +126,7 @@ class AutoPlayDirector private constructor(
                     )
                 }
                 is AutoStep.Gear -> {
+                    if (step.gear == GearPosition.DRIVE) cabin.addDrivenKm()
                     cabin.gear = step.gear
                     _caption.value = step.caption
                     host.refresh()

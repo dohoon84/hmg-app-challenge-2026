@@ -235,8 +235,10 @@ fun C2DoneScreen(card: ShownCard?, dark: Boolean) {
         SpecIcon(R.drawable.miri_ic_check_48, 48f, 972f, 48f, 48f, colors.accent)
         SpecText("점검 끝.", 112f, 958f, MiriType.headlineLargeExtra(), colors.frameInk)
         SpecText("좋은 하루 보내세요.", 48f, 1062f, MiriType.titleLargeNormal(), colors.frameSecondary)
-        val trip = card?.lines?.firstOrNull { it.contains("km") } ?: "이번 대여에서 212km를 달렸어요. 수고하셨어요."
-        SpecText(trip, 1137f, 1128f, MiriType.bodySmallNormal(), colors.frameTertiary)
+        val trip = card?.lines?.firstOrNull { it.contains("km") }
+        if (trip != null) {
+            SpecText(trip, 1137f, 1128f, MiriType.bodySmallNormal(), colors.frameTertiary)
+        }
     }
 }
 

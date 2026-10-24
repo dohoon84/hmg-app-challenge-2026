@@ -8,6 +8,7 @@ import com.krazylabs.miri.BuildConfig
 import com.krazylabs.miri.mvp.CardVoiceGate
 import com.krazylabs.miri.domain.GearBackend
 import com.krazylabs.miri.domain.GearPosition
+import com.krazylabs.miri.domain.VehicleSnapshot
 import com.krazylabs.miri.domain.PlaceRequest
 import com.krazylabs.miri.domain.TripEstimate
 import com.krazylabs.miri.domain.TurnLamps
@@ -31,6 +32,7 @@ import com.krazylabs.miri.mvp.MiriPane
 import com.krazylabs.miri.mvp.RearDoorNote
 import com.krazylabs.miri.mvp.ReturnGuidanceFeature
 import com.krazylabs.miri.mvp.RentalArm
+import com.krazylabs.miri.mvp.RentalDistance
 import com.krazylabs.miri.mvp.RouteKey
 import com.krazylabs.miri.mvp.NearbyPlace
 import com.krazylabs.miri.mvp.PLACE_DEST_ID
@@ -147,6 +149,7 @@ class MiriViewModel @Inject constructor(
     private var kind = prefs.getString(KEY_KIND, null)
     private var forceIntake = false
     private var origin = readOrigin()
+    private var rentalOdometerKm: Float? = readOdometerStart()
     private var placeSheetOpen = false
     private var guideNote = ""
     private var edgesOpen = true
@@ -382,7 +385,14 @@ class MiriViewModel @Inject constructor(
             form.reset()
             forceIntake = true
             placeSheetOpen = false
-            prefs.edit().remove(KEY_KIND).remove(KEY_MINUTE).remove(KEY_EPOCH_DAY).remove(KEY_DAY).putBoolean(KEY_OWN, false).apply()
+            val editor = prefs.edit()
+                .remove(KEY_KIND)
+                .remove(KEY_MINUTE)
+                .remove(KEY_EPOCH_DAY)
+                .remove(KEY_DAY)
+                .putBoolean(KEY_OWN, false)
+            keepRentalOdometer(editor, snapshot)
+            editor.apply()
             beginOriginRequest()
             if (scenario.armNewRental) {
                 scenario = scenario.clearedForNewRental()
@@ -503,6 +513,11 @@ class MiriViewModel @Inject constructor(
                 d2 = d2,
                 f3 = if (ownCar) null else f3,
                 d1 = d1,
+                tripLine = RentalDistance.line(
+                    startKm = rentalOdometerKm,
+                    currentKm = snapshot.odometerKm,
+                    readable = snapshot.odometerReadable,
+                ),
                 nowMs = now,
                 cardMs = scenario.cardMs,
                 showGuide = scenario.showReturnGuide,
@@ -705,13 +720,14 @@ class MiriViewModel @Inject constructor(
         session.resetRental()
         driveCue.resetRental()
         rearNote.reset()
-        prefs.edit()
+        val editor = prefs.edit()
             .putBoolean(KEY_OWN, false)
             .remove(KEY_KIND)
             .remove(KEY_MINUTE)
             .remove(KEY_EPOCH_DAY)
             .remove(KEY_DAY)
-            .apply()
+        keepRentalOdometer(editor, cabin.overlay(vehicleRepository.snapshot.value))
+        editor.apply()
         scenarioInput.update(scenarioInput.overrides.value.clearedForNewRental())
         publish()
     }
@@ -720,6 +736,16 @@ class MiriViewModel @Inject constructor(
         val now = java.time.LocalTime.now(zone)
         val minutes = com.krazylabs.miri.ui.design.visibleReturnMinutes(0, now.hour * 60 + now.minute)
         return minutes.firstOrNull() ?: -1
+    }
+
+    private fun readOdometerStart(): Float? =
+        if (prefs.contains(KEY_ODO)) prefs.getFloat(KEY_ODO, 0f) else null
+
+    /** A new rental keeps the odometer only when it can be read. */
+    private fun keepRentalOdometer(editor: android.content.SharedPreferences.Editor, snapshot: VehicleSnapshot) {
+        val start = RentalDistance.startToKeep(snapshot.odometerKm, snapshot.odometerReadable)
+        rentalOdometerKm = start
+        if (start == null) editor.remove(KEY_ODO) else editor.putFloat(KEY_ODO, start)
     }
 
     private fun readOrigin(): RentalOrigin {
@@ -824,6 +850,7 @@ class MiriViewModel @Inject constructor(
         const val KEY_LON = "origin_lon"
         const val KEY_ADDR = "origin_address"
         const val KEY_ORIGIN_WAIT = "origin_wait"
+        const val KEY_ODO = "odometer_km"
         const val KIND_RENTAL = "rental"
         const val KIND_SHARE = "share"
         const val SETTLE_MS = 2_500L

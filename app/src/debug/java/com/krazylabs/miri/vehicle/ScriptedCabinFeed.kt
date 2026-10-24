@@ -9,9 +9,9 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Stands in for gear, the rear door, and SOC while a debug playback runs.
- * It never writes Vehicle Control or the GNSS HAL. Release builds do not
- * contain this class.
+ * Stands in for gear, the rear door, SOC, and the odometer while a debug
+ * playback runs. It never writes Vehicle Control or the GNSS HAL. Release
+ * builds do not contain this class.
  */
 @Singleton
 class ScriptedCabinFeed @Inject constructor() : CabinOverride {
@@ -20,14 +20,20 @@ class ScriptedCabinFeed @Inject constructor() : CabinOverride {
     @Volatile var gear: GearPosition = GearPosition.PARK
     @Volatile var rearDoorOpen: Boolean = false
     @Volatile var soc: Int = 90
+    @Volatile var odometerKm: Float = START_KM
 
     val engaged: Boolean get() = gate.get()
 
     fun engage(gear: GearPosition = GearPosition.PARK, soc: Int = 90) {
         this.gear = gear
         this.soc = soc
+        odometerKm = START_KM
         rearDoorOpen = false
         gate.set(true)
+    }
+
+    fun addDrivenKm(km: Float = DRIVE_STEP_KM) {
+        odometerKm += km
     }
 
     fun release() {
@@ -43,6 +49,17 @@ class ScriptedCabinFeed @Inject constructor() : CabinOverride {
         val doors = DoorId.entries.associateWith { id ->
             if (rearDoorOpen && id == DoorId.ROW_2_RIGHT) PanelState(position = 1, readable = true) else closed
         }
-        return live.copy(doors = doors, socPercent = soc, socReadable = true)
+        return live.copy(
+            doors = doors,
+            socPercent = soc,
+            socReadable = true,
+            odometerKm = odometerKm,
+            odometerReadable = true,
+        )
+    }
+
+    companion object {
+        const val START_KM = 12_000f
+        const val DRIVE_STEP_KM = 30f
     }
 }
