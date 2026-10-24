@@ -2,6 +2,9 @@ package com.krazylabs.miri.mvp
 
 import com.krazylabs.miri.domain.CarFacts
 import com.krazylabs.miri.domain.CarIdentity
+import com.krazylabs.miri.domain.ConnectorCodes
+import com.krazylabs.miri.domain.ConnectorProbeText
+import com.krazylabs.miri.domain.DestinationSnapshot
 import com.krazylabs.miri.domain.DoorId
 import com.krazylabs.miri.domain.FuelKind
 import com.krazylabs.miri.domain.GearBackend
@@ -25,21 +28,25 @@ class MvpPhaseTest {
     }
 
     @Test
-    fun comboTwoAndIecAreDcCombo() {
+    fun vhalCcs1AndCcs2AreDcCombo() {
         val identity = CarFacts.from(
             intArrayOf(CarFacts.FUEL_ELECTRIC),
             null,
             CarFacts.PORT_REAR_RIGHT,
-            intArrayOf(CarFacts.CONNECTOR_COMBO_2),
+            intArrayOf(ConnectorCodes.IEC_TYPE_1_CCS_DC),
         )
         assertTrue(identity.evOnly)
         assertEquals(PortSide.REAR_RIGHT, identity.evPort)
         assertTrue(identity.connectorDcCombo)
-        assertTrue(CarFacts.from(intArrayOf(10), null, 3, intArrayOf(CarFacts.CONNECTOR_COMBO_1)).connectorDcCombo)
-        assertFalse(CarFacts.from(intArrayOf(10), null, 3, intArrayOf(CarFacts.CONNECTOR_CHADEMO)).connectorDcCombo)
-        assertFalse(
-            CarFacts.from(intArrayOf(10), null, 3, intArrayOf(CarFacts.CONNECTOR_TESLA_ROADSTER)).connectorDcCombo,
-        )
+        assertEquals(setOf(5, 6), ConnectorCodes.DC_COMBO)
+        assertTrue(combo(ConnectorCodes.IEC_TYPE_2_CCS_DC))
+        assertFalse(combo(ConnectorCodes.IEC_TYPE_4_DC))
+        assertFalse(combo(ConnectorCodes.IEC_TYPE_1_AC))
+        assertFalse(combo(ConnectorCodes.IEC_TYPE_2_AC))
+        assertFalse(combo(ConnectorCodes.IEC_TYPE_3_AC))
+        assertFalse(combo(ConnectorCodes.TESLA_ROADSTER))
+        assertFalse(combo(ConnectorCodes.UNKNOWN))
+        assertFalse(combo(ConnectorCodes.OTHER))
     }
 
     @Test
@@ -51,6 +58,42 @@ class MvpPhaseTest {
                 DestinationRole.CHARGING,
             ),
         )
+    }
+
+    @Test
+    fun rawFourOmitsTheConnectorSentenceAndRawFiveAndSixSayDcCombo() {
+        val chademo = D2Rules.offer(evFromConnector(4), DestinationRole.CHARGING)
+        val ccs1 = D2Rules.offer(evFromConnector(5), DestinationRole.CHARGING)
+        val ccs2 = D2Rules.offer(evFromConnector(6), DestinationRole.CHARGING)
+        assertFalse(saysDcCombo(chademo))
+        assertFalse(chademo?.chips?.contains("DC 콤보") == true)
+        assertTrue(saysDcCombo(ccs1))
+        assertTrue(ccs1?.chips?.contains("DC 콤보") == true)
+        assertTrue(saysDcCombo(ccs2))
+        assertTrue(ccs2?.chips?.contains("DC 콤보") == true)
+        assertFalse(combo(4))
+        assertTrue(combo(5))
+        assertTrue(combo(6))
+        assertFalse(combo(7))
+    }
+
+    @Test
+    fun probeLinePrintsPropertyInfoManagerAndPleosSideBySide() {
+        val line = ConnectorProbeText.line(
+            propertyId = 289472775,
+            propertyValues = intArrayOf(5),
+            infoManagerValues = intArrayOf(4),
+            pleos = "[IEC_TYPE_1_CCS_DC]",
+        )
+        assertTrue(line.contains("propertyId=289472775"))
+        assertTrue(line.contains("CarPropertyManager=[5]"))
+        assertTrue(line.contains("vhal=[CCS1]"))
+        assertTrue(line.contains("CarInfoManager.getEvConnectorTypes()=[4]"))
+        assertTrue(line.contains("java=[CCS1]"))
+        assertTrue(line.contains("Pleos=[IEC_TYPE_1_CCS_DC]"))
+        val missing = ConnectorProbeText.line(289472775, intArrayOf(5), null, "unavailable")
+        assertTrue(missing.contains("CarInfoManager.getEvConnectorTypes()=unavailable"))
+        assertTrue(missing.contains("java=n/a"))
     }
 
     @Test
@@ -194,6 +237,37 @@ class MvpPhaseTest {
         )
         assertTrue(soon[1].contains("30분 남았어요."))
         assertFalse(soon[1].contains("0시간"))
+        val hourAndMinute = F3Rules.lines(
+            ev = true,
+            level = null,
+            target = null,
+            returnAtMs = 1_700_000_000_000L,
+            nowMs = 1_700_000_000_000L - (61 * 60_000L + 59_000L),
+            etaSeconds = null,
+        )
+        assertTrue(hourAndMinute[0].contains("1시간 1분 남았어요."))
+        assertFalse(hourAndMinute[0].contains("1시간 2분"))
+        assertFalse(hourAndMinute[0].contains("2시간"))
+        val almostHour = F3Rules.lines(
+            ev = true,
+            level = null,
+            target = null,
+            returnAtMs = 1_700_000_000_000L,
+            nowMs = 1_700_000_000_000L - (59 * 60_000L + 59_000L),
+            etaSeconds = null,
+        )
+        assertTrue(almostHour[0].contains("59분 남았어요."))
+        assertFalse(almostHour[0].contains("1시간"))
+        val underAMinute = F3Rules.lines(
+            ev = true,
+            level = null,
+            target = null,
+            returnAtMs = 1_700_000_000_000L,
+            nowMs = 1_700_000_000_000L - 59_000L,
+            etaSeconds = null,
+        )
+        assertTrue(underAMinute[0].contains("곧 남았어요."))
+        assertFalse(underAMinute[0].contains("0분"))
         val trip = straightLineTrip(37.5, 127.0, 37.5, 127.0)
         assertEquals(0, trip.distance)
         val asked = TripOnce()
@@ -257,6 +331,42 @@ class MvpPhaseTest {
     }
 
     @Test
+    fun destinationKeyStaysPutWhenTheRouteChanges() {
+        val place = destination("충전소", 37.5012, 127.1001)
+        val arrived = RouteKey.of(place, "route-1")
+        assertEquals(arrived, RouteKey.of(place, ""))
+        assertEquals(arrived, RouteKey.of(place, "route-9"))
+        assertEquals(arrived, RouteKey.of(destination("충전소", 37.50124, 127.10014), "route-2"))
+        assertEquals("route-only", RouteKey.of(null, "route-only"))
+        assertEquals("", RouteKey.of(null, " "))
+        val session = CardSession()
+        val face = D2Rules.offer(evRearRight(true), DestinationRole.CHARGING, routeKey = arrived)!!
+        assertEquals(MiriPane.D2, session.step(baseInput(GearPosition.PARK).copy(d2 = face, nowMs = 0)).pane)
+        session.step(baseInput(GearPosition.DRIVE).copy(d2 = face))
+        val rerouted = face.copy(routeKey = RouteKey.of(place, "route-2"))
+        assertEquals(MiriPane.ICON, session.step(baseInput(GearPosition.PARK).copy(d2 = rerouted, nowMs = 1_000)).pane)
+        val engine = DriveCueEngine()
+        val first = engine.step(arrivalCue(arrived, remainMeters = 80))
+        assertEquals(CueKind.CLIPS, first.kind)
+        val again = engine.step(arrivalCue(RouteKey.of(place, "route-new"), remainMeters = 80))
+        assertEquals(CueKind.NONE, again.kind)
+    }
+
+    @Test
+    fun emptyD2KeyShowsOncePerRental() {
+        val session = CardSession()
+        val face = D2Rules.offer(evRearRight(true), DestinationRole.CHARGING, routeKey = "")!!
+        assertEquals(MiriPane.D2, session.step(baseInput(GearPosition.PARK).copy(d2 = face, nowMs = 0)).pane)
+        session.step(baseInput(GearPosition.DRIVE).copy(d2 = face))
+        assertEquals(MiriPane.ICON, session.step(baseInput(GearPosition.PARK).copy(d2 = face, nowMs = 1_000)).pane)
+        val keyed = face.copy(routeKey = "route-9")
+        assertEquals(MiriPane.D2, session.step(baseInput(GearPosition.PARK).copy(d2 = keyed, nowMs = 2_000)).pane)
+        session.resetRental()
+        session.step(baseInput(GearPosition.DRIVE).copy(d2 = face))
+        assertEquals(MiriPane.D2, session.step(baseInput(GearPosition.PARK).copy(d2 = face, nowMs = 3_000)).pane)
+    }
+
+    @Test
     fun destinationChosenWhileDrivingSkipsTheParkCard() {
         val session = CardSession()
         val face = D2Rules.offer(evRearRight(true), DestinationRole.CHARGING, routeKey = "route-2")
@@ -302,6 +412,39 @@ class MvpPhaseTest {
         note.observe(mapOf(DoorId.ROW_2_RIGHT to open))
         assertNull(note.observe(mapOf(DoorId.ROW_2_RIGHT to closed), moving = true))
     }
+
+    private fun destination(name: String, latitude: Double, longitude: Double) = DestinationSnapshot(
+        name = name,
+        address = "",
+        latitude = latitude,
+        longitude = longitude,
+        remainDistance = 0,
+        remainTime = 0,
+        tollFare = 0,
+    )
+
+    private fun arrivalCue(routeId: String, remainMeters: Int) = DriveCueInput(
+        nowMs = 0,
+        driveGear = true,
+        d2bEligible = true,
+        routeId = routeId,
+        remainMeters = remainMeters,
+        d2bClips = listOf("vo_arrive_ev_soon"),
+    )
+
+    private fun saysDcCombo(face: D2Face?): Boolean =
+        face?.clips.orEmpty().any { VoiceClips.spoken(it)?.contains("디씨 콤보") == true }
+
+    private fun combo(code: Int): Boolean =
+        CarFacts.from(intArrayOf(CarFacts.FUEL_ELECTRIC), null, CarFacts.PORT_REAR_RIGHT, intArrayOf(code))
+            .connectorDcCombo
+
+    private fun evFromConnector(code: Int): CarIdentity = CarFacts.from(
+        intArrayOf(CarFacts.FUEL_ELECTRIC),
+        null,
+        CarFacts.PORT_REAR_RIGHT,
+        intArrayOf(code),
+    )
 
     private fun evRearRight(combo: Boolean) = CarIdentity(
         fuels = listOf(FuelKind.ELECTRIC),

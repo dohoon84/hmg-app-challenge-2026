@@ -20,6 +20,8 @@ data class ScenarioOverrides(
     val lockMs: Long = 30 * 60 * 1000L,
     val cardMs: Long = 20_000L,
     val turnMs: Long = 20_000L,
+    /** Blank keeps [com.krazylabs.miri.speech.SpeechUsage] on the build-config default. */
+    val speechUsage: String = "",
 )
 
 interface ScenarioInput {

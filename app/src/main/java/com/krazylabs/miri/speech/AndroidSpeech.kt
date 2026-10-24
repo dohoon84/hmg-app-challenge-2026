@@ -15,12 +15,12 @@ import com.krazylabs.miri.R
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Sonification plus speech, matching [AndroidSpeechFocus].
- * [AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE] is intentionally not used:
- * [SpeechFocus.navigationOrAssistantActive] would then treat our own utterance as navigation.
+ * Speech attributes. The usage follows [SpeechUsage], which defaults to sonification.
+ * Navigation guidance is opt-in because [SpeechFocus.navigationOrAssistantActive]
+ * would then treat our own utterance as navigation.
  */
 internal fun speechAudioAttributes(): AudioAttributes = AudioAttributes.Builder()
-    .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+    .setUsage(SpeechUsage.usage())
     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
     .build()
 
@@ -87,7 +87,7 @@ class AndroidTtsEngine internal constructor(
 
     private val appContext = context.applicationContext
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val attributes = speechAudioAttributes()
+    private fun currentAttributes(): AudioAttributes = speechAudioAttributes()
     private val lock = Any()
     private val utterance = AtomicInteger(0)
     private val session = AtomicInteger(0)
@@ -147,6 +147,11 @@ class AndroidTtsEngine internal constructor(
             override fun onStop(utteranceId: String?, interrupted: Boolean) =
                 deliver(utteranceId, id, sessionAtSpeak, onStop)
         })
+        try {
+            engine.setAudioAttributes(currentAttributes())
+        } catch (error: Throwable) {
+            // A bound engine can reject a usage change. The utterance still starts.
+        }
         val result = engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, id)
         if (result == TextToSpeech.ERROR) {
             engine.setOnUtteranceProgressListener(null)
@@ -230,7 +235,7 @@ class AndroidTtsEngine internal constructor(
         val listeners = mutableListOf<() -> Unit>()
         if (status == TextToSpeech.SUCCESS) {
             try {
-                engine.setAudioAttributes(attributes)
+                engine.setAudioAttributes(currentAttributes())
             } catch (error: Throwable) {
                 // Some engines reject attributes before the binding is usable. Ready still stands.
             }
@@ -284,7 +289,7 @@ class RawClipPlayer(
             return
         }
         val attributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+            .setUsage(SpeechUsage.usage())
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
         val created = MediaPlayer.create(context, clipResId, attributes, 0)
