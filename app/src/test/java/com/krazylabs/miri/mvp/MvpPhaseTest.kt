@@ -2,6 +2,9 @@ package com.krazylabs.miri.mvp
 
 import com.krazylabs.miri.domain.CarFacts
 import com.krazylabs.miri.domain.CarIdentity
+import com.krazylabs.miri.domain.ConnectorCodes
+import com.krazylabs.miri.domain.ConnectorKind
+import com.krazylabs.miri.domain.ConnectorProbeText
 import com.krazylabs.miri.domain.DoorId
 import com.krazylabs.miri.domain.FuelKind
 import com.krazylabs.miri.domain.GearBackend
@@ -25,21 +28,22 @@ class MvpPhaseTest {
     }
 
     @Test
-    fun comboTwoAndIecAreDcCombo() {
+    fun vhalCcs1AndCcs2AreDcCombo() {
         val identity = CarFacts.from(
             intArrayOf(CarFacts.FUEL_ELECTRIC),
             null,
             CarFacts.PORT_REAR_RIGHT,
-            intArrayOf(CarFacts.CONNECTOR_COMBO_2),
+            intArrayOf(ConnectorCodes.VHAL_IEC_TYPE_1_CCS_DC),
         )
         assertTrue(identity.evOnly)
         assertEquals(PortSide.REAR_RIGHT, identity.evPort)
         assertTrue(identity.connectorDcCombo)
-        assertTrue(CarFacts.from(intArrayOf(10), null, 3, intArrayOf(CarFacts.CONNECTOR_COMBO_1)).connectorDcCombo)
-        assertFalse(CarFacts.from(intArrayOf(10), null, 3, intArrayOf(CarFacts.CONNECTOR_CHADEMO)).connectorDcCombo)
-        assertFalse(
-            CarFacts.from(intArrayOf(10), null, 3, intArrayOf(CarFacts.CONNECTOR_TESLA_ROADSTER)).connectorDcCombo,
-        )
+        assertTrue(combo(ConnectorCodes.VHAL_IEC_TYPE_2_CCS_DC))
+        assertFalse(combo(ConnectorCodes.VHAL_IEC_TYPE_4_DC))
+        assertFalse(combo(ConnectorCodes.VHAL_IEC_TYPE_3_AC))
+        assertFalse(combo(ConnectorCodes.VHAL_TESLA_ROADSTER))
+        assertFalse(combo(ConnectorCodes.VHAL_UNKNOWN))
+        assertFalse(combo(ConnectorCodes.VHAL_OTHER))
     }
 
     @Test
@@ -51,6 +55,64 @@ class MvpPhaseTest {
                 DestinationRole.CHARGING,
             ),
         )
+    }
+
+    @Test
+    fun javaComboValuesAreDcComboAndChademoIsNot() {
+        assertEquals(ConnectorKind.CCS1, ConnectorCodes.fromJava(ConnectorCodes.JAVA_COMBO_1))
+        assertEquals(ConnectorKind.CCS2, ConnectorCodes.fromJava(ConnectorCodes.JAVA_COMBO_2))
+        assertEquals(ConnectorKind.CHADEMO, ConnectorCodes.fromJava(ConnectorCodes.JAVA_CHADEMO))
+        assertEquals(ConnectorKind.TESLA, ConnectorCodes.fromJava(ConnectorCodes.JAVA_TESLA_ROADSTER))
+        assertEquals(ConnectorKind.AC, ConnectorCodes.fromJava(ConnectorCodes.JAVA_SCAME))
+        assertTrue(ConnectorCodes.dcCombo(ConnectorCodes.fromJava(intArrayOf(ConnectorCodes.JAVA_COMBO_1))))
+        assertTrue(ConnectorCodes.dcCombo(ConnectorCodes.fromJava(intArrayOf(ConnectorCodes.JAVA_COMBO_2))))
+        assertFalse(ConnectorCodes.dcCombo(ConnectorCodes.fromJava(intArrayOf(ConnectorCodes.JAVA_CHADEMO))))
+        assertFalse(ConnectorCodes.dcCombo(ConnectorCodes.fromJava(intArrayOf(ConnectorCodes.JAVA_TESLA_ROADSTER))))
+        assertFalse(ConnectorCodes.dcCombo(ConnectorCodes.fromJava(intArrayOf(ConnectorCodes.JAVA_J1772))))
+        assertFalse(ConnectorCodes.dcCombo(ConnectorCodes.fromJava(intArrayOf(ConnectorCodes.JAVA_GBT))))
+        assertFalse(ConnectorCodes.dcCombo(ConnectorCodes.fromJava(intArrayOf(ConnectorCodes.JAVA_GBT_DC))))
+        assertFalse(ConnectorCodes.dcCombo(ConnectorCodes.fromJava(intArrayOf(ConnectorCodes.JAVA_OTHER))))
+    }
+
+    @Test
+    fun theSameIntegerIsComboInOnlyOneNumberSpace() {
+        assertEquals(ConnectorKind.CHADEMO, ConnectorCodes.fromVhal(4))
+        assertEquals(ConnectorKind.CCS1, ConnectorCodes.fromJava(4))
+        assertEquals(ConnectorKind.CCS2, ConnectorCodes.fromVhal(6))
+        assertEquals(ConnectorKind.TESLA, ConnectorCodes.fromJava(6))
+        assertEquals(ConnectorKind.CCS1, ConnectorCodes.fromVhal(5))
+        assertEquals(ConnectorKind.CCS2, ConnectorCodes.fromJava(5))
+        assertFalse(combo(4))
+        assertTrue(combo(6))
+    }
+
+    @Test
+    fun rawChademoDropsTheConnectorSentenceAndRawCcs2KeepsIt() {
+        val chademo = D2Rules.offer(evFromConnector(ConnectorCodes.VHAL_IEC_TYPE_4_DC), DestinationRole.CHARGING)
+        val ccs2 = D2Rules.offer(evFromConnector(ConnectorCodes.VHAL_IEC_TYPE_2_CCS_DC), DestinationRole.CHARGING)
+        assertFalse(chademo?.chips?.contains("DC 콤보") == true)
+        assertFalse(chademo?.clips?.contains("vo_connector_dc_combo") == true)
+        assertTrue(ccs2?.chips?.contains("DC 콤보") == true)
+        assertTrue(ccs2?.clips?.contains("vo_connector_dc_combo") == true)
+    }
+
+    @Test
+    fun probeLinePrintsPropertyInfoManagerAndPleosSideBySide() {
+        val line = ConnectorProbeText.line(
+            propertyId = 289472775,
+            propertyValues = intArrayOf(5),
+            infoManagerValues = intArrayOf(4),
+            pleos = "[IEC_TYPE_1_CCS_DC]",
+        )
+        assertTrue(line.contains("propertyId=289472775"))
+        assertTrue(line.contains("CarPropertyManager=[5]"))
+        assertTrue(line.contains("vhal=[CCS1]"))
+        assertTrue(line.contains("CarInfoManager.getEvConnectorTypes()=[4]"))
+        assertTrue(line.contains("java=[CCS1]"))
+        assertTrue(line.contains("Pleos=[IEC_TYPE_1_CCS_DC]"))
+        val missing = ConnectorProbeText.line(289472775, intArrayOf(5), null, "unavailable")
+        assertTrue(missing.contains("CarInfoManager.getEvConnectorTypes()=unavailable"))
+        assertTrue(missing.contains("java=n/a"))
     }
 
     @Test
@@ -302,6 +364,17 @@ class MvpPhaseTest {
         note.observe(mapOf(DoorId.ROW_2_RIGHT to open))
         assertNull(note.observe(mapOf(DoorId.ROW_2_RIGHT to closed), moving = true))
     }
+
+    private fun combo(code: Int): Boolean =
+        CarFacts.from(intArrayOf(CarFacts.FUEL_ELECTRIC), null, CarFacts.PORT_REAR_RIGHT, intArrayOf(code))
+            .connectorDcCombo
+
+    private fun evFromConnector(code: Int): CarIdentity = CarFacts.from(
+        intArrayOf(CarFacts.FUEL_ELECTRIC),
+        null,
+        CarFacts.PORT_REAR_RIGHT,
+        intArrayOf(code),
+    )
 
     private fun evRearRight(combo: Boolean) = CarIdentity(
         fuels = listOf(FuelKind.ELECTRIC),
