@@ -107,12 +107,52 @@ class DriveCueTest {
     }
 
     @Test
+    fun navStillSpeakingAfterFiveSecondsOmitsArrival() {
+        val engine = DriveCueEngine()
+        val first = engine.step(arrival(now = 0, navVoice = true, remainMeters = 400))
+        val later = engine.step(arrival(now = 5_000, navVoice = true, remainMeters = 300))
+        val after = engine.step(arrival(now = 6_000, navVoice = false, remainMeters = 280))
+
+        assertEquals(CueKind.NONE, first.kind)
+        assertEquals(CueKind.NONE, later.kind)
+        assertEquals(CueKind.NONE, after.kind)
+    }
+
+    @Test
+    fun navEndingEarlyStillRequiresOneHundredFiftyMeters() {
+        val engine = DriveCueEngine()
+        engine.step(arrival(now = 0, navVoice = true, remainMeters = 400))
+        val spoken = engine.step(arrival(now = 1_000, navVoice = false, remainMeters = 200))
+        assertEquals(CueKind.CLIPS, spoken.kind)
+
+        val quiet = DriveCueEngine()
+        quiet.step(arrival(now = 0, navVoice = true, remainMeters = 180))
+        val omitted = quiet.step(arrival(now = 1_000, navVoice = false, remainMeters = 100))
+        assertEquals(CueKind.NONE, omitted.kind)
+    }
+
+    @Test
+    fun arrivalWithoutNavVoiceDoesNotApplyTheFloor() {
+        val engine = DriveCueEngine()
+        val cue = engine.step(arrival(now = 0, navVoice = false, remainMeters = 80))
+        assertEquals(CueKind.CLIPS, cue.kind)
+    }
+
+    @Test
     fun alternatingSidesInsideTheBlinkWindowIsHazard() {
         val detector = HazardDetector()
         detector.observe("LEFT", 0)
         val lamps = detector.observe("RIGHT", 400)
 
         assertTrue(lamps.hazard)
+        val blinked = HazardDetector()
+        blinked.observe("LEFT", 0)
+        assertFalse(blinked.observe("OFF", 100).hazard)
+        assertTrue(blinked.observe("RIGHT", 500).hazard)
+        val slow = HazardDetector()
+        slow.observe("LEFT", 0)
+        slow.observe("OFF", 100)
+        assertFalse(slow.observe("RIGHT", 2_000).hazard)
         val engine = DriveCueEngine()
         engine.step(drive(now = 0, lamps = lamps))
         val cue = engine.step(drive(now = holdMs, lamps = lamps))
@@ -126,6 +166,16 @@ class DriveCueTest {
         val cue = engine.step(drive(now = start + 1 + holdMs, lamps = left))
         assertEquals(CueKind.CHIME, cue.kind)
     }
+
+    private fun arrival(now: Long, navVoice: Boolean, remainMeters: Int) = drive(
+        now = now,
+        lamps = TurnLamps(),
+        navVoice = navVoice,
+        routeId = "route-1",
+        d2bEligible = true,
+        remainMeters = remainMeters,
+        d2bClips = listOf("vo_arrive_ev_soon", "vo_charge_port_rear_right"),
+    )
 
     private fun drive(
         now: Long,
@@ -241,6 +291,20 @@ class ReturnFormTest {
     }
 
     @Test
+    fun savedDateStaysOnTheChosenDay() {
+        val today = LocalDate.of(2026, 10, 24)
+        val form = ReturnForm()
+        form.selectDate(1)
+        form.selectTime(10 * 60)
+        assertTrue(form.confirm(today))
+        val saved = form.saved
+        assertEquals(LocalDate.of(2026, 10, 25).toEpochDay(), saved?.epochDay)
+        form.restore(saved!!.epochDay, saved.minuteOfDay, saved.placeId, today.plusDays(1))
+        assertEquals(LocalDate.of(2026, 10, 25).toEpochDay(), form.saved?.epochDay)
+        assertEquals(0, form.draft.dayOffset)
+    }
+
+    @Test
     fun closingBeforeConfirmDoesNotSave() {
         val form = ReturnForm()
         form.selectTime(18 * 60)
@@ -275,6 +339,13 @@ class TbtGuardTest {
             assertEquals(listOf("TURN_TOLL", "TURN_ENTER_IC_R"), guard.accept(emptyList(), routing = true))
         }
         assertEquals(listOf("TURN_TOLL", "TURN_ENTER_IC_R"), guard.accept(emptyList(), routing = true))
+    }
+
+    @Test
+    fun stepsArrivingBeforeRouteStateAreKept() {
+        val guard = TbtGuard()
+        assertEquals(listOf("TURN_TOLL"), guard.accept(listOf("TURN_TOLL"), routing = false))
+        assertEquals(listOf("TURN_TOLL"), guard.accept(emptyList(), routing = true))
     }
 
     @Test

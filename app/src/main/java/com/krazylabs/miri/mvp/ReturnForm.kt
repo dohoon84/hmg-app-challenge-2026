@@ -10,7 +10,7 @@ import java.time.LocalTime
  * Closing the screen before confirm does not save a return.
  */
 data class SavedReturn(
-    val dayOffset: Int,
+    val epochDay: Long,
     val minuteOfDay: Int,
     val placeId: String,
 )
@@ -20,6 +20,7 @@ data class F2Draft(
     val minuteOfDay: Int? = null,
     val placeId: String = PLACE_PICKUP,
     val dateSheetOpen: Boolean = false,
+    val epochDay: Long? = null,
 ) {
     val doneEnabled: Boolean get() = minuteOfDay != null
 
@@ -37,8 +38,8 @@ data class F2Draft(
     }
 }
 
-fun dateLabel(today: LocalDate, offset: Int): String {
-    val date = today.plusDays(offset.toLong())
+fun dateLabel(today: LocalDate, offset: Int, epochDay: Long? = null): String {
+    val date = epochDay?.let(LocalDate::ofEpochDay) ?: today.plusDays(offset.toLong())
     val week = arrayOf("월", "화", "수", "목", "금", "토", "일")
     val day = week[date.dayOfWeek.value - 1]
     return "${date.monthValue}/${date.dayOfMonth} ($day)"
@@ -72,7 +73,7 @@ class ReturnForm {
 
     fun selectDate(offset: Int) {
         require(offset in F2Draft.dateOffsets())
-        draft = draft.copy(dayOffset = offset, dateSheetOpen = false)
+        draft = draft.copy(dayOffset = offset, epochDay = null, dateSheetOpen = false)
     }
 
     fun selectPlace(placeId: String) {
@@ -84,10 +85,23 @@ class ReturnForm {
         saved = null
     }
 
-    fun confirm(): Boolean {
+    fun confirm(today: LocalDate = LocalDate.now()): Boolean {
         val minute = draft.minuteOfDay ?: return false
-        saved = SavedReturn(draft.dayOffset, minute, draft.placeId)
+        val epoch = draft.epochDay ?: today.plusDays(draft.dayOffset.toLong()).toEpochDay()
+        saved = SavedReturn(epoch, minute, draft.placeId)
+        draft = draft.copy(epochDay = epoch)
         return true
+    }
+
+    fun restore(epochDay: Long, minuteOfDay: Int, placeId: String, today: LocalDate) {
+        val offset = (epochDay - today.toEpochDay()).toInt()
+        draft = F2Draft(
+            dayOffset = if (offset in F2Draft.dateOffsets()) offset else 0,
+            minuteOfDay = minuteOfDay,
+            placeId = placeId,
+            epochDay = epochDay,
+        )
+        saved = SavedReturn(epochDay, minuteOfDay, placeId)
     }
 
     /** D or R before confirm. An unsaved time selection is discarded. */

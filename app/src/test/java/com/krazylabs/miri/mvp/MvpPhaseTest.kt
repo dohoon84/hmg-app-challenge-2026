@@ -28,15 +28,17 @@ class MvpPhaseTest {
     fun comboTwoAndIecAreDcCombo() {
         val identity = CarFacts.from(
             intArrayOf(CarFacts.FUEL_ELECTRIC),
-            intArrayOf(),
-            intArrayOf(CarFacts.PORT_REAR_RIGHT),
+            null,
+            CarFacts.PORT_REAR_RIGHT,
             intArrayOf(CarFacts.CONNECTOR_COMBO_2),
         )
         assertTrue(identity.evOnly)
         assertEquals(PortSide.REAR_RIGHT, identity.evPort)
         assertTrue(identity.connectorDcCombo)
-        assertTrue(
-            CarFacts.from(intArrayOf(10), intArrayOf(), intArrayOf(3), intArrayOf(6)).connectorDcCombo,
+        assertTrue(CarFacts.from(intArrayOf(10), null, 3, intArrayOf(CarFacts.CONNECTOR_COMBO_1)).connectorDcCombo)
+        assertFalse(CarFacts.from(intArrayOf(10), null, 3, intArrayOf(CarFacts.CONNECTOR_CHADEMO)).connectorDcCombo)
+        assertFalse(
+            CarFacts.from(intArrayOf(10), null, 3, intArrayOf(CarFacts.CONNECTOR_TESLA_ROADSTER)).connectorDcCombo,
         )
     }
 
@@ -79,6 +81,8 @@ class MvpPhaseTest {
         )
         assertEquals("주유소에 가요", multi?.title)
         assertEquals(listOf("연료"), multi?.chips)
+        assertEquals(emptyList<String>(), multi?.clips)
+        assertEquals(emptyList<String>(), multi?.arrivalClips)
         assertNull(
             D2Rules.offer(
                 CarIdentity(fuels = listOf(FuelKind.GASOLINE, FuelKind.ELECTRIC), evPort = PortSide.REAR_RIGHT),
@@ -94,7 +98,8 @@ class MvpPhaseTest {
             DestinationRole.CHARGING,
         )
         assertEquals("충전구는 뒤에 있어요.", face?.lines?.first())
-        assertFalse(face?.clips?.any { it.startsWith("vo_charge_port") } == true)
+        assertEquals(emptyList<String>(), face?.clips)
+        assertEquals(emptyList<String>(), face?.arrivalClips)
     }
 
     @Test
@@ -178,7 +183,17 @@ class MvpPhaseTest {
             etaSeconds = null,
         )
         assertEquals("반납까지 약 40% 더 충전해야 해요.", lines[0])
-        assertTrue(lines[1].contains("시간 남았어요."))
+        assertTrue(lines[1].contains("1시간 남았어요."))
+        val soon = F3Rules.lines(
+            ev = true,
+            level = 40,
+            target = 80,
+            returnAtMs = 1_700_000_000_000L,
+            nowMs = 1_700_000_000_000L - 30 * 60_000L,
+            etaSeconds = null,
+        )
+        assertTrue(soon[1].contains("30분 남았어요."))
+        assertFalse(soon[1].contains("0시간"))
         val trip = straightLineTrip(37.5, 127.0, 37.5, 127.0)
         assertEquals(0, trip.distance)
         val asked = TripOnce()
@@ -187,11 +202,16 @@ class MvpPhaseTest {
     }
 
     @Test
-    fun missingCatalogClipIsDroppedNotSpoken() {
-        assertEquals(VoicePath.DROP, VoiceFallback.catalog("vo_highway_entry", 0))
+    fun missingCatalogClipUsesDeviceTtsThenChime() {
+        assertEquals(VoicePath.TTS, VoiceFallback.catalog("vo_highway_entry", 0))
         assertEquals(VoicePath.CLIP, VoiceFallback.catalog("vo_highway_entry", 12))
         assertEquals(VoicePath.DROP, VoiceFallback.catalog("vo_turn_signal_left", 12))
-        assertEquals(VoicePath.CHIME, VoiceFallback.whenAllDropped())
+        assertEquals(VoicePath.CHIME, VoiceFallback.whenEngineUnavailable())
+        assertEquals(29, VoiceClips.names.size)
+        assertEquals(VoiceClips.names.toSet(), VoiceClips.names.mapNotNull { name ->
+            VoiceClips.spoken(name)?.let { name }
+        }.toSet())
+        assertEquals(VoiceClips.H1_TEXT, VoiceClips.spoken(VoiceClips.H1))
     }
 
     @Test
@@ -205,6 +225,82 @@ class MvpPhaseTest {
         arm.observe(locked = false, occupied = null, parked = true, nowMs = 13_000, thresholdMs = 10_000, force = false)
         assertTrue(arm.takeEdge())
         assertFalse(arm.takeEdge())
+        arm.reset()
+        arm.observe(locked = true, occupied = true, parked = true, nowMs = 14_000, thresholdMs = 10_000, force = false)
+        arm.observe(locked = true, occupied = true, parked = true, nowMs = 24_000, thresholdMs = 10_000, force = false)
+        arm.observe(locked = false, occupied = true, parked = true, nowMs = 25_000, thresholdMs = 10_000, force = false)
+        assertTrue(arm.takeEdge())
+    }
+
+    @Test
+    fun settleWindowHidesEveryCardAndF1HasNoClip() {
+        val session = CardSession()
+        val waiting = session.step(baseInput(GearPosition.PARK, showIntake = true, edgesOpen = false))
+        assertEquals(MiriPane.ICON, waiting.pane)
+        val shown = session.step(baseInput(GearPosition.PARK, showIntake = true))
+        assertEquals(MiriPane.F1, shown.pane)
+        assertEquals(VoicePlay.None, shown.voice)
+    }
+
+    @Test
+    fun d2ShowsOncePerRouteAndClosesWithTheCardTimer() {
+        val session = CardSession()
+        val face = D2Rules.offer(evRearRight(true), DestinationRole.CHARGING, routeKey = "route-9")
+        val first = session.step(baseInput(GearPosition.PARK).copy(d2 = face, nowMs = 0))
+        assertEquals(MiriPane.D2, first.pane)
+        assertTrue((first.voice as VoicePlay.Clips).keys.contains("vo_fuel_electric"))
+        val closed = session.step(baseInput(GearPosition.PARK).copy(d2 = face, nowMs = 6_000))
+        assertEquals(MiriPane.ICON, closed.pane)
+        session.step(baseInput(GearPosition.DRIVE).copy(d2 = face))
+        val again = session.step(baseInput(GearPosition.PARK).copy(d2 = face, nowMs = 8_000))
+        assertEquals(MiriPane.ICON, again.pane)
+    }
+
+    @Test
+    fun destinationChosenWhileDrivingSkipsTheParkCard() {
+        val session = CardSession()
+        val face = D2Rules.offer(evRearRight(true), DestinationRole.CHARGING, routeKey = "route-2")
+        session.step(baseInput(GearPosition.DRIVE).copy(d2 = face))
+        val parked = session.step(baseInput(GearPosition.PARK).copy(d2 = face))
+        assertEquals(MiriPane.ICON, parked.pane)
+    }
+
+    @Test
+    fun newRentalClearsTheD1Counter() {
+        val session = CardSession()
+        repeat(3) { index ->
+            session.step(
+                baseInput(GearPosition.PARK, edgesOpen = true).copy(
+                    d1 = D1Face("route-$index", listOf("톨게이트 1곳"), "vo_toll_1"),
+                    nowMs = index * 10_000L,
+                ),
+            )
+            session.step(baseInput(GearPosition.DRIVE))
+        }
+        val blocked = session.step(
+            baseInput(GearPosition.PARK, edgesOpen = true).copy(
+                d1 = D1Face("route-3", listOf("톨게이트 1곳"), "vo_toll_1"),
+            ),
+        )
+        assertEquals(MiriPane.ICON, blocked.pane)
+        session.resetRental()
+        val again = session.step(
+            baseInput(GearPosition.PARK, edgesOpen = true).copy(
+                d1 = D1Face("route-4", listOf("톨게이트 1곳"), "vo_toll_1"),
+            ),
+        )
+        assertEquals(MiriPane.D1, again.pane)
+    }
+
+    @Test
+    fun driverDoorOrDriveClearsTheRearNote() {
+        val note = RearDoorNote()
+        val open = PanelState(position = 1, readable = true)
+        val closed = PanelState(position = 0, readable = true)
+        assertEquals(CheckRules.REAR_NOTE, note.observe(mapOf(DoorId.ROW_2_LEFT to open)))
+        assertNull(note.observe(mapOf(DoorId.ROW_2_LEFT to closed, DoorId.ROW_1_LEFT to open)))
+        note.observe(mapOf(DoorId.ROW_2_RIGHT to open))
+        assertNull(note.observe(mapOf(DoorId.ROW_2_RIGHT to closed), moving = true))
     }
 
     private fun evRearRight(combo: Boolean) = CarIdentity(

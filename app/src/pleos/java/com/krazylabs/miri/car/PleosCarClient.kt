@@ -150,9 +150,22 @@ class PleosCarClient internal constructor(
     }
 
     fun refreshIdentity() {
+        refreshAaos()
+    }
+
+    /** Re-reads AAOS gear and the INT32 port locations plus the INT32_VEC identity arrays. */
+    fun refreshAaos() {
         checkMainThread()
         val port = propertyPort ?: return
+        if (gearAvailable) {
+            try {
+                gearRaw = port.getIntProperty(VehiclePropertyIds.GEAR_SELECTION, GLOBAL_AREA)
+            } catch (error: Throwable) {
+                gearRaw = null
+            }
+        }
         readIdentity(port)
+        publishDriving()
     }
 
     /** Ignored unless the gear backend is PLEOS. AAOS GEAR_SELECTION stays primary. */
@@ -226,11 +239,14 @@ class PleosCarClient internal constructor(
     private fun readIdentity(port: PropertyPort) {
         _identity.value = AaosIdentity(
             fuelTypes = readInts(port, VehiclePropertyIds.INFO_FUEL_TYPE),
-            fuelDoor = readInts(port, VehiclePropertyIds.INFO_FUEL_DOOR_LOCATION),
-            evPort = readInts(port, VehiclePropertyIds.INFO_EV_PORT_LOCATION),
+            fuelDoor = readInt(port, VehiclePropertyIds.INFO_FUEL_DOOR_LOCATION),
+            evPort = readInt(port, VehiclePropertyIds.INFO_EV_PORT_LOCATION),
             connector = readInts(port, VehiclePropertyIds.INFO_EV_CONNECTOR_TYPE),
         )
     }
+
+    internal fun readInt(port: PropertyPort, propertyId: Int): Int? =
+        readScalarProperty(port, propertyId, GLOBAL_AREA)
 
     private fun readInts(port: PropertyPort, propertyId: Int): IntArray = try {
         if (!port.isPropertyAvailable(propertyId, GLOBAL_AREA)) {
@@ -331,10 +347,20 @@ class PleosCarClient internal constructor(
     }
 }
 
+internal fun readScalarProperty(port: PropertyPort, propertyId: Int, areaId: Int): Int? = try {
+    if (!port.isPropertyAvailable(propertyId, areaId)) {
+        null
+    } else {
+        port.getIntProperty(propertyId, areaId)
+    }
+} catch (error: Throwable) {
+    null
+}
+
 data class AaosIdentity(
     val fuelTypes: IntArray = intArrayOf(),
-    val fuelDoor: IntArray = intArrayOf(),
-    val evPort: IntArray = intArrayOf(),
+    val fuelDoor: Int? = null,
+    val evPort: Int? = null,
     val connector: IntArray = intArrayOf(),
 )
 

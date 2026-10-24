@@ -1,19 +1,20 @@
 package com.krazylabs.miri.mvp
 
 /**
- * Catalog sentences: a present raw clip plays, a missing file drops that sentence.
- * A missing catalog sentence is not spoken with device TTS.
- * When every sentence is dropped, the caller plays the chime.
- * The turn-signal prompt is the chime only.
+ * Catalog sentences play a raw clip when the file is present.
+ * A missing catalog file is spoken with device TTS.
+ * If that engine is missing or not ready within the warm-up cap, the caller
+ * plays the chime. Unknown keys, including the turn-signal prompt, are not spoken.
  */
-enum class VoicePath { CLIP, DROP, CHIME }
+enum class VoicePath { CLIP, TTS, DROP, CHIME }
 
 object VoiceFallback {
     fun catalog(key: String, rawResId: Int): VoicePath {
         if (!VoiceClips.contains(key)) return VoicePath.DROP
-        if (rawResId == 0) return VoicePath.DROP
+        if (rawResId == 0) return VoicePath.TTS
         return VoicePath.CLIP
     }
 
-    fun whenAllDropped(): VoicePath = VoicePath.CHIME
+    /** The TTS engine is missing, or it did not become ready inside the warm-up cap. */
+    fun whenEngineUnavailable(): VoicePath = VoicePath.CHIME
 }

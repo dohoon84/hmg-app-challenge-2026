@@ -62,7 +62,7 @@ fun gearBackendLiteral(): String {
     return if (raw.equals("PLEOS", ignoreCase = true)) "PLEOS" else "AAOS"
 }
 
-val teamName = (findProperty("team") as? String)?.takeIf { it.isNotBlank() } ?: "team"
+val teamName = (findProperty("team") as? String)?.takeIf { it.isNotBlank() } ?: "krazylabs"
 
 fun signingProp(name: String): String? =
     keystoreProperties.getProperty(name)?.takeIf { it.isNotBlank() }
@@ -249,6 +249,7 @@ val forbiddenPleosReleaseNames = listOf(
     "FakeNavigationRepository",
     "FakeDrivingStateRepository",
     "DemoScenario",
+    "DebugDemoActions",
 )
 
 // Names the app may ship. Library merges (Vehicle binding, AndroidX receiver) are included.

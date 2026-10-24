@@ -48,6 +48,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -77,7 +78,7 @@ class PleosVehicleRepository @Inject constructor(
     @Volatile private var sessionToken = 0
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var identityJob: Job? = null
-    private val rereads = mutableListOf<() -> Unit>()
+    private val rereads = CopyOnWriteArrayList<() -> Unit>()
     private val hazardDetector = HazardDetector()
 
     private val _link = MutableStateFlow(LinkState.IDLE)
@@ -211,11 +212,15 @@ class PleosVehicleRepository @Inject constructor(
                     try {
                         door.registerDoorPosition(area, listener)
                         track(token) { door.unregisterDoorPosition(area, listener) }
-                        door.getCurrentDoorPosition(
-                            area,
-                            { pos -> if (live(token)) updateDoor(id, pos, readable = true) },
-                            { error -> if (live(token)) note(error) },
-                        )
+                        val read = {
+                            door.getCurrentDoorPosition(
+                                area,
+                                { pos -> if (live(token)) updateDoor(id, pos, readable = true) },
+                                { error -> if (live(token)) note(error) },
+                            )
+                        }
+                        read()
+                        rereads += read
                     } catch (error: Throwable) {
                         note(error)
                         updateDoor(id, position = null, readable = false)
@@ -264,11 +269,15 @@ class PleosVehicleRepository @Inject constructor(
                     try {
                         window.registerWindowPosition(area, listener)
                         track(token) { window.unregisterWindowPosition(area, listener) }
-                        window.getCurrentWindowPosition(
-                            area,
-                            { position -> if (live(token)) updateWindow(id, position, readable = true) },
-                            { error -> if (live(token)) note(error) },
-                        )
+                        val read = {
+                            window.getCurrentWindowPosition(
+                                area,
+                                { position -> if (live(token)) updateWindow(id, position, readable = true) },
+                                { error -> if (live(token)) note(error) },
+                            )
+                        }
+                        read()
+                        rereads += read
                     } catch (error: Throwable) {
                         note(error)
                         updateWindow(id, position = null, readable = false)
@@ -302,10 +311,14 @@ class PleosVehicleRepository @Inject constructor(
                 try {
                     fuel.registerFuelPercent(fuelListener)
                     track(token) { fuel.unregisterFuelPercent(fuelListener) }
-                    fuel.getFuelPercent(
-                        { value -> if (live(token)) updateFuel(value) },
-                        { error -> if (live(token)) note(error) },
-                    )
+                    val read = {
+                        fuel.getFuelPercent(
+                            { value -> if (live(token)) updateFuel(value) },
+                            { error -> if (live(token)) note(error) },
+                        )
+                    }
+                    read()
+                    rereads += read
                 } catch (error: Throwable) {
                     note(error)
                 }
@@ -337,10 +350,14 @@ class PleosVehicleRepository @Inject constructor(
                 try {
                     battery.registerEvBatteryStateOfCharge(socListener)
                     track(token) { battery.unregisterEvBatteryStateOfCharge(socListener) }
-                    battery.getEvBatteryStateOfCharge(
-                        { value -> if (live(token)) updateSoc(value) },
-                        { error -> if (live(token)) note(error) },
-                    )
+                    val read = {
+                        battery.getEvBatteryStateOfCharge(
+                            { value -> if (live(token)) updateSoc(value) },
+                            { error -> if (live(token)) note(error) },
+                        )
+                    }
+                    read()
+                    rereads += read
                 } catch (error: Throwable) {
                     note(error)
                 }

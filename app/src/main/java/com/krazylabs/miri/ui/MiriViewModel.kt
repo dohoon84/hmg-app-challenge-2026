@@ -11,6 +11,8 @@ import com.krazylabs.miri.domain.TurnLamps
 import com.krazylabs.miri.driving.DrivingStateRepository
 import com.krazylabs.miri.mvp.CardFace
 import com.krazylabs.miri.mvp.CardSession
+import com.krazylabs.miri.mvp.CarSpec
+import com.krazylabs.miri.mvp.DemoActions
 import com.krazylabs.miri.mvp.CheckRules
 import com.krazylabs.miri.mvp.CueKind
 import com.krazylabs.miri.mvp.D1Face
@@ -37,6 +39,7 @@ import com.krazylabs.miri.navi.NavigationRepository
 import com.krazylabs.miri.sim.CabinSimulator
 import com.krazylabs.miri.speech.ChimePlayer
 import com.krazylabs.miri.speech.ClipCuePlayer
+import com.krazylabs.miri.speech.SpeechEngine
 import com.krazylabs.miri.speech.SpeechFocus
 import com.krazylabs.miri.speech.SpeechScheduler
 import com.krazylabs.miri.vehicle.VehicleRepository
@@ -88,9 +91,11 @@ class MiriViewModel @Inject constructor(
     chime: ChimePlayer,
     focus: SpeechFocus,
     scheduler: SpeechScheduler,
+    tts: SpeechEngine,
+    private val demo: DemoActions,
 ) : ViewModel() {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    private val player = ClipCuePlayer(context, chime, scheduler)
+    private val player = ClipCuePlayer(context, chime, scheduler, tts)
     private val speechFocus = focus
     private val driveCue = DriveCueEngine()
     private val form = ReturnForm()
@@ -107,6 +112,8 @@ class MiriViewModel @Inject constructor(
     private var wasMoving = false
     private var drove = false
     private var checkReshow = false
+    private var demoReturnAt: Long? = null
+    private var demoReturnMinutes: Int? = null
     private val lampOverride = MutableStateFlow<TurnLamps?>(null)
 
     private val _ui = MutableStateFlow(MiriUi(simulator = simulator.enabled, showScenarioPanel = BuildConfig.DEBUG))
@@ -115,14 +122,22 @@ class MiriViewModel @Inject constructor(
     init {
         val minute = prefs.getInt(KEY_MINUTE, -1)
         if (minute >= 0) {
-            form.selectTime(minute)
-            form.selectDate(prefs.getInt(KEY_DAY, 0))
-            form.selectPlace(prefs.getString(KEY_PLACE, F2Draft.PLACE_PICKUP) ?: F2Draft.PLACE_PICKUP)
-            form.confirm()
+            val today = LocalDate.now(zone)
+            val epoch = if (prefs.contains(KEY_EPOCH_DAY)) {
+                prefs.getLong(KEY_EPOCH_DAY, today.toEpochDay())
+            } else {
+                today.plusDays(prefs.getInt(KEY_DAY, 0).toLong()).toEpochDay()
+            }
+            form.restore(
+                epoch,
+                minute,
+                prefs.getString(KEY_PLACE, F2Draft.PLACE_PICKUP) ?: F2Draft.PLACE_PICKUP,
+                today,
+            )
         }
         viewModelScope.launch {
             while (isActive) {
-                publish()
+                if (hostVisible) publish()
                 delay(250)
             }
         }
@@ -132,6 +147,7 @@ class MiriViewModel @Inject constructor(
         edgesOpen = false
         edgesAtMs = 0L
         hostVisible = false
+        publish()
     }
 
     fun onHostResume() {
@@ -188,7 +204,8 @@ class MiriViewModel @Inject constructor(
         val saved = form.saved ?: return
         prefs.edit()
             .putInt(KEY_MINUTE, saved.minuteOfDay)
-            .putInt(KEY_DAY, saved.dayOffset)
+            .putLong(KEY_EPOCH_DAY, saved.epochDay)
+            .remove(KEY_DAY)
             .putString(KEY_PLACE, saved.placeId)
             .apply()
         publish()
@@ -204,34 +221,11 @@ class MiriViewModel @Inject constructor(
         publish()
     }
 
-    fun requestDemoRoute() {
-        navigationRepository.setDestination(
-            PlaceRequest(
-                latitude = 37.5056,
-                longitude = 127.0539,
-                name = "강남 충전소",
-                address = "서울 강남구",
-            ),
-        )
-    }
+    fun requestDemoRoute() = demo.requestDemoRoute()
 
-    fun requestDemoRoad() {
-        val scenario = scenarioInput.overrides.value
-        scenarioInput.update(scenario.copy(pretendCharging = false, pretendTolls = 2, pretendHighways = 1))
-        navigationRepository.setDestination(
-            PlaceRequest(
-                latitude = 37.5547,
-                longitude = 126.9707,
-                name = "서울역",
-                address = "서울 중구",
-            ),
-        )
-    }
+    fun requestDemoRoad() = demo.requestDemoRoad()
 
-    fun requestReturnGuide() {
-        val place = returnPlace() ?: return
-        navigationRepository.setDestination(place)
-    }
+    fun requestReturnGuide() = demo.requestReturnGuide(returnPlace())
 
     private fun publish() {
         val now = System.currentTimeMillis()
@@ -255,9 +249,13 @@ class MiriViewModel @Inject constructor(
             force = scenario.armNewRental,
         )
         if (gear == GearPosition.PARK && rental.takeEdge() && !ownCar) {
+            rental.reset()
+            driveCue.resetRental()
+            rearNote.reset()
+            session.resetRental()
             kind = null
             form.reset()
-            prefs.edit().remove(KEY_KIND).remove(KEY_MINUTE).putBoolean(KEY_OWN, false).apply()
+            prefs.edit().remove(KEY_KIND).remove(KEY_MINUTE).remove(KEY_EPOCH_DAY).remove(KEY_DAY).putBoolean(KEY_OWN, false).apply()
             if (scenario.armNewRental) scenarioInput.update(scenario.copy(armNewRental = false))
         }
         val lamps = lampOverride.value ?: snapshot.turnLamps
@@ -269,7 +267,8 @@ class MiriViewModel @Inject constructor(
             else -> DestinationRole.OTHER
         }
         val identity = snapshot.identity
-        val d2 = D2Rules.offer(identity, role)
+        val routeKey = road.routeId.ifEmpty { destination?.name.orEmpty() }
+        val d2 = D2Rules.offer(identity, role, specAgrees = CarSpec.agrees(identity), routeKey = routeKey)
         val remainMeters = scenario.remainMeters ?: destination?.remainDistance
         val remainSeconds = scenario.remainSeconds ?: destination?.remainTime
         val cue = driveCue.step(
@@ -281,7 +280,7 @@ class MiriViewModel @Inject constructor(
                 holdMs = scenario.turnMs,
                 acceptEdges = edgesOpen,
                 routeId = road.routeId.ifEmpty { destination?.name.orEmpty() },
-                d2bEligible = d2 != null,
+                d2bEligible = d2 != null && d2.arrivalClips.isNotEmpty(),
                 remainMeters = remainMeters,
                 remainSeconds = remainSeconds,
                 d2bClips = d2?.arrivalClips ?: emptyList(),
@@ -309,7 +308,7 @@ class MiriViewModel @Inject constructor(
         } else {
             null
         }
-        val tripKey = if (f3Key != null && returnAt != null) "$f3Key@$returnAt" else null
+        val tripKey = tripEventKey(f3Key, scenario)
         val cachedTrip = tripKey?.let { trips.cached(it) }
         if (tripKey != null && trips.begin(tripKey)) launchTrip(tripKey)
         val level = if (identity.evOnly) snapshot.socPercent else snapshot.fuelPercent
@@ -318,7 +317,7 @@ class MiriViewModel @Inject constructor(
             F3Face(
                 key = f3Key,
                 lines = F3Rules.lines(
-                    ev = identity.evOnly || snapshot.socReadable,
+                    ev = identity.evOnly,
                     level = level,
                     target = target,
                     returnAtMs = returnAt,
@@ -347,7 +346,7 @@ class MiriViewModel @Inject constructor(
                 returnSaved = form.saved != null,
                 showIntake = if (snapshot.doorLocked == null) kind == null else rental.primed(),
                 checkItems = if (drove && !moving) items else emptyList(),
-                checkNote = rearNote.observe(snapshot.doors),
+                checkNote = rearNote.observe(snapshot.doors, moving),
                 checkTitle = if (navigationRepository.arrival.value != null) {
                     CheckRules.ARRIVED_TITLE
                 } else {
@@ -355,7 +354,7 @@ class MiriViewModel @Inject constructor(
                 },
                 reshowCheck = checkReshow,
                 f4 = if (drove && !moving) {
-                    CheckRules.chargeLine(identity.evOnly || snapshot.socReadable, level, target)
+                    CheckRules.chargeLine(identity.evOnly, level, target)
                 } else {
                     null
                 },
@@ -392,18 +391,28 @@ class MiriViewModel @Inject constructor(
         }
     }
 
+    private fun tripEventKey(f3Key: String?, scenario: ScenarioOverrides): String? {
+        if (f3Key == null) return null
+        val saved = form.saved
+        val event = when {
+            scenario.returnInMinutes != null -> "demo:${scenario.returnInMinutes}"
+            saved != null -> "${saved.epochDay}:${saved.minuteOfDay}:${saved.placeId}"
+            else -> return null
+        }
+        return "$f3Key@$event"
+    }
+
     private fun launchTrip(key: String) {
         val place = returnPlace() ?: return
         val origin = navigationRepository.here.value
+        val before = navigationRepository.tripSerial.value
         viewModelScope.launch {
-            val before = navigationRepository.trip.value
             navigationRepository.requestTrip(place)
             val deadline = System.currentTimeMillis() + TRIP_TIMEOUT_MS
             var found: TripEstimate? = null
             while (isActive && System.currentTimeMillis() < deadline) {
-                val current = navigationRepository.trip.value
-                if (current != null && current !== before) {
-                    found = current
+                if (navigationRepository.tripSerial.value != before) {
+                    found = navigationRepository.trip.value
                     break
                 }
                 delay(200)
@@ -416,9 +425,18 @@ class MiriViewModel @Inject constructor(
     }
 
     private fun returnAtMs(now: Long, scenario: ScenarioOverrides): Long? {
-        scenario.returnInMinutes?.let { return now + it * 60_000L }
+        val minutes = scenario.returnInMinutes
+        if (minutes != null) {
+            if (demoReturnMinutes != minutes || demoReturnAt == null) {
+                demoReturnMinutes = minutes
+                demoReturnAt = now + minutes * 60_000L
+            }
+            return demoReturnAt
+        }
+        demoReturnMinutes = null
+        demoReturnAt = null
         val saved = form.saved ?: return null
-        val date = LocalDate.now(zone).plusDays(saved.dayOffset.toLong())
+        val date = LocalDate.ofEpochDay(saved.epochDay)
         val time = LocalTime.of(saved.minuteOfDay / 60, saved.minuteOfDay % 60)
         return date.atTime(time).atZone(zone).toInstant().toEpochMilli()
     }
@@ -475,6 +493,7 @@ class MiriViewModel @Inject constructor(
         const val KEY_KIND = "kind"
         const val KEY_MINUTE = "minute"
         const val KEY_DAY = "day"
+        const val KEY_EPOCH_DAY = "epoch_day"
         const val KEY_PLACE = "place"
         const val KEY_LAT = "origin_lat"
         const val KEY_LON = "origin_lon"

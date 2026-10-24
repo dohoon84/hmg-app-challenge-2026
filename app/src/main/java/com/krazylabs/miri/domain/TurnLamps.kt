@@ -24,7 +24,8 @@ data class TurnLamps(
 }
 
 /**
- * LEFT and RIGHT both seen inside [windowMs] with no OFF between them is hazard.
+ * LEFT and RIGHT both seen inside [windowMs] is hazard.
+ * OFF between blinks does not forget the previous side. The lamps themselves go dark.
  * SDK listeners cannot report both lamps in one value.
  */
 class HazardDetector(
@@ -33,10 +34,7 @@ class HazardDetector(
     private var previous: Pair<BlinkSide, Long>? = null
 
     fun observe(valueName: String, nowMs: Long): TurnLamps = when (valueName) {
-        "OFF" -> {
-            previous = null
-            TurnLamps()
-        }
+        "OFF" -> TurnLamps()
         "LEFT" -> side(BlinkSide.LEFT, nowMs)
         "RIGHT" -> side(BlinkSide.RIGHT, nowMs)
         else -> TurnLamps()

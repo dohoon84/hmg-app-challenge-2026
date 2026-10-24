@@ -110,17 +110,23 @@ class DriveCueEngine(
             waitFrom = null
             return false
         }
-        if (!input.navVoice) {
+        if (input.navVoice) {
+            val started = waitFrom ?: input.nowMs.also { waitFrom = it }
+            if (input.nowMs - started < input.navWaitMs) return false
+            // Still speaking after the cap: omit this route. Do not talk over navigation.
+            spokenRoute = input.routeId
             waitFrom = null
-            return true
+            return false
         }
-        val started = waitFrom ?: input.nowMs.also { waitFrom = it }
-        if (input.nowMs - started < input.navWaitMs) return false
-        val remain = input.remainMeters ?: 0
-        if (remain >= input.navMinRemainMeters) return true
-        spokenRoute = input.routeId
-        waitFrom = null
-        return false
+        if (waitFrom != null) {
+            // Navigation ended early. The 150 m floor still applies.
+            waitFrom = null
+            val remain = input.remainMeters
+            if (remain != null && remain >= input.navMinRemainMeters) return true
+            spokenRoute = input.routeId
+            return false
+        }
+        return true
     }
 
     private fun clearHold() {

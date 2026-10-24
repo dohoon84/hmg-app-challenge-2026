@@ -21,6 +21,7 @@ class RentalArm {
         if (force) {
             armed = true
             ready = true
+            consumed = false
             return
         }
         if (locked == null) return
@@ -40,5 +41,13 @@ class RentalArm {
         if (!ready || consumed) return false
         consumed = true
         return true
+    }
+
+    /** Clears the arm so the next long lock can start another rental. */
+    fun reset() {
+        lockedSince = null
+        armed = false
+        ready = false
+        consumed = false
     }
 }

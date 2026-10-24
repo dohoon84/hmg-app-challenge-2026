@@ -8,6 +8,7 @@ import com.krazylabs.miri.domain.TripEstimate
 import com.krazylabs.miri.sim.FakeCabinWorld
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -22,6 +23,9 @@ class FakeNavigationRepository @Inject constructor(
     override val destination: StateFlow<DestinationSnapshot?> = world.destination
     override val arrival: StateFlow<ArrivalSnapshot?> = world.arrival
     override val trip: StateFlow<TripEstimate?> = world.trip
+    private val serial = AtomicLong(0)
+    private val _tripSerial = MutableStateFlow(0L)
+    override val tripSerial: StateFlow<Long> = _tripSerial
     override val statusMessage: StateFlow<String?> = world.statusMessage
 
     var startCount: Int = 0
@@ -43,7 +47,10 @@ class FakeNavigationRepository @Inject constructor(
 
     override fun setDestination(request: PlaceRequest) = world.setDestination(request)
 
-    override fun requestTrip(request: PlaceRequest) = world.requestTrip(request)
+    override fun requestTrip(request: PlaceRequest) {
+        world.requestTrip(request)
+        _tripSerial.value = serial.incrementAndGet()
+    }
 
     override fun refreshDestination() = world.refreshDestination()
 }

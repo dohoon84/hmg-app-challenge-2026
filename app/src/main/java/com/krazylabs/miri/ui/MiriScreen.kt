@@ -204,7 +204,7 @@ private fun ReturnCard(
     Column(verticalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.fillMaxWidth()) {
         Text(F2Draft.TITLE, style = MaterialTheme.typography.headlineMedium)
         TextButton(onClick = onOpenDates) {
-            Text(dateLabel(today, draft.dayOffset))
+            Text(dateLabel(today, draft.dayOffset, draft.epochDay))
         }
         if (draft.dateSheetOpen) {
             Row(

@@ -70,6 +70,7 @@ class CardSession {
     private var checkCount = -1
     private var checkShows = 0
     private val toldRoutes = linkedSetOf<String>()
+    private val toldD2 = linkedSetOf<String>()
     private val shownF3 = mutableSetOf<String>()
     private var deferred: CardId? = null
     private var deferFromPrior = false
@@ -80,12 +81,24 @@ class CardSession {
         cameraCover = false
     }
 
+    /** A new rental may show D1 and D2 again. */
+    fun resetRental() {
+        toldRoutes.clear()
+        toldD2.clear()
+        shownF3.clear()
+        checkShows = 0
+        deferred = null
+        deferFromPrior = false
+        deferUsed = false
+    }
+
     fun f3Shown(): Set<String> = shownF3
 
     fun step(input: DeckInput): DeckStep {
         val moving = input.gear == GearPosition.DRIVE || input.gear == GearPosition.REVERSE
         if (input.gear == GearPosition.REVERSE) cameraCover = true
         if (moving) {
+            input.d2?.routeKey?.takeIf { it.isNotEmpty() }?.let { toldD2 += it }
             if (deferFromPrior && held != deferred) {
                 deferred = null
                 deferUsed = true
@@ -98,7 +111,7 @@ class CardSession {
             completion = false
             return DeckStep(MiriPane.ICON, null, VoicePlay.None)
         }
-        if (input.gear != GearPosition.PARK || cameraCover) {
+        if (input.gear != GearPosition.PARK || cameraCover || !input.edgesOpen) {
             return DeckStep(MiriPane.ICON, null, VoicePlay.None)
         }
         if (!parkOpen) {
@@ -125,7 +138,7 @@ class CardSession {
             if (picked != null) hold(picked, input)
         }
         val id = held ?: return DeckStep(MiriPane.ICON, null, VoicePlay.None)
-        if (id == CardId.D1 && input.nowMs - heldAt >= input.cardMs) {
+        if ((id == CardId.D1 || id == CardId.D2) && input.nowMs - heldAt >= input.cardMs) {
             spent = true
             held = null
             return DeckStep(MiriPane.ICON, null, VoicePlay.None)
@@ -159,6 +172,7 @@ class CardSession {
         held = id
         heldAt = input.nowMs
         if (id == CardId.D1) input.d1?.routeId?.let { toldRoutes += it }
+        if (id == CardId.D2) input.d2?.routeKey?.let { toldD2 += it }
         if (id == CardId.F3) input.f3?.let { shownF3 += F3Rules.coveredBy(it.key) }
         if (id == CardId.CHECK) checkShows += 1
         if (id == deferred) {
@@ -187,7 +201,8 @@ class CardSession {
         if (check) return CardId.CHECK
         if (!input.ownCar && input.showIntake && input.kind == null) return CardId.F1
         if (!input.ownCar && input.kind != null && !input.returnSaved) return CardId.F2
-        if (input.d2 != null) return CardId.D2
+        val d2 = input.d2
+        if (d2 != null && d2.routeKey !in toldD2) return CardId.D2
         if (input.f3 != null) return CardId.F3
         val d1 = input.d1
         if (input.edgesOpen && d1 != null && d1.routeId !in toldRoutes && toldRoutes.size < 3) {
@@ -233,9 +248,11 @@ class CardSession {
 
     private fun intended(id: CardId, input: DeckInput): VoicePlay = when (id) {
         CardId.D1 -> input.d1?.let { VoicePlay.Clips(listOf(it.clip)) } ?: VoicePlay.None
-        CardId.D2 -> input.d2?.let { VoicePlay.Clips(it.clips) } ?: VoicePlay.None
+        CardId.D2 -> input.d2?.let { face ->
+            if (face.clips.isEmpty()) VoicePlay.None else VoicePlay.Clips(face.clips)
+        } ?: VoicePlay.None
         CardId.F3 -> VoicePlay.None
-        CardId.F1 -> VoicePlay.Clips(listOf("vo_brief_intro"))
+        CardId.F1 -> VoicePlay.None
         CardId.CHECK -> if (input.reshowCheck || checkShows > 1) VoicePlay.Chime else VoicePlay.Clips(listOf("vo_check_done"))
         CardId.F2 -> VoicePlay.None
     }

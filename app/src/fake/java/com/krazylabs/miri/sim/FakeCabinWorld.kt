@@ -156,8 +156,8 @@ class FakeCabinWorld @Inject constructor() : CabinSimulator {
             vinReadable = true,
             identity = CarFacts.from(
                 fuelTypes = intArrayOf(CarFacts.FUEL_ELECTRIC),
-                fuelDoor = intArrayOf(),
-                evPort = intArrayOf(CarFacts.PORT_REAR_RIGHT),
+                fuelDoor = null,
+                evPort = CarFacts.PORT_REAR_RIGHT,
                 connector = intArrayOf(CarFacts.CONNECTOR_COMBO_2),
             ),
             seats = seatSupport(

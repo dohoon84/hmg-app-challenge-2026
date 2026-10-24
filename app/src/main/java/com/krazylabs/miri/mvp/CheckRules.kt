@@ -84,7 +84,15 @@ object CheckRules {
 class RearDoorNote {
     private var opened = false
 
-    fun observe(doors: Map<DoorId, PanelState>): String? {
+    fun reset() {
+        opened = false
+    }
+
+    fun observe(doors: Map<DoorId, PanelState>, moving: Boolean = false): String? {
+        if (moving || doors[DoorId.ROW_1_LEFT]?.open == true) {
+            opened = false
+            return null
+        }
         val rear = listOf(DoorId.ROW_2_LEFT, DoorId.ROW_2_RIGHT, DoorId.REAR)
         if (rear.any { doors[it]?.open == true }) opened = true
         return if (opened) CheckRules.REAR_NOTE else null

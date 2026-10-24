@@ -30,6 +30,10 @@ interface NavigationRepository {
     val destination: StateFlow<DestinationSnapshot?>
     val arrival: StateFlow<ArrivalSnapshot?>
     val trip: StateFlow<TripEstimate?>
+
+    /** Increments when a trip response for the latest [requestTrip] is stored. */
+    val tripSerial: StateFlow<Long>
+        get() = NavIdle.tripSerial
     val statusMessage: StateFlow<String?>
     val road: StateFlow<RoadCounts>
         get() = RoadCounts.IDLE
@@ -51,6 +55,7 @@ interface NavigationRepository {
 }
 
 private object NavIdle {
+    val tripSerial: StateFlow<Long> = MutableStateFlow(0L)
     val charging: StateFlow<Boolean> = MutableStateFlow(false)
     val recents: StateFlow<List<PlaceRequest>> = MutableStateFlow(emptyList())
     val here: StateFlow<HereFix?> = MutableStateFlow(null)

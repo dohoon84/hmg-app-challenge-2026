@@ -9,16 +9,16 @@ class TbtGuard {
     private var empties: Int = 0
 
     fun accept(names: List<String>, routing: Boolean): List<String> {
+        if (names.isNotEmpty()) {
+            empties = 0
+            kept = names
+            return kept
+        }
         if (!routing) {
             clear()
             return kept
         }
-        if (names.isEmpty()) {
-            empties += 1
-            return kept
-        }
-        empties = 0
-        kept = names
+        empties += 1
         return kept
     }
 

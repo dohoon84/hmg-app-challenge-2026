@@ -11,63 +11,76 @@ data class D2Face(
     val clips: List<String>,
     val arrivalClips: List<String>,
     val port: PortSide?,
+    val routeKey: String = "",
 )
 
 /**
  * D2 common conditions. An empty fuel type or an empty port drops the whole card.
  * An unknown connector drops only the connector sentence and chip.
- * A center port has no clip, so the card stays and that sentence is not spoken.
+ * A missing port clip, including a center port or a multi-fuel car, keeps the card
+ * and drops every D2-a and D2-b sentence together.
  */
+object CarSpec {
+    /** No reviewed spec pack is shipped. CAR_INFO is the only source, so it agrees with itself. */
+    fun agrees(identity: CarIdentity): Boolean = true
+}
 object D2Rules {
     fun offer(
         identity: CarIdentity,
         role: DestinationRole,
         specAgrees: Boolean = true,
+        routeKey: String = "",
     ): D2Face? {
         if (!specAgrees || !identity.fuelKnown) return null
         val ev = identity.evOnly
         val port = identity.portForCards ?: return null
         if (ev && role != DestinationRole.CHARGING) return null
         if (!ev && role != DestinationRole.GAS) return null
-        val clips = mutableListOf<String>()
         val chips = mutableListOf<String>()
         val lines = mutableListOf<String>()
+        val portClip = if (ev) chargePortClip(port) else fuelSideClip(port)
+        val fuelKey = if (ev) {
+            "vo_fuel_electric"
+        } else if (identity.fuels.size == 1) {
+            fuelClip(identity.fuels[0])
+        } else {
+            null
+        }
         if (ev) {
             lines += "충전구는 ${chargePhrase(port)}에 있어요."
             chips += "전기"
-            clips += "vo_fuel_electric"
-            chargePortClip(port)?.let { clips += it }
             if (identity.connectorDcCombo) {
                 lines += "커넥터: DC 콤보"
                 chips += "DC 콤보"
-                clips += "vo_connector_dc_combo"
             }
-            val arrive = listOf("vo_arrive_ev_soon")
-            return D2Face(
-                title = "충전소에 가요",
-                lines = lines,
-                chips = chips,
-                clips = clips,
-                arrivalClips = arrive + listOfNotNull(chargePortClip(port)),
-                port = port,
-            )
-        }
-        val side = fuelSide(port)
-        lines += if (side == null) "주유구는 ${chargePhrase(port)}에 있어요." else "주유구는 ${side}에 있어요."
-        if (identity.fuels.size == 1) {
-            chips += fuelChip(identity.fuels[0])
-            fuelClip(identity.fuels[0])?.let { clips += it }
         } else {
-            chips += "연료"
+            val side = fuelSide(port)
+            lines += if (side == null) "주유구는 ${chargePhrase(port)}에 있어요." else "주유구는 ${side}에 있어요."
+            chips += if (identity.fuels.size == 1) fuelChip(identity.fuels[0]) else "연료"
         }
-        fuelSideClip(port)?.let { clips += it }
+        val speak = portClip != null && fuelKey != null
+        val clips = if (speak) {
+            buildList {
+                add(fuelKey)
+                add(portClip)
+                if (ev && identity.connectorDcCombo) add("vo_connector_dc_combo")
+            }
+        } else {
+            emptyList()
+        }
+        val arrival = if (speak) {
+            listOf(if (ev) "vo_arrive_ev_soon" else "vo_arrive_gas_soon", portClip)
+        } else {
+            emptyList()
+        }
         return D2Face(
-            title = "주유소에 가요",
+            title = if (ev) "충전소에 가요" else "주유소에 가요",
             lines = lines,
             chips = chips,
             clips = clips,
-            arrivalClips = listOf("vo_arrive_gas_soon") + listOfNotNull(fuelSideClip(port)),
+            arrivalClips = arrival,
             port = port,
+            routeKey = routeKey,
         )
     }
 

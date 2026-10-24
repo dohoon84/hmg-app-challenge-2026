@@ -50,6 +50,9 @@ class PleosNavigationRepository @Inject constructor(
 
     private val _trip = MutableStateFlow<TripEstimate?>(null)
     override val trip: StateFlow<TripEstimate?> = _trip
+    private val _tripSerial = MutableStateFlow(0L)
+    override val tripSerial: StateFlow<Long> = _tripSerial
+    private var tripRequest = 0L
 
     private val _status = MutableStateFlow<String?>(null)
     override val statusMessage: StateFlow<String?> = _status
@@ -96,6 +99,7 @@ class PleosNavigationRepository @Inject constructor(
                 estimatedSocAtDestPercent = tripInfo.estimatedSocAtDest,
                 energyConsumption = tripInfo.energyConsumption,
             )
+            _tripSerial.value = tripRequest
         }
 
         override fun onError(errorCode: NaviErrorCode) {
@@ -112,6 +116,8 @@ class PleosNavigationRepository @Inject constructor(
             routing = false
             tbt.clear()
             _road.value = RoadCounts()
+            _destination.value = null
+            _charging.value = false
         }
 
         override fun onTBTInfo(list: List<ai.pleos.playground.navi.data.TBTInfo>) {
@@ -222,6 +228,7 @@ class PleosNavigationRepository @Inject constructor(
             return
         }
         try {
+            tripRequest += 1
             current.requestTrip(
                 TripRequest(
                     latitude = request.latitude,
