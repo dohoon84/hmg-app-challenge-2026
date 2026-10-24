@@ -16,7 +16,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import com.krazylabs.miri.R
 import com.krazylabs.miri.mvp.F2Draft
 import com.krazylabs.miri.ui.PlaceChip
@@ -100,10 +103,32 @@ private fun BoxScope.Summary(today: java.time.LocalDate, draft: F2Draft) {
             Text("· 시각을 골라 주세요", style = MiriType.titleLargeNormal(), color = colors.frameTertiary, maxLines = 1)
         }
     } else {
-        Row(Modifier.offset(px(48f), px(304f)), verticalAlignment = Alignment.Bottom) {
-            Text("$day ", style = MiriType.titleLargeNormal(), color = colors.frameSecondary, maxLines = 1)
-            Text(clockLabel(minute), style = MiriType.headlineLargeExtra(), color = colors.frameInk, maxLines = 1)
-        }
+        // One line, so the 40px date and the 60px time share a baseline.
+        // Runs differ in size, weight, and the two spec colours. The space
+        // after the day word is the gap in "오늘 20:00".
+        val dayStyle = MiriType.titleLargeNormal()
+        val timeStyle = MiriType.headlineLargeExtra()
+        Text(
+            buildAnnotatedString {
+                withStyle(
+                    SpanStyle(
+                        color = colors.frameSecondary,
+                        fontSize = dayStyle.fontSize,
+                        fontWeight = dayStyle.fontWeight,
+                    ),
+                ) { append("$day ") }
+                withStyle(
+                    SpanStyle(
+                        color = colors.frameInk,
+                        fontSize = timeStyle.fontSize,
+                        fontWeight = timeStyle.fontWeight,
+                    ),
+                ) { append(clockLabel(minute)) }
+            },
+            Modifier.offset(px(48f), px(304f)),
+            style = timeStyle,
+            maxLines = 1,
+        )
     }
 }
 

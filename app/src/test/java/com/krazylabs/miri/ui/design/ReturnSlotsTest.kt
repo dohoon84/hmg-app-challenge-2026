@@ -28,6 +28,18 @@ class ReturnSlotsTest {
     }
 
     @Test
+    fun summarySaysTodayAndTomorrow() {
+        val today = LocalDate.of(2026, 10, 24)
+        assertEquals("오늘", returnDayWord(today, 0, null))
+        assertEquals("내일", returnDayWord(today, 1, null))
+        assertEquals("오늘", returnDayWord(today, 4, today.toEpochDay()))
+        assertEquals("내일", returnDayWord(today, 0, today.plusDays(1).toEpochDay()))
+        assertEquals("오늘 20:00", returnSummary(today, 0, today.toEpochDay(), 20 * 60))
+        assertEquals("내일 20:00", returnSummary(today, 2, today.plusDays(1).toEpochDay(), 20 * 60))
+        assertEquals("10/26 00:00", returnSummary(today, 2, null, 0))
+    }
+
+    @Test
     fun summaryUsesTodayAndA24HourClock() {
         val today = LocalDate.of(2026, 10, 24)
         assertEquals("오늘 · 시각을 골라 주세요", returnSummary(today, 0, null, null))
