@@ -6,6 +6,10 @@ enum class MiriPane {
     ICON,
     F1,
     F2,
+    D1,
+    D2,
+    F3,
+    CHECK,
 }
 
 fun miriPane(gear: GearPosition, ownCar: Boolean, kindChosen: Boolean, returnSaved: Boolean): MiriPane {

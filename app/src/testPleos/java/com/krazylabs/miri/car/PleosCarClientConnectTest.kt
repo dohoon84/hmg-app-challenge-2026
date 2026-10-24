@@ -6,7 +6,6 @@ import android.os.Handler
 import android.os.Looper
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -62,7 +61,7 @@ class PleosCarClientConnectTest {
     }
 
     @Test
-    fun serviceRestartUnbindsThenRebindsRangeOnTheSameCar() {
+    fun serviceRestartRebindsGearWithoutRangeOnTheSameCar() {
         val connector = ScriptedConnector(deliverImmediately = false)
         val application = RuntimeEnvironment.getApplication()
         Shadows.shadowOf(application).grantPermissions(Car.PERMISSION_ENERGY)
@@ -76,7 +75,7 @@ class PleosCarClientConnectTest {
         assertEquals(1, connector.link.binds)
         assertEquals(0, connector.link.unbinds)
         assertEquals(1, connector.link.port.gearRegistrations)
-        assertEquals(1, connector.link.port.rangeRegistrations)
+        assertEquals(0, connector.link.port.rangeRegistrations)
         assertEquals(0, connector.link.port.unregisters)
         assertEquals(0, connector.link.disconnects)
 
@@ -88,14 +87,13 @@ class PleosCarClientConnectTest {
         assertEquals(0, connector.link.disconnects)
         assertFalse(client.driving.value.uxAvailable)
         assertTrue(client.driving.value.requiresDistractionOptimization)
-        assertNull(client.rangeMeters.value)
 
         onMain { connector.listener.invoke(connector.link, true) }
 
         assertEquals(2, connector.link.binds)
         assertEquals(1, connector.link.unbinds)
         assertEquals(2, connector.link.port.gearRegistrations)
-        assertEquals(2, connector.link.port.rangeRegistrations)
+        assertEquals(0, connector.link.port.rangeRegistrations)
         assertEquals(0, connector.link.disconnects)
     }
 
@@ -181,6 +179,8 @@ class PleosCarClientConnectTest {
         }
 
         override fun getIntProperty(propertyId: Int, areaId: Int): Int = 0
+
+        override fun getIntArrayProperty(propertyId: Int, areaId: Int): IntArray = intArrayOf()
 
         override fun getFloatProperty(propertyId: Int, areaId: Int): Float = 0f
     }

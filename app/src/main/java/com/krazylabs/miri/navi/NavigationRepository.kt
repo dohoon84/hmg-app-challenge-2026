@@ -8,6 +8,12 @@ import com.krazylabs.miri.domain.TripEstimate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
+data class HereFix(
+    val latitude: Double,
+    val longitude: Double,
+    val address: String,
+)
+
 data class RoadCounts(
     val routing: Boolean = false,
     val routeId: String = "",
@@ -27,10 +33,25 @@ interface NavigationRepository {
     val statusMessage: StateFlow<String?>
     val road: StateFlow<RoadCounts>
         get() = RoadCounts.IDLE
+    val chargingStation: StateFlow<Boolean>
+        get() = NavIdle.charging
+    val recentPlaces: StateFlow<List<PlaceRequest>>
+        get() = NavIdle.recents
+    val here: StateFlow<HereFix?>
+        get() = NavIdle.here
 
     fun start()
     fun stop()
     fun setDestination(request: PlaceRequest)
     fun requestTrip(request: PlaceRequest)
     fun refreshDestination()
+
+    /** Re-read gear-independent nav state. Default is a no-op so test fakes stay valid. */
+    fun refreshRoute() {}
+}
+
+private object NavIdle {
+    val charging: StateFlow<Boolean> = MutableStateFlow(false)
+    val recents: StateFlow<List<PlaceRequest>> = MutableStateFlow(emptyList())
+    val here: StateFlow<HereFix?> = MutableStateFlow(null)
 }

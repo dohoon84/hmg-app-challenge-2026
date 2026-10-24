@@ -5,6 +5,8 @@ import ai.pleos.playground.vehicle.api.CarInfo;
 import ai.pleos.playground.vehicle.api.Door;
 import ai.pleos.playground.vehicle.api.EvBattery;
 import ai.pleos.playground.vehicle.api.Fuel;
+import ai.pleos.playground.vehicle.api.Gear;
+import ai.pleos.playground.vehicle.api.Light;
 import ai.pleos.playground.vehicle.api.Odometer;
 import ai.pleos.playground.vehicle.api.Seat;
 import ai.pleos.playground.vehicle.api.TurnSignal;
@@ -48,5 +50,13 @@ public final class VehicleDomains {
 
     public static TurnSignal turnSignal(Vehicle vehicle) {
         return vehicle.getTurnSignal();
+    }
+
+    public static Light light(Vehicle vehicle) {
+        return vehicle.getLight();
+    }
+
+    public static Gear gear(Vehicle vehicle) {
+        return vehicle.getGear();
     }
 }

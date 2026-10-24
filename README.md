@@ -97,8 +97,8 @@ adb shell dumpsys gfxinfo com.krazylabs.miri
 
 ## 구성
 
-- `VehicleRepository`: 시작마다 새 `Vehicle`을 만들어 `initialize`하고, 중지할 때 `release`합니다. 도어, 창문, 연료 %, SOC, 적산거리(km), VIN. 각 항목은 `check*Capabilities`가 READ 또는 READ_WRITE일 때만 get/register 합니다. 좌석은 점유·벨트 capability만 조회하고, 값이 없거나 뒷좌석이 목록에 없으면 미지원입니다. 시트 이동, HVAC, 조명 같은 Vehicle Control API는 호출하지 않습니다.
-- `DrivingStateRepository`: AAOS `VehiclePropertyIds.GEAR_SELECTION`과 `CarUxRestrictionsManager`. 기어 P이고 주의 분산 최적화가 필요 없으면 정차, 그 외 알려진 기어이거나 UX가 최적화를 요구하면 주행입니다. pleos는 기어가 UNKNOWN이거나 UX를 아직 못 읽으면 축소 화면입니다. 그때 문자열 제한은 AAOS `car_ux_restrictions` 기본값 120자(`UNKNOWN_MAX_STRING_LENGTH`)이고, 0자 이하는 문구를 비우지 않습니다. 문 열림 경고는 자르지 않습니다. 키보드는 `UX_RESTRICTIONS_NO_KEYBOARD` 비트가 있으면 숨깁니다. `Vehicle.getGear()`는 호출하지 않습니다. `Car.createCar` 리스너와 `VehiclePropertyIds`는 API 30/29입니다. minSdk 28 기기에서는 Car API를 호출하지 않고 축소 화면을 유지합니다. 공모전 이미지는 API 34입니다.
+- `VehicleRepository`: 시작마다 새 `Vehicle`을 만들어 `initialize`하고, 중지할 때 `release`합니다. 도어, 창문, 연료 %, SOC, 적산거리(km), VIN, 도어 잠금, 운전석 착석, 실내등, 독서등. 각 항목은 `check*Capabilities`가 READ 또는 READ_WRITE일 때만 get/register 합니다. 좌석 점유 값은 운전석만 읽습니다. 시트 이동, HVAC, set 계열 조명 API는 호출하지 않습니다.
+- `DrivingStateRepository`: AAOS `VehiclePropertyIds.GEAR_SELECTION`과 `CarUxRestrictionsManager`. 기어 P이고 주의 분산 최적화가 필요 없으면 정차, 그 외 알려진 기어이거나 UX가 최적화를 요구하면 주행입니다. pleos는 기어가 UNKNOWN이거나 UX를 아직 못 읽으면 축소 화면입니다. 그때 문자열 제한은 AAOS `car_ux_restrictions` 기본값 120자(`UNKNOWN_MAX_STRING_LENGTH`)이고, 0자 이하는 문구를 비우지 않습니다. 문 열림 경고는 자르지 않습니다. 키보드는 `UX_RESTRICTIONS_NO_KEYBOARD` 비트가 있으면 숨깁니다. `Vehicle.getGear()`는 `GEAR_BACKEND=PLEOS`일 때만 대체 경로로 호출합니다. 기본값은 AAOS입니다. `Car.createCar` 리스너와 `VehiclePropertyIds`는 API 30/29입니다. minSdk 28 기기에서는 Car API를 호출하지 않고 축소 화면을 유지합니다. 공모전 이미지는 API 34입니다.
 - `NavigationRepository`: `requestRoute(RouteInfo)`로 좌표 목적지, `onDestinationInfo` / `onDestinationArrived`, `requestTrip` → `onTripInfo`.
 - Room `foundation.db`: 마지막 차량 스냅샷과 내비 캐시 한 행. 스키마는 `app/schemas`에 내보냅니다. 이 테이블은 캐시라서 버전을 올리면 `fallbackToDestructiveMigration()`으로 지웁니다. 아이디어 데이터를 영구 저장하기 전에 명시적 마이그레이션으로 바꿔야 합니다. VIN은 로컬 DB와 화면에 끝 4자리만 남기고 저장·표시합니다.
 - 주행 중 화면은 Activity `distractionOptimized=true` 위에서 큰 버튼만 보여 줍니다. 선언만 하고 긴 목록이나 키보드를 그대로 두지 않습니다.
@@ -107,7 +107,7 @@ adb shell dumpsys gfxinfo com.krazylabs.miri
 - 창은 일반 Activity입니다. 기본은 세로 840×1184, 가로는 1700×1184이고 단위는 dp입니다. 주행 뷰 840×1280은 시스템 영역이라 앱이 덮지 않습니다. 회전은 구성을 다시 만들며 입력과 검증 오류는 유지됩니다. 서체는 Asta Sans 가변 폰트 한 파일입니다(OFL, `res/font/asta_sans.ttf`, 약 5.5MB). 웨이트 400/700/800은 `wght` 축입니다. 예전 정적 파일 세 개는 OS/2 웨이트가 실제로 400/700/800이었고, 한글 음절이 글리프의 대부분이라 크기가 거의 같았습니다(합계 7,790,400바이트). 서브셋은 라틴, 문장부호, 한글 음절이고 OFL 고지는 `assets/asta-sans/OFL.txt`에 둡니다. 글자 토큰은 `ivi_`입니다. 색의 단일 출처는 `res/values/colors.xml`과 `res/values-night/colors.xml`이고 Compose는 그 리소스를 읽습니다. 오류 빨강은 앱 정의 `ivi_informative_negative`이자 `ivi_status_error`입니다(라이트 #BE250A, 다크 #FF4C28, 공식 Pleos 토큰 아님). 라이트 주의 글자는 `ivi_status_caution`(#9A4A00)이고, 주의 아이콘 전용은 `ivi_status_caution_icon`(라이트 #BD6600, 다크 #FF8A00, 글자에 쓰지 않음)입니다. 라이트 글자·아이콘에 #FF8A00·#FF4C28을 쓰지 않습니다. 주행 문 열림 경고의 공식색 `ivi_driving_alert`(#FF8A00)는 유지합니다. 라이트에서는 그 색을 배지 배경(`ivi_driving_alert_container`)으로 쓰고 글자는 `ivi_on_driving_alert`(#121417)입니다. 다크 글자는 #FF8A00이고 배지 배경은 서피스와 같습니다. 가변 폰트 기본 wght는 300이라 XML에서 variation 없이 쓰면 Light입니다. 라이트와 다크를 모두 그립니다. 버튼은 Large 100 / Medium 80 / Small 64dp이고, 축소 화면의 Small은 Medium으로 올립니다. 주행·정차 액션은 Large만 요청합니다. 눌림은 95%로 80ms 안에 반응합니다. 공식 아이콘 42종은 2026-10-27 이후에 넣습니다. Figma "Official Icons (Pleos)"를 그 때 봅니다.
 - 안내 음성은 Pleos TTS SDK를 쓰지 않습니다. `android.speech.tts.TextToSpeech`는 포그라운드로 돌아올 때 미리 묶습니다. 준비되면 앞 무음 175ms 뒤에 바로 말하고, 포커스를 받은 시점부터 1.5초(앞 무음 포함)가 지나도 준비되지 않으면 차임으로 넘깁니다. 백그라운드에서는 메모리 예산 때문에 `shutdown` 합니다. 오디오 속성은 포커스와 같이 `USAGE_ASSISTANCE_SONIFICATION` + `CONTENT_TYPE_SPEECH`입니다. 내비 안내 usage는 쓰지 않습니다. 우리 발화를 내비 겹침으로 보면 안 되기 때문입니다. 엔진이 없거나 초기화·재생이 실패하거나 비동기 `onError`가 오면 `res/raw` 차임으로 넘깁니다. 차임 content type은 `SONIFICATION`입니다. 둘 다 `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK`, 175ms 앞 무음입니다. 발화나 차임이 끝나면 포커스를 놓고, 다음 안내 전에 이전 요청을 abandon 합니다. 내비 안내·어시스턴트가 겹치거나 포커스를 잃으면 즉시 중지합니다. `LOSS_TRANSIENT_CAN_DUCK`도 끊습니다.
 
-주행가능거리는 Vehicle SDK에 getter가 없습니다. `setRangeRemainingDistance`는 deprecated라 쓰지 않습니다. pleos flavor만 AAOS `RANGE_REMAINING`(위험 권한 `CAR_ENERGY`)을 시도하고, 없거나 권한이 없으면 "SDK 미제공"으로 둡니다. fake flavor는 시뮬레이션 값을 보여 줍니다.
+주행가능거리는 Pleos `Odometer.getRangeRemainingDistance`로 읽습니다. `setRangeRemainingDistance`와 AAOS `RANGE_REMAINING`(`android.car.permission.CAR_ENERGY`)은 쓰지 않습니다. 값이 없으면 그 줄을 비웁니다. fake flavor는 시뮬레이션 값을 보여 줍니다.
 
 ## 바이너리와 문서가 다른 점
 
@@ -116,14 +116,14 @@ Vehicle 2.3.2 AAR을 풀어 확인했습니다.
 - `getDoor()` 등 도메인 getter는 JVM에서 public인데, Kotlin 메타데이터는 해당 프로퍼티를 private으로 표시합니다. pleos 소스는 Java 브리지 `VehicleDomains`로 호출합니다.
 - `VehicleListener`에 `onFailed(Exception)`이 있어 모든 리스너가 구현합니다. 문서 발췌에는 콜백 메서드만 보였습니다.
 - 문서의 `VehicleException`은 AAR 안에서 `callback.exception.a`로 난독화되어 있습니다. 실패 메시지만 저장합니다.
-- `Vehicle.getGear()`는 AAR에 남아 있지만 호출하지 않습니다.
+- `Vehicle.getGear()`는 AAR에 남아 있고, `GEAR_BACKEND=PLEOS`일 때만 호출합니다.
 
 ## 에뮬레이터에서 아직 확인하지 못한 것
 
 이 VM은 Pleos AVD를 실행하지 못합니다. 유닛 테스트와 `assembleDebug`로 확인한 범위는 PR 본문에 적습니다. 에뮬레이터에서 직접 볼 항목:
 
 - NaviHelper `initialize` 성공 여부와 `onDestinationArrived` / `onTripInfo` 발생 여부
-- `GEAR_SELECTION`, `RANGE_REMAINING` 노출 여부와 `CAR_ENERGY` 동의 UX
+- `GEAR_SELECTION`과 `INFO_*` 유종·충전구가 에뮬레이터에서 값을 주는지, AAOS `CAR_POWERTRAIN`/`CAR_INFO`가 콘솔 9개 항목에 포함되는지
 - 도어 position `0` = 닫힘이라는 해석 (레퍼런스는 Int만 정의)
 - `RouteInfo.poiId`를 빈 문자열로 둬도 경로 요청이 되는지
 - `TripInfo` / `DestinationInfo` 정수 단위 (거리 m, 시간 s로 읽는 근거는 검토 문서. 필드 페이지에는 단위 문장이 없음)
@@ -137,7 +137,7 @@ Vehicle 2.3.2 AAR을 풀어 확인했습니다.
 
 ## 10/27 이후 권한 정리
 
-읽기 권한은 `app/src/pleos/AndroidManifest.xml`에만 있습니다. fake 빌드에는 합쳐지지 않습니다. 승인 목록은 2026-10-27 이후에 나오므로, 지금 1:1 대조는 할 수 없습니다. 목록에 없는 줄은 그때 매니페스트와 `allowedPleosReleasePermissions`에서 함께 지웁니다. 아래 여섯 Pleos Vehicle 권한과 내비·AAOS 줄은 모두 읽기이고 제어 API를 부르지 않습니다. `CAR_SEATS`는 좌석 점유·벨트 capability 조회가 필요해서 남깁니다. 조회를 빼면 권한도 뺍니다. Vehicle Control, Pleos TTS, STT, FusedLocation, `CAR_LIGHTS`, `CONTROL_CAR_*`, `PERF_VEHICLE_SPEED`, `PRIVATE_CAR_SAFETY`는 선언하지 않습니다. 정차 판정에 속도를 쓰지 않습니다. `android.car.permission.CAR_ENERGY`는 `RANGE_REMAINING`을 쓸 때만 남기고, 빼면 매니페스트와 권한 버튼도 같이 제거합니다. `checkPleosReleaseContents`가 합쳐진 매니페스트의 uses-permission을 허용 목록과 비교합니다.
+읽기 권한은 `app/src/pleos/AndroidManifest.xml`에 있습니다. fake 빌드에는 합쳐지지 않습니다. `NAVI_ROUTE_SEARCH`는 `src/pleosDebug`에만 있습니다. `android.car.permission.CAR_ENERGY`는 선언하지 않습니다. `CAR_LIGHTS`는 실내등·방향지시등·독서등 읽기입니다. `CONTROL_CAR_*`는 선언하지 않습니다. `checkPleosReleaseContents`가 release 매니페스트를 허용 목록과 비교하고, dex에 `DemoScenario`가 있으면 실패합니다.
 
 | 권한 | 쓰는 곳 | 정리 |
 |---|---|---|
@@ -146,8 +146,9 @@ Vehicle 2.3.2 AAR을 풀어 확인했습니다.
 | `pleos.car.permission.CAR_ENERGY` | 연료·SOC 읽기 | 배터리를 안 쓰면 제거 |
 | `pleos.car.permission.CAR_DRIVE` | 적산거리 읽기 | 주행 제어가 아님. 적산을 안 쓰면 제거 |
 | `pleos.car.permission.CAR_INFO` | VIN 읽기 | VIN을 안 쓰면 제거 |
-| `pleos.car.permission.CAR_SEATS` | `checkSeatOccupancyCapabilities`, `checkSeatBeltBuckledCapabilities` | 상태 읽기. 시트 이동·HVAC가 아님. 조회를 유지하는 동안 유지. 승인 목록에 없으면 제거 |
-| `pleos.car.permission.NAVI_ROUTE_SEARCH` | `requestRoute` | 경로 안내를 안 쓰면 제거 |
-| `pleos.car.permission.NAVI_ROUTE` | 목적지·도착·ETA | 내비를 안 쓰면 제거 |
-| `android.car.permission.CAR_POWERTRAIN` | `GEAR_SELECTION` 읽기 | 정차 판정을 유지하는 동안 유지 |
-| `android.car.permission.CAR_ENERGY` | `RANGE_REMAINING` | 위험 권한. 주행가능거리를 안 쓰면 제거 |
+| `pleos.car.permission.CAR_LIGHTS` | 방향지시등, 실내등, 독서등 읽기 | set 계열은 호출하지 않음 |
+| `pleos.car.permission.CAR_SEATS` | 좌석 capability와 운전석 착석 값 | 시트 이동이 아님 |
+| `pleos.car.permission.NAVI_ROUTE_SEARCH` | debug `requestRoute` | release 매니페스트에 없음 |
+| `pleos.car.permission.NAVI_ROUTE` | 목적지·도착·ETA·TBT | 내비를 안 쓰면 제거 |
+| `android.car.permission.CAR_POWERTRAIN` | `GEAR_SELECTION` 읽기 | 콘솔 9개 항목 포함 여부는 미확인 |
+| `android.car.permission.CAR_INFO` | 유종·주유구·충전구·커넥터 | 콘솔 9개 항목 포함 여부는 미확인 |

@@ -79,6 +79,11 @@ class ReturnForm {
         draft = draft.copy(placeId = placeId)
     }
 
+    fun reset() {
+        draft = F2Draft()
+        saved = null
+    }
+
     fun confirm(): Boolean {
         val minute = draft.minuteOfDay ?: return false
         saved = SavedReturn(draft.dayOffset, minute, draft.placeId)

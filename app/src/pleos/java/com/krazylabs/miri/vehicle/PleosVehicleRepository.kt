@@ -8,8 +8,15 @@ import ai.pleos.playground.vehicle.api.model.capability.AccessType
 import ai.pleos.playground.vehicle.constant.area.DoorValue
 import ai.pleos.playground.vehicle.constant.area.SeatValue
 import ai.pleos.playground.vehicle.constant.area.WindowValue
+import ai.pleos.playground.vehicle.constant.control.LightState
+import ai.pleos.playground.vehicle.constant.control.VehicleGear
 import ai.pleos.playground.vehicle.listener.DistanceDrivenListener
+import ai.pleos.playground.vehicle.listener.DoorLockStateListener
 import ai.pleos.playground.vehicle.listener.DoorPositionListener
+import ai.pleos.playground.vehicle.listener.GearSelectionListener
+import ai.pleos.playground.vehicle.listener.LightStateListener
+import ai.pleos.playground.vehicle.listener.RangeRemainingListener
+import ai.pleos.playground.vehicle.listener.SeatOccupancyListener
 import ai.pleos.playground.vehicle.listener.EvBatteryStateOfChargeListener
 import ai.pleos.playground.vehicle.listener.FuelPercentListener
 import ai.pleos.playground.vehicle.constant.area.TurnSignalValue
@@ -17,8 +24,11 @@ import ai.pleos.playground.vehicle.listener.TurnSignalStateListener
 import ai.pleos.playground.vehicle.listener.WindowPositionListener
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
+import com.krazylabs.miri.BuildConfig
 import com.krazylabs.miri.car.PleosCarClient
+import com.krazylabs.miri.domain.CarFacts
 import com.krazylabs.miri.domain.DoorId
+import com.krazylabs.miri.domain.GearPosition
 import com.krazylabs.miri.domain.LinkState
 import com.krazylabs.miri.domain.PanelState
 import com.krazylabs.miri.domain.RangeSource
@@ -48,10 +58,9 @@ import javax.inject.Singleton
  * and a later capability failure is stored on [VehicleSnapshot.lastError].
  * Each [start] constructs a new [Vehicle]. Re-initializing a released instance is not documented.
  *
- * Not used: getGear(), hidden battery/port listeners, deprecated setRangeRemainingDistance,
- * deprecated getCRNInfo, seat move, HVAC, and occupancy/belt value listeners.
- * Seat support is a capability query only. Remaining range is read from AAOS, not from the SDK.
- * Vehicle Control APIs are Coming Soon and are not called.
+ * getGear() runs only when the gear backend is PLEOS. AAOS GEAR_SELECTION stays the default.
+ * Remaining range uses Odometer.getRangeRemainingDistance. setRangeRemainingDistance is not called.
+ * Seat occupancy, door lock, cabin light, and reading lights are read. No set/control API is called.
  *
  * The docs name the failure type VehicleException. In the 2.3.2 AAR that type is obfuscated
  * (callback.exception.a), so failures are recorded from Exception.message only.
@@ -67,7 +76,8 @@ class PleosVehicleRepository @Inject constructor(
     private val listeners = ListenerSession()
     @Volatile private var sessionToken = 0
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private var rangeJob: Job? = null
+    private var identityJob: Job? = null
+    private val rereads = mutableListOf<() -> Unit>()
     private val hazardDetector = HazardDetector()
 
     private val _link = MutableStateFlow(LinkState.IDLE)
@@ -106,16 +116,11 @@ class PleosVehicleRepository @Inject constructor(
         sessionToken = listeners.open()
         _link.value = LinkState.CONNECTING
         carClient.start()
-        rangeJob = scope.launch {
-            carClient.rangeMeters.collect { meters ->
+        identityJob = scope.launch {
+            carClient.identity.collect { raw ->
                 _snapshot.update { current ->
                     current.copy(
-                        rangeMeters = meters,
-                        rangeSource = if (meters == null) {
-                            RangeSource.UNAVAILABLE
-                        } else {
-                            RangeSource.AAOS_RANGE_REMAINING
-                        },
+                        identity = CarFacts.from(raw.fuelTypes, raw.fuelDoor, raw.evPort, raw.connector),
                         updatedAtEpochMs = System.currentTimeMillis(),
                     )
                 }
@@ -139,12 +144,17 @@ class PleosVehicleRepository @Inject constructor(
         subscribeVin()
         subscribeSeats()
         subscribeTurnSignal()
+        subscribeDoorLock()
+        subscribeLights()
+        subscribeRange()
+        subscribePleosGear()
     }
 
     override fun stop() {
         if (!started.compareAndSet(true, false)) return
-        rangeJob?.cancel()
-        rangeJob = null
+        identityJob?.cancel()
+        identityJob = null
+        rereads.clear()
         listeners.close()
         sessionToken = 0
         val current = vehicle
@@ -161,7 +171,14 @@ class PleosVehicleRepository @Inject constructor(
     }
 
     override fun refresh() {
-        carClient.refreshRange()
+        carClient.refreshIdentity()
+        rereads.toList().forEach { call ->
+            try {
+                call()
+            } catch (error: Throwable) {
+                note(error)
+            }
+        }
     }
 
     private fun subscribeDoors() {
@@ -481,8 +498,37 @@ class PleosVehicleRepository @Inject constructor(
         try {
         seat.checkSeatOccupancyCapabilities(
             { config, areas ->
-                occupancy = config.accessType.toSignal() to areas.mapNotNull { it.toSeatId() }.toSet()
+                val ids = areas.mapNotNull { it.toSeatId() }.toSet()
+                occupancy = config.accessType.toSignal() to ids
                 publish()
+                if (!live(token) || !config.accessType.toSignal().allowsRead()) {
+                    return@checkSeatOccupancyCapabilities
+                }
+                val driver = areas.firstOrNull { it.toSeatId() == SeatId.DRIVER } ?: return@checkSeatOccupancyCapabilities
+                val listener = object : SeatOccupancyListener {
+                    override fun onSeatOccupancyUpdated(occupancy: Boolean?) {
+                        if (live(token)) updateOccupied(occupancy)
+                    }
+
+                    override fun onFailed(error: Exception) {
+                        if (live(token)) note(error)
+                    }
+                }
+                try {
+                    seat.registerSeatOccupancy(driver, listener)
+                    track(token) { seat.unregisterSeatOccupancy(driver, listener) }
+                    val read = {
+                        seat.getCurrentSeatOccupancy(
+                            driver,
+                            { value -> if (live(token)) updateOccupied(value) },
+                            { error -> if (live(token)) note(error) },
+                        )
+                    }
+                    read()
+                    rereads += read
+                } catch (error: Throwable) {
+                    note(error)
+                }
             },
             { error ->
                 occupancy = SignalAccess.NONE to emptySet()
@@ -545,6 +591,224 @@ class PleosVehicleRepository @Inject constructor(
         }
     }
 
+    private fun subscribeDoorLock() {
+        val token = sessionToken
+        val current = vehicle ?: return
+        val door = VehicleDomains.door(current)
+        try {
+            door.checkDoorLockCapabilities(
+                { config, areas ->
+                    if (!live(token) || !config.accessType.toSignal().allowsRead()) {
+                        return@checkDoorLockCapabilities
+                    }
+                    val area = areas.firstOrNull { it.toDoorId() == DoorId.ROW_1_LEFT }
+                        ?: return@checkDoorLockCapabilities
+                    val listener = object : DoorLockStateListener {
+                        override fun onDoorLockStateUpdated(state: Boolean?) {
+                            if (live(token)) updateLock(state)
+                        }
+
+                        override fun onFailed(error: Exception) {
+                            if (live(token)) note(error)
+                        }
+                    }
+                    try {
+                        door.registerDoorLockState(area, listener)
+                        track(token) { door.unregisterDoorLockState(area, listener) }
+                        val read = {
+                            door.getDoorLockState(
+                                area,
+                                { value -> if (live(token)) updateLock(value) },
+                                { error -> if (live(token)) note(error) },
+                            )
+                        }
+                        read()
+                        rereads += read
+                    } catch (error: Throwable) {
+                        note(error)
+                    }
+                },
+                { error -> if (live(token)) note(error) },
+            )
+        } catch (error: Throwable) {
+            note(error)
+        }
+    }
+
+    private fun subscribeLights() {
+        val token = sessionToken
+        val current = vehicle ?: return
+        val light = VehicleDomains.light(current)
+        try {
+            light.checkCabinLightStateCapabilities(
+                { config, _ ->
+                    if (!live(token) || !config.accessType.toSignal().allowsRead()) {
+                        return@checkCabinLightStateCapabilities
+                    }
+                    val listener = object : LightStateListener {
+                        override fun onLightStateUpdated(state: LightState?) {
+                            if (live(token)) updateCabin(state)
+                        }
+
+                        override fun onFailed(error: Exception) {
+                            if (live(token)) note(error)
+                        }
+                    }
+                    try {
+                        light.registerCabinLightState(listener)
+                        track(token) { light.unregisterCabinLightState(listener) }
+                        val read = {
+                            light.getCurrentCabinLightState(
+                                { value -> if (live(token)) updateCabin(value) },
+                                { error -> if (live(token)) note(error) },
+                            )
+                        }
+                        read()
+                        rereads += read
+                    } catch (error: Throwable) {
+                        note(error)
+                    }
+                },
+                { error -> if (live(token)) note(error) },
+            )
+            light.checkReadingLightStateCapabilities(
+                { config, areaMap ->
+                    if (!live(token) || !config.accessType.toSignal().allowsRead()) {
+                        return@checkReadingLightStateCapabilities
+                    }
+                    areaMap.keys.forEach { area ->
+                        val seat = area.toSeatId() ?: return@forEach
+                        val listener = object : LightStateListener {
+                            override fun onLightStateUpdated(state: LightState?) {
+                                if (live(token)) updateReading(seat, state)
+                            }
+
+                            override fun onFailed(error: Exception) {
+                                if (live(token)) note(error)
+                            }
+                        }
+                        try {
+                            light.registerReadingLightState(area, listener)
+                            track(token) { light.unregisterReadingLightState(area, listener) }
+                            val read = {
+                                light.getCurrentReadingLightState(
+                                    area,
+                                    { value -> if (live(token)) updateReading(seat, value) },
+                                    { error -> if (live(token)) note(error) },
+                                )
+                            }
+                            read()
+                            rereads += read
+                        } catch (error: Throwable) {
+                            note(error)
+                        }
+                    }
+                },
+                { error -> if (live(token)) note(error) },
+            )
+        } catch (error: Throwable) {
+            note(error)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun subscribeRange() {
+        val token = sessionToken
+        val current = vehicle ?: return
+        val odometer = VehicleDomains.odometer(current)
+        try {
+            val listener = object : RangeRemainingListener {
+                override fun onRangeRemainingChanged(value: Float?) {
+                    if (live(token)) applyRange(value)
+                }
+
+                override fun onFailed(error: Exception) {
+                    if (live(token)) note(error)
+                }
+            }
+            odometer.registerRangeRemainingListener(listener)
+            track(token) { odometer.unregisterRangeRemainingListener(listener) }
+            val read = {
+                odometer.getRangeRemainingDistance(
+                    { value -> if (live(token)) applyRange(value) },
+                    { error -> if (live(token)) note(error) },
+                )
+            }
+            read()
+            rereads += read
+        } catch (error: Throwable) {
+            note(error)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun subscribePleosGear() {
+        if (BuildConfig.GEAR_BACKEND != "PLEOS") return
+        val token = sessionToken
+        val current = vehicle ?: return
+        val gear = VehicleDomains.gear(current)
+        try {
+            val listener = object : GearSelectionListener {
+                override fun onSelected(gear: VehicleGear?) {
+                    val position = gear?.toPosition() ?: return
+                    if (live(token)) carClient.overlayGear(position)
+                }
+
+                override fun onFailed(error: Exception) {
+                    if (live(token)) note(error)
+                }
+            }
+            gear.registerGearSelection(listener)
+            track(token) { gear.unregisterGearSelection(listener) }
+            val read = {
+                gear.getCurrentGearSelectionState(
+                    { value ->
+                        val position = value?.toPosition() ?: return@getCurrentGearSelectionState
+                        if (live(token)) carClient.overlayGear(position)
+                    },
+                    { error -> if (live(token)) note(error) },
+                )
+            }
+            read()
+            rereads += read
+        } catch (error: Throwable) {
+            note(error)
+        }
+    }
+
+    private fun updateLock(locked: Boolean?) {
+        _snapshot.update { it.copy(doorLocked = locked, updatedAtEpochMs = System.currentTimeMillis()) }
+    }
+
+    private fun updateOccupied(occupied: Boolean?) {
+        _snapshot.update { it.copy(driverOccupied = occupied, updatedAtEpochMs = System.currentTimeMillis()) }
+    }
+
+    private fun updateCabin(state: LightState?) {
+        val on = lightOn(state) ?: return
+        _snapshot.update { it.copy(cabinLightOn = on, updatedAtEpochMs = System.currentTimeMillis()) }
+    }
+
+    private fun updateReading(seat: SeatId, state: LightState?) {
+        val on = lightOn(state) ?: return
+        _snapshot.update { current ->
+            current.copy(
+                readingLights = current.readingLights + (seat to on),
+                updatedAtEpochMs = System.currentTimeMillis(),
+            )
+        }
+    }
+
+    private fun applyRange(value: Float?) {
+        _snapshot.update {
+            it.copy(
+                rangeMeters = value,
+                rangeSource = if (value == null) RangeSource.UNAVAILABLE else RangeSource.PLEOS_ODOMETER,
+                updatedAtEpochMs = System.currentTimeMillis(),
+            )
+        }
+    }
+
     private fun applyTurn(valueName: String) {
         val lamps = hazardDetector.observe(valueName, System.currentTimeMillis())
         _snapshot.update { it.copy(turnLamps = lamps, updatedAtEpochMs = System.currentTimeMillis()) }
@@ -559,6 +823,21 @@ class PleosVehicleRepository @Inject constructor(
     private fun note(error: Throwable) {
         _snapshot.update { it.copy(lastError = error.message ?: error.javaClass.simpleName) }
     }
+}
+
+private fun lightOn(state: LightState?): Boolean? = when (state) {
+    LightState.ON -> true
+    LightState.OFF, LightState.DAYTIME_RUNNING -> false
+    null -> null
+}
+
+private fun VehicleGear.toPosition(): GearPosition = when (this) {
+    VehicleGear.GEAR_PARK -> GearPosition.PARK
+    VehicleGear.GEAR_REVERSE -> GearPosition.REVERSE
+    VehicleGear.GEAR_NEUTRAL -> GearPosition.NEUTRAL
+    VehicleGear.GEAR_DRIVE -> GearPosition.DRIVE
+    VehicleGear.GEAR_UNKNOWN -> GearPosition.UNKNOWN
+    else -> GearPosition.OTHER
 }
 
 private fun AccessType.toSignal(): SignalAccess = when (this) {

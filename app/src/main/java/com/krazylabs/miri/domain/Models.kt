@@ -78,11 +78,11 @@ data class PanelState(
 fun isOpenPosition(position: Int?): Boolean = position != null && position != 0
 
 enum class RangeSource {
-    /** Vehicle SDK 2.3.2 has no remaining-range getter. setRangeRemainingDistance is deprecated. */
+    /** No remaining-range value. setRangeRemainingDistance is not called. */
     UNAVAILABLE,
 
-    /** AAOS VehiclePropertyIds.RANGE_REMAINING. Exposure on Pleos is unverified. */
-    AAOS_RANGE_REMAINING,
+    /** Pleos Odometer.getRangeRemainingDistance (CAR_DRIVE). Not the AAOS energy property. */
+    PLEOS_ODOMETER,
 
     SIMULATED,
 }
@@ -102,6 +102,13 @@ data class VehicleSnapshot(
     val vinReadable: Boolean = false,
     val seats: Map<SeatId, SeatSupport> = unavailableSeats(),
     val turnLamps: TurnLamps = TurnLamps(),
+    /** True means locked. Null means the lock signal has not been read. Polarity is unverified. */
+    val doorLocked: Boolean? = null,
+    /** Null means occupancy was not read. F1 then uses unlock + Park only. */
+    val driverOccupied: Boolean? = null,
+    val cabinLightOn: Boolean? = null,
+    val readingLights: Map<SeatId, Boolean> = emptyMap(),
+    val identity: CarIdentity = CarIdentity(),
     val updatedAtEpochMs: Long = 0L,
     val lastError: String? = null,
 )

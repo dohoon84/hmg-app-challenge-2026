@@ -514,7 +514,7 @@ private fun odometer(ui: FoundationUi): String =
 
 private fun range(ui: FoundationUi): String = when (ui.vehicle.rangeSource) {
     RangeSource.UNAVAILABLE -> "SDK 미제공"
-    RangeSource.AAOS_RANGE_REMAINING, RangeSource.SIMULATED -> {
+    RangeSource.PLEOS_ODOMETER, RangeSource.SIMULATED -> {
         val meters = ui.vehicle.rangeMeters
         if (meters == null) "없음" else String.format(Locale.KOREA, "%.1f km (%s)", meters / 1000f, ui.vehicle.rangeSource.name)
     }

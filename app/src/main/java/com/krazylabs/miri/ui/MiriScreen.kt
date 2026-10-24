@@ -1,5 +1,6 @@
 package com.krazylabs.miri.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +23,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.unit.dp
 import com.krazylabs.miri.domain.TurnLamps
 import com.krazylabs.miri.mvp.F2Draft
@@ -48,11 +53,26 @@ fun MiriRoute(viewModel: MiriViewModel) {
             )
             MiriPane.F2 -> ReturnCard(
                 draft = ui.draft,
+                places = ui.places,
                 today = LocalDate.now(),
                 onOpenDates = viewModel::openDates,
                 onDate = viewModel::selectDate,
                 onTime = viewModel::selectTime,
+                onPlace = viewModel::selectPlace,
                 onDone = viewModel::confirmReturn,
+            )
+            MiriPane.D1, MiriPane.D2, MiriPane.F3, MiriPane.CHECK -> InfoCard(
+                card = ui.card,
+                onGuide = viewModel::requestReturnGuide,
+            )
+        }
+        if (ui.showScenarioPanel) {
+            ScenarioPanel(
+                overrides = ui.scenario,
+                onChange = viewModel::updateScenario,
+                onRoute = viewModel::requestDemoRoute,
+                onRoad = viewModel::requestDemoRoad,
+                modifier = Modifier.align(Alignment.BottomEnd),
             )
         }
         if (ui.simulator) {
@@ -69,13 +89,92 @@ fun MiriRoute(viewModel: MiriViewModel) {
 
 @Composable
 private fun DrivingIcon() {
+    val color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Box(
-            modifier = Modifier
-                .size(96.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .background(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)),
+        Canvas(modifier = Modifier.size(96.dp)) {
+            val body = Path().apply {
+                moveTo(size.width * 0.28f, size.height * 0.18f)
+                lineTo(size.width * 0.72f, size.height * 0.18f)
+                lineTo(size.width * 0.84f, size.height * 0.42f)
+                lineTo(size.width * 0.84f, size.height * 0.82f)
+                lineTo(size.width * 0.16f, size.height * 0.82f)
+                lineTo(size.width * 0.16f, size.height * 0.42f)
+                close()
+            }
+            drawPath(body, color)
+            drawRoundRect(
+                color = color.copy(alpha = 0.25f),
+                topLeft = Offset(size.width * 0.30f, size.height * 0.28f),
+                size = Size(size.width * 0.40f, size.height * 0.22f),
+                cornerRadius = CornerRadius(8f, 8f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun InfoCard(card: ShownCard?, onGuide: () -> Unit) {
+    val face = card ?: return
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(28.dp),
+    ) {
+        PortSketch(face.portName)
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.weight(1f)) {
+            face.badge?.let { Text(it, style = MaterialTheme.typography.labelLarge) }
+            Text(face.title, style = MaterialTheme.typography.headlineMedium)
+            face.lines.forEach { line ->
+                Text(line, style = MaterialTheme.typography.bodyLarge)
+            }
+            if (face.chips.isNotEmpty()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    face.chips.forEach { chip ->
+                        Text(
+                            chip,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                        )
+                    }
+                }
+            }
+            face.note?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+            face.footer?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+            if (face.showGuide) {
+                TextButton(onClick = onGuide) { Text("반납 장소로 안내") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PortSketch(portName: String?) {
+    val body = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.18f)
+    val mark = MaterialTheme.colorScheme.primary
+    Canvas(modifier = Modifier.size(220.dp)) {
+        drawRoundRect(
+            color = body,
+            topLeft = Offset(size.width * 0.22f, size.height * 0.08f),
+            size = Size(size.width * 0.56f, size.height * 0.84f),
+            cornerRadius = CornerRadius(36f, 36f),
         )
+        if (portName == null) return@Canvas
+        val rear = portName.startsWith("REAR")
+        val front = portName.startsWith("FRONT")
+        val right = portName.endsWith("RIGHT")
+        val left = portName.endsWith("LEFT")
+        val cx = when {
+            right -> size.width * 0.84f
+            left -> size.width * 0.16f
+            else -> size.width * 0.50f
+        }
+        val cy = when {
+            rear -> size.height * 0.78f
+            front -> size.height * 0.22f
+            else -> size.height * 0.50f
+        }
+        drawCircle(mark, radius = 16f, center = Offset(cx, cy))
     }
 }
 
@@ -94,10 +193,12 @@ private fun KindCard(onOwn: () -> Unit, onRental: () -> Unit, onShare: () -> Uni
 @Composable
 private fun ReturnCard(
     draft: F2Draft,
+    places: List<PlaceChip>,
     today: LocalDate,
     onOpenDates: () -> Unit,
     onDate: (Int) -> Unit,
     onTime: (Int) -> Unit,
+    onPlace: (String) -> Unit,
     onDone: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.fillMaxWidth()) {
@@ -131,7 +232,16 @@ private fun ReturnCard(
                 }
             }
         }
-        Text(if (draft.placeId == F2Draft.PLACE_PICKUP) F2Draft.PICKUP_LABEL else draft.placeId)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            places.forEach { place ->
+                val selected = draft.placeId == place.id
+                if (selected) {
+                    Button(onClick = { onPlace(place.id) }) { Text(place.label) }
+                } else {
+                    TextButton(onClick = { onPlace(place.id) }) { Text(place.label) }
+                }
+            }
+        }
         Button(onClick = onDone, enabled = draft.doneEnabled) { Text(F2Draft.DONE) }
         if (!draft.doneEnabled) {
             Text(F2Draft.DONE_HINT, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.64f))

@@ -2,9 +2,9 @@ package com.krazylabs.miri.domain
 
 /**
  * Integer values of android.car.VehicleGear on API 34.
- * GEAR_SELECTION is read with CarPropertyManager. Vehicle.getGear() is not called:
- * the published Vehicle class page still shows that call, but it is a stale sample
- * and the planning guide routes gear to the AAOS Car API.
+ * GEAR_SELECTION (CAR_POWERTRAIN) is the primary gear source.
+ * Pleos Vehicle.getGear() is a switchable fallback and is not called unless
+ * the gear backend is PLEOS.
  */
 object GearSelectionCodes {
     const val UNKNOWN = 0

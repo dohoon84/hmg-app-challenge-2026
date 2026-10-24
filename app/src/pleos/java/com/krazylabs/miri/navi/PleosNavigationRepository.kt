@@ -56,6 +56,12 @@ class PleosNavigationRepository @Inject constructor(
 
     private val _road = MutableStateFlow(RoadCounts())
     override val road: StateFlow<RoadCounts> = _road
+    private val _charging = MutableStateFlow(false)
+    override val chargingStation: StateFlow<Boolean> = _charging
+    private val _recents = MutableStateFlow<List<PlaceRequest>>(emptyList())
+    override val recentPlaces: StateFlow<List<PlaceRequest>> = _recents
+    private val _here = MutableStateFlow<HereFix?>(null)
+    override val here: StateFlow<HereFix?> = _here
     private val tbt = TbtGuard()
     private var routing = false
 
@@ -117,7 +123,25 @@ class PleosNavigationRepository @Inject constructor(
 
         override fun onCurrentLocationInfo(info: ai.pleos.playground.navi.data.CurrentLocationInfo) {
             val id = info.routeId
-            _road.update { it.copy(routeId = id, routing = routing && id.isNotEmpty()) }
+            _road.update { it.copy(routeId = id) }
+            _here.value = HereFix(info.latitude, info.longitude, info.address.orEmpty())
+        }
+
+        override fun onRecentDestinationInfo(list: List<ai.pleos.playground.navi.data.RecentDestinationInfo>) {
+            _recents.value = list.take(3).map { item ->
+                PlaceRequest(
+                    latitude = item.latitude,
+                    longitude = item.longitude,
+                    name = item.name.orEmpty(),
+                    address = item.address.orEmpty(),
+                    poiId = item.poiId.orEmpty(),
+                    poiSubId = item.poiSubId.orEmpty(),
+                )
+            }
+        }
+
+        override fun onDrivingInfo(info: ai.pleos.playground.navi.data.DrivingInfo) {
+            _charging.value = info.destination.isChargingStation
         }
     }
 
@@ -217,6 +241,24 @@ class PleosNavigationRepository @Inject constructor(
         val current = helper ?: return
         if (_link.value != LinkState.READY) return
         readDestination(current)
+    }
+
+    override fun refreshRoute() {
+        val current = helper ?: return
+        if (_link.value != LinkState.READY) return
+        listOf(
+            { current.getRouteStateInfo() },
+            { current.getTBTInfo() },
+            { current.getDestinationInfo() },
+            { current.getCurrentLocationInfo() },
+            { current.getRecentDestinationInfo() },
+        ).forEach { call ->
+            try {
+                call()
+            } catch (error: Throwable) {
+                _status.value = error.message ?: error.javaClass.simpleName
+            }
+        }
     }
 
     private fun readDestination(target: NaviHelper) {

@@ -2,6 +2,7 @@ package com.krazylabs.miri.sim
 
 import com.krazylabs.miri.domain.ArrivalSnapshot
 import com.krazylabs.miri.domain.DestinationSnapshot
+import com.krazylabs.miri.domain.CarFacts
 import com.krazylabs.miri.domain.DoorId
 import com.krazylabs.miri.domain.DrivingSnapshot
 import com.krazylabs.miri.domain.GearPosition
@@ -153,6 +154,12 @@ class FakeCabinWorld @Inject constructor() : CabinSimulator {
             rangeSource = RangeSource.SIMULATED,
             vin = "FAKE-NOT-A-VIN",
             vinReadable = true,
+            identity = CarFacts.from(
+                fuelTypes = intArrayOf(CarFacts.FUEL_ELECTRIC),
+                fuelDoor = intArrayOf(),
+                evPort = intArrayOf(CarFacts.PORT_REAR_RIGHT),
+                connector = intArrayOf(CarFacts.CONNECTOR_COMBO_2),
+            ),
             seats = seatSupport(
                 occupancyAreas = setOf(SeatId.DRIVER, SeatId.PASSENGER),
                 beltAreas = setOf(SeatId.DRIVER, SeatId.PASSENGER),

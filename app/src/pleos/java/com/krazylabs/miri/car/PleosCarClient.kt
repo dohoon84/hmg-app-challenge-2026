@@ -7,13 +7,11 @@ import android.car.drivingstate.CarUxRestrictionsManager
 import android.car.hardware.CarPropertyValue
 import android.car.hardware.property.CarPropertyManager
 import android.content.Context
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import androidx.annotation.MainThread
 import androidx.annotation.RequiresApi
-import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.krazylabs.miri.domain.DrivingSnapshot
 import com.krazylabs.miri.domain.GearSelectionCodes
@@ -26,14 +24,13 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * One AAOS Car connection shared by gear, UX restrictions, and the optional range property.
+ * One AAOS Car connection shared by gear, UX restrictions, and the static INFO_* identity.
  *
- * Gear comes from [VehiclePropertyIds.GEAR_SELECTION] (permission CAR_POWERTRAIN, normal).
- * Vehicle.getGear() exists on the 2.3.2 AAR but the published class page sample is stale
- * and the planning guide says gear is standard AAOS data. This class does not call it.
+ * Gear comes from [VehiclePropertyIds.GEAR_SELECTION] (permission CAR_POWERTRAIN).
+ * Pleos Vehicle.getGear() is not called here. The vehicle repository may overlay it
+ * only when the gear backend is PLEOS.
  *
- * Remaining range is [VehiclePropertyIds.RANGE_REMAINING] (permission CAR_ENERGY, dangerous).
- * The Vehicle SDK has no range getter. Whether Pleos exposes this property is unverified.
+ * Remaining range is not read from RANGE_REMAINING. android.car CAR_ENERGY is not used.
  *
  * Car.createCar(listener) is API 30 and VehiclePropertyIds is API 29. minSdk stays 28 so the
  * package can be installed more widely; below API 30 this client publishes [SignalLoss]
@@ -67,8 +64,8 @@ class PleosCarClient internal constructor(
     private val _driving = MutableStateFlow(DrivingSnapshot())
     val driving: StateFlow<DrivingSnapshot> = _driving
 
-    private val _rangeMeters = MutableStateFlow<Float?>(null)
-    val rangeMeters: StateFlow<Float?> = _rangeMeters
+    private val _identity = MutableStateFlow(AaosIdentity())
+    val identity: StateFlow<AaosIdentity> = _identity
 
     private var link: CarLink? = null
     private var pending: CarLink? = null
@@ -82,7 +79,7 @@ class PleosCarClient internal constructor(
     private var requiresDistractionOptimization = false
     private var restrictionMask = 0
     private var maxRestrictedStringLength = 0
-    private var rangeRegistered = false
+    private var gearOverride: com.krazylabs.miri.domain.GearPosition? = null
 
     private val portListener = object : PortListener {
         override fun onChange(propertyId: Int, value: Any?) {
@@ -91,9 +88,6 @@ class PleosCarClient internal constructor(
                     gearRaw = value as? Int
                     gearAvailable = true
                     publishDriving()
-                }
-                VehiclePropertyIds.RANGE_REMAINING -> {
-                    _rangeMeters.value = numericFloat(value)
                 }
             }
         }
@@ -155,10 +149,19 @@ class PleosCarClient internal constructor(
         disconnect()
     }
 
-    fun refreshRange() {
+    fun refreshIdentity() {
         checkMainThread()
         val port = propertyPort ?: return
-        readRange(port)
+        readIdentity(port)
+    }
+
+    /** Ignored unless the gear backend is PLEOS. AAOS GEAR_SELECTION stays primary. */
+    fun overlayGear(position: com.krazylabs.miri.domain.GearPosition) {
+        checkMainThread()
+        if (com.krazylabs.miri.BuildConfig.GEAR_BACKEND != "PLEOS") return
+        gearOverride = position
+        gearAvailable = true
+        publishDriving()
     }
 
     @RequiresApi(Build.VERSION_CODES.R)
@@ -198,7 +201,6 @@ class PleosCarClient internal constructor(
 
     @RequiresApi(Build.VERSION_CODES.R)
     private fun subscribeProperties(port: PropertyPort) {
-        rangeRegistered = false
         gearAvailable = try {
             port.isPropertyAvailable(VehiclePropertyIds.GEAR_SELECTION, GLOBAL_AREA)
         } catch (error: Throwable) {
@@ -217,37 +219,27 @@ class PleosCarClient internal constructor(
                 gearRaw = null
             }
         }
-        readRange(port)
+        readIdentity(port)
         publishDriving()
     }
 
-    @RequiresApi(Build.VERSION_CODES.R)
-    private fun readRange(port: PropertyPort) {
-        if (!hasEnergyPermission()) {
-            _rangeMeters.value = null
-            return
+    private fun readIdentity(port: PropertyPort) {
+        _identity.value = AaosIdentity(
+            fuelTypes = readInts(port, VehiclePropertyIds.INFO_FUEL_TYPE),
+            fuelDoor = readInts(port, VehiclePropertyIds.INFO_FUEL_DOOR_LOCATION),
+            evPort = readInts(port, VehiclePropertyIds.INFO_EV_PORT_LOCATION),
+            connector = readInts(port, VehiclePropertyIds.INFO_EV_CONNECTOR_TYPE),
+        )
+    }
+
+    private fun readInts(port: PropertyPort, propertyId: Int): IntArray = try {
+        if (!port.isPropertyAvailable(propertyId, GLOBAL_AREA)) {
+            intArrayOf()
+        } else {
+            port.getIntArrayProperty(propertyId, GLOBAL_AREA)
         }
-        val available = try {
-            port.isPropertyAvailable(VehiclePropertyIds.RANGE_REMAINING, GLOBAL_AREA)
-        } catch (error: Throwable) {
-            false
-        }
-        if (!available) {
-            _rangeMeters.value = null
-            return
-        }
-        ensureRangeRegistered {
-            port.registerCallback(
-                portListener,
-                VehiclePropertyIds.RANGE_REMAINING,
-                CarPropertyManager.SENSOR_RATE_ONCHANGE,
-            )
-        }
-        _rangeMeters.value = try {
-            port.getFloatProperty(VehiclePropertyIds.RANGE_REMAINING, GLOBAL_AREA)
-        } catch (error: Throwable) {
-            null
-        }
+    } catch (error: Throwable) {
+        intArrayOf()
     }
 
     private fun applyUx(restrictions: CarUxRestrictions) {
@@ -259,7 +251,7 @@ class PleosCarClient internal constructor(
     }
 
     private fun publishDriving() {
-        val gear = GearSelectionCodes.toGear(if (gearAvailable) gearRaw else null)
+        val gear = gearOverride ?: GearSelectionCodes.toGear(if (gearAvailable) gearRaw else null)
         _driving.value = DrivingSnapshot(
             gear = gear,
             gearRaw = gearRaw,
@@ -272,9 +264,6 @@ class PleosCarClient internal constructor(
         )
     }
 
-    private fun hasEnergyPermission(): Boolean =
-        ContextCompat.checkSelfPermission(context, Car.PERMISSION_ENERGY) == PackageManager.PERMISSION_GRANTED
-
     private fun clearSignals() {
         val lost = SignalLoss.drivingSnapshot()
         gearRaw = lost.gearRaw
@@ -283,8 +272,8 @@ class PleosCarClient internal constructor(
         requiresDistractionOptimization = lost.requiresDistractionOptimization
         restrictionMask = lost.restrictionMask
         maxRestrictedStringLength = lost.maxRestrictedStringLength
-        rangeRegistered = false
-        _rangeMeters.value = null
+        gearOverride = null
+        _identity.value = AaosIdentity()
         _driving.value = lost
     }
 
@@ -317,18 +306,6 @@ class PleosCarClient internal constructor(
         uxManager = null
     }
 
-    /**
-     * [clearSignals] resets [rangeRegistered], so a later ready on the same Car registers again.
-     */
-    private fun ensureRangeRegistered(register: () -> Boolean) {
-        if (rangeRegistered || !hasEnergyPermission()) return
-        rangeRegistered = try {
-            register()
-        } catch (error: Throwable) {
-            false
-        }
-    }
-
     private fun release(target: CarLink) {
         if (closing === target || releasedLink === target) return
         val outer = closing
@@ -349,17 +326,17 @@ class PleosCarClient internal constructor(
         }
     }
 
-    private fun numericFloat(value: Any?): Float? = when (value) {
-        is Float -> value
-        is Double -> value.toFloat()
-        is Int -> value.toFloat()
-        else -> null
-    }
-
     private companion object {
         const val GLOBAL_AREA = 0
     }
 }
+
+data class AaosIdentity(
+    val fuelTypes: IntArray = intArrayOf(),
+    val fuelDoor: IntArray = intArrayOf(),
+    val evPort: IntArray = intArrayOf(),
+    val connector: IntArray = intArrayOf(),
+)
 
 /** Property reads shared by [CarPropertyManager] and the connect tests. */
 internal interface PropertyPort {
@@ -367,6 +344,7 @@ internal interface PropertyPort {
     fun registerCallback(listener: PortListener, propertyId: Int, rate: Float): Boolean
     fun unregisterCallback(listener: PortListener)
     fun getIntProperty(propertyId: Int, areaId: Int): Int
+    fun getIntArrayProperty(propertyId: Int, areaId: Int): IntArray
     fun getFloatProperty(propertyId: Int, areaId: Int): Float
 }
 
@@ -469,6 +447,9 @@ private class CarPropertyPort(
 
     override fun getIntProperty(propertyId: Int, areaId: Int): Int =
         manager.getIntProperty(propertyId, areaId)
+
+    override fun getIntArrayProperty(propertyId: Int, areaId: Int): IntArray =
+        manager.getIntArrayProperty(propertyId, areaId)
 
     override fun getFloatProperty(propertyId: Int, areaId: Int): Float =
         manager.getFloatProperty(propertyId, areaId)
