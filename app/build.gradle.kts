@@ -112,6 +112,11 @@ android {
             matchingFallbacks += listOf("debug")
             isDebuggable = true
             versionNameSuffix = "-probe"
+            // Pleos Connect Emulator is arm64. Drop x86, x86_64, and armeabi-v7a
+            // from this APK only. No minify and no resource shrink.
+            ndk {
+                abiFilters += "arm64-v8a"
+            }
         }
         release {
             isMinifyEnabled = false
