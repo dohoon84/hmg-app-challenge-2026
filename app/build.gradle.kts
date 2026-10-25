@@ -268,6 +268,11 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.compose.ui.test.junit4)
+    // Declares ComponentActivity for createComposeRule(). debugImplementation merges
+    // it into the debug manifest only, which Robolectric reads from the debug
+    // unit-test resource APK. Compose screenshot tests therefore live in src/testDebug.
+    // A testImplementation copy is not merged into that APK, and the release APK
+    // must not contain this activity. checkPleosReleaseContents rejects it.
     debugImplementation(libs.compose.ui.test.manifest)
     testImplementation(files(carJar))
 }
@@ -332,7 +337,7 @@ val allowedPleosReleasePermissions = setOf(
 
 tasks.register("checkPleosReleaseContents") {
     group = "verification"
-    description = "Fail the pleos release APK when it contains the fake flavor or an extra permission."
+    description = "Fail the pleos release APK when it contains the fake flavor, an extra permission, or a test activity."
     dependsOn("assemblePleosRelease", "checkSecretsNotTracked")
     inputs.file(pleosReleaseMergedManifest)
     doLast {
@@ -391,6 +396,13 @@ tasks.register("checkPleosReleaseContents") {
                     if (hit != null) {
                         throw GradleException("${apk.name} contains $hit")
                     }
+                    val testClassHit = listOf(
+                        "androidx/compose/ui/test",
+                        "androidx.compose.ui.test",
+                    ).firstOrNull { marker -> text.contains(marker) }
+                    if (testClassHit != null) {
+                        throw GradleException("${apk.name} contains a ui-test class: $testClassHit")
+                    }
                 }
             }
         }
@@ -412,6 +424,13 @@ tasks.register("checkPleosReleaseContents") {
             manifestXml.contains("com.krazylabs.miri.action.AUTOPLAY")
         ) {
             throw GradleException("pleos release manifest contains the filming receiver")
+        }
+        val testManifestHit = listOf(
+            "androidx.activity.ComponentActivity",
+            "androidx.compose.ui.test",
+        ).firstOrNull { marker -> manifestXml.contains(marker) }
+        if (testManifestHit != null) {
+            throw GradleException("pleos release manifest contains a test activity entry: $testManifestHit")
         }
     }
 }
