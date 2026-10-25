@@ -57,7 +57,7 @@ fun D2ChargeScreen(card: ShownCard?, dark: Boolean, onDone: () -> Unit = {}) {
     val colors = IviTheme.colors
     val car = if (dark) R.drawable.miri_car_top_dark else R.drawable.miri_car_top_light
     val port = portPhrase(card)
-    val connector = connectorPhrase(card)
+    val labels = d2Labels(card)
     SpecFrame {
         Image(
             painter = painterResource(car),
@@ -75,15 +75,15 @@ fun D2ChargeScreen(card: ShownCard?, dark: Boolean, onDone: () -> Unit = {}) {
         SpecIcon(R.drawable.miri_ic_parking, 880f, 48f, 32f, 32f, colors.frameSecondary, "정차")
         SpecText("정차 중 · 출발 전", 924f, 50f, MiriType.labelMedium(), colors.frameSecondary)
         SpecText(card?.title ?: "충전소에 가요", 880f, 112f, MiriType.titleLargeNormal(), colors.frameInk)
-        SpecText("충전", 880f, 212f, MiriType.labelMedium(), colors.frameTertiary)
-        card?.chargePercent?.let { percent ->
-            Pill(880f, 248f, "$percent% 남음")
+        SpecText(labels.energy, 880f, 212f, MiriType.labelMedium(), colors.frameTertiary)
+        labels.badge?.let { badge ->
+            Pill(880f, 248f, badge)
         }
-        SpecText("충전구", 880f, 791.95f, MiriType.labelMedium(), colors.frameTertiary)
+        SpecText(labels.portCaption, 880f, 791.95f, MiriType.labelMedium(), colors.frameTertiary)
         SpecText(port, 880f, 827.95f, MiriType.headlineLargeExtra(), colors.accent)
-        connector?.let {
+        labels.connector?.let { connector ->
             SpecText("커넥터", 880f, 939.95f, MiriType.labelMedium(), colors.frameTertiary)
-            Pill(880f, 975.95f, it)
+            Pill(880f, 975.95f, connector)
         }
         SpecButton("다 봤어요", 880f, 1062f, 352f, kind = SpecButtonKind.Point, onClick = onDone)
     }
@@ -144,6 +144,38 @@ private fun roadStats(lines: List<String>): RoadCounts {
             ?.toIntOrNull()
             ?: 0
     return RoadCounts(take("톨게이트 "), take("고속도로 진입 "))
+}
+
+/**
+ * Copy for the D2 hero. A fuel stop is [ShownCard.fuelBadge] from D2Rules.
+ * That card fills the charge slots with 연료, the badge, and 주유구, and drops
+ * the remain pill and connector. A null badge, including a missing card, keeps
+ * the EV copy: 충전, "{n}% 남음", 충전구, and the connector.
+ */
+internal data class D2Labels(
+    val energy: String,
+    val badge: String?,
+    val portCaption: String,
+    val connector: String?,
+)
+
+internal fun d2Labels(card: ShownCard?): D2Labels {
+    val fuel = card?.fuelBadge
+    return if (fuel != null) {
+        D2Labels(
+            energy = "연료",
+            badge = fuel,
+            portCaption = "주유구",
+            connector = null,
+        )
+    } else {
+        D2Labels(
+            energy = "충전",
+            badge = card?.chargePercent?.let { percent -> "$percent% 남음" },
+            portCaption = "충전구",
+            connector = connectorPhrase(card),
+        )
+    }
 }
 
 private fun portPhrase(card: ShownCard?): String {

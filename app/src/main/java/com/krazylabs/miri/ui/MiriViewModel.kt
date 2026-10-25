@@ -92,6 +92,8 @@ data class ShownCard(
     /** SOC or fuel percent for the D2 hero. Null when the car has not reported one. */
     val chargePercent: Int? = null,
     val checks: List<CheckItem> = emptyList(),
+    /** D2 fuel badge. Null keeps the EV hero, including cards that are not a fuel stop. */
+    val fuelBadge: String? = null,
 )
 
 data class PlaceChip(
@@ -966,6 +968,7 @@ class MiriViewModel @Inject constructor(
         portName = portName,
         showGuide = showGuide,
         checks = checks,
+        fuelBadge = fuelBadge,
     )
 
     private companion object {
