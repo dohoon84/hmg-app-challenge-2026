@@ -177,6 +177,10 @@ android {
                 storePassword = releaseStorePassword
                 keyAlias = releaseKeyAlias
                 keyPassword = releaseKeyPassword
+                // AGP 8.7.3 signs with v2 and leaves v3 off. The contest APK needs both.
+                // v1 stays at the AGP default.
+                enableV2Signing = true
+                enableV3Signing = true
             }
         }
     }
@@ -503,6 +507,63 @@ tasks.register<Copy>("exportContestApk") {
     exclude("*unsigned*")
     into(rootProject.layout.projectDirectory.dir("apk"))
     rename { contestApkName }
+    doLast {
+        val exported = rootProject.layout.projectDirectory.file("apk/$contestApkName").asFile
+        if (!exported.isFile) {
+            throw GradleException("exportContestApk did not write ${exported.path}")
+        }
+        val apksigner = findApksigner()
+        if (apksigner == null) {
+            logger.warn(
+                "apksigner was not found. exportContestApk skipped APK Signature Scheme v2 and v3 verification.",
+            )
+            return@doLast
+        }
+        val process = ProcessBuilder(
+            apksigner.absolutePath,
+            "verify",
+            "--verbose",
+            exported.absolutePath,
+        )
+            .redirectErrorStream(true)
+            .start()
+        val output = process.inputStream.bufferedReader().readText()
+        val code = process.waitFor()
+        val v2 = output.lineSequence().any { line ->
+            line.contains("Verified using v2 scheme") && line.trimEnd().endsWith("true")
+        }
+        val v3 = output.lineSequence().any { line ->
+            line.contains("Verified using v3 scheme") && line.trimEnd().endsWith("true")
+        }
+        if (code != 0 || !v2 || !v3) {
+            throw GradleException(
+                "exportContestApk requires APK Signature Scheme v2 and v3. " +
+                    "apksigner verify exit $code for ${exported.name} (v2=$v2, v3=$v3).",
+            )
+        }
+    }
+}
+
+/** Newest build-tools apksigner, or one on PATH. Missing means the export skips scheme checks. */
+fun findApksigner(): File? {
+    val pathHit = System.getenv("PATH").orEmpty()
+        .split(File.pathSeparator)
+        .asSequence()
+        .map { File(it, "apksigner") }
+        .firstOrNull { it.isFile && it.canExecute() }
+    if (pathHit != null) return pathHit
+    val sdk = localProperties.getProperty("sdk.dir")?.takeIf { it.isNotBlank() }?.let { File(it) }
+        ?: System.getenv("ANDROID_HOME")?.takeIf { it.isNotBlank() }?.let { File(it) }
+        ?: System.getenv("ANDROID_SDK_ROOT")?.takeIf { it.isNotBlank() }?.let { File(it) }
+        ?: return null
+    val buildTools = File(sdk, "build-tools")
+    if (!buildTools.isDirectory) return null
+    return buildTools.listFiles().orEmpty()
+        .filter { it.isDirectory }
+        .sortedByDescending { it.name }
+        .firstNotNullOfOrNull { dir ->
+            File(dir, "apksigner").takeIf { it.isFile && it.canExecute() }
+        }
 }
 
 tasks.register("checkSecretsNotTracked") {

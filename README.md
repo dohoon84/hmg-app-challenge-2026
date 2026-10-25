@@ -36,7 +36,7 @@ Apple Silicon Mac의 Android Studio에서 엽니다. JDK 17 이상, Gradle 8.11.
 
 `assembleDebug`는 `fakeDebug`와 `pleosDebug`를 모두 만듭니다. `fake`는 `android.hardware.type.automotive`가 필수가 아니라서 일반 기기에 설치됩니다. `pleos`는 오토모티브 기기 전용입니다.
 
-`exportContestApk`는 서명된 pleos release를 `apk/krazylabs_miri_release.apk`로 복사합니다. 팀 이름만 바꾸려면 `./gradlew exportContestApk -Pteam=다른팀`입니다. 기본값은 `krazylabs`입니다. 릴리스 서명이 없으면 이 작업은 빌드를 시작하기 전에 실패합니다. 서명 없는 release는 제출하지 않습니다.
+`exportContestApk`는 서명된 pleos release를 `apk/krazylabs_miri_release.apk`로 복사합니다. 팀 이름만 바꾸려면 `./gradlew exportContestApk -Pteam=다른팀`입니다. 기본값은 `krazylabs`입니다. 릴리스 서명이 없으면 이 작업은 빌드를 시작하기 전에 실패합니다. 서명 없는 release는 제출하지 않습니다. `apksigner`가 있으면 내보낸 APK가 APK Signature Scheme v2와 v3로 검증되는지 확인하고, 아니면 실패합니다. `apksigner`가 없으면 그 확인만 건너뜁니다.
 
 에뮬레이터 `Pleos_Connect_API_34`가 떠 있을 때 설치하고 실행합니다.
 
@@ -64,7 +64,7 @@ adb shell am broadcast -n com.krazylabs.miri/.mvp.FilmingReceiver -a com.krazyla
 adb shell am broadcast -n com.krazylabs.miri/.mvp.FilmingReceiver -a com.krazylabs.miri.action.FILMING --ez on false
 ```
 
-릴리스 서명은 `keystore.properties`(저장소 루트, git 제외) 또는 환경 변수에서 읽습니다. 키 이름은 `STORE_FILE`, `STORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`입니다. `STORE_FILE`은 프로젝트 루트 기준 경로입니다. 네 값이 모두 있고 키스토어 파일이 있을 때만 release가 서명됩니다. 하나라도 없으면 release APK는 서명되지 않으며 설치할 수 없습니다. 그 경우 debug 변형으로 실행합니다. debug 키로 release를 서명하지 않습니다.
+릴리스 서명은 `keystore.properties`(저장소 루트, git 제외) 또는 환경 변수에서 읽습니다. 키 이름은 `STORE_FILE`, `STORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`입니다. `STORE_FILE`은 프로젝트 루트 기준 경로입니다. 네 값이 모두 있고 키스토어 파일이 있을 때만 release가 서명됩니다. 그때 APK Signature Scheme v2와 v3를 켭니다. v1은 AGP 기본값 그대로입니다. 하나라도 없으면 release APK는 서명되지 않으며 설치할 수 없습니다. 그 경우 debug 변형으로 실행합니다. debug 키로 release를 서명하지 않습니다.
 
 `*.jks`, `*.keystore`, `keystore.properties`, `signing.properties`는 git에 올리지 않습니다. 제출 APK도 마감 직전에 한 번만 커밋합니다. 지금은 `apk/.gitkeep`만 있습니다.
 
