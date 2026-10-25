@@ -27,6 +27,8 @@ data class CardFace(
     val portName: String? = null,
     val showGuide: Boolean = false,
     val checks: List<CheckItem> = emptyList(),
+    /** D2 fuel badge from [D2Face.fuelBadge]. Null is an EV stop. */
+    val fuelBadge: String? = null,
 )
 
 data class DeckStep(
@@ -443,7 +445,14 @@ class CardSession {
         CardId.F1 -> CardFace(MiriPane.F1, "어떤 차로 타고 계세요?", emptyList())
         CardId.F2 -> CardFace(MiriPane.F2, F2Draft.TITLE, emptyList())
         CardId.D2 -> input.d2?.let {
-            CardFace(MiriPane.D2, it.title, it.lines, it.chips, portName = it.port?.name)
+            CardFace(
+                MiriPane.D2,
+                it.title,
+                it.lines,
+                it.chips,
+                portName = it.port?.name,
+                fuelBadge = it.fuelBadge,
+            )
         }
         CardId.F3 -> input.f3?.let {
             CardFace(MiriPane.F3, "반납 준비", it.lines, showGuide = input.showGuide)

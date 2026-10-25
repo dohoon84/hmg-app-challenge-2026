@@ -16,7 +16,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import com.krazylabs.miri.R
-import com.krazylabs.miri.mvp.D2Rules
 import com.krazylabs.miri.ui.ShownCard
 import com.krazylabs.miri.ui.theme.IviTheme
 
@@ -148,9 +147,10 @@ private fun roadStats(lines: List<String>): RoadCounts {
 }
 
 /**
- * Copy for the D2 hero. A fuel stop fills the charge slots with 연료, the
- * mapped fuel badge, and 주유구, and drops the remain pill and connector.
- * An EV card keeps 충전, "{n}% 남음", 충전구, and the connector.
+ * Copy for the D2 hero. A fuel stop is [ShownCard.fuelBadge] from D2Rules.
+ * That card fills the charge slots with 연료, the badge, and 주유구, and drops
+ * the remain pill and connector. A null badge, including a missing card, keeps
+ * the EV copy: 충전, "{n}% 남음", 충전구, and the connector.
  */
 internal data class D2Labels(
     val energy: String,
@@ -160,12 +160,11 @@ internal data class D2Labels(
 )
 
 internal fun d2Labels(card: ShownCard?): D2Labels {
-    val fuel = card != null &&
-        (card.title == "주유소에 가요" || card.lines.any { it.startsWith("주유구는 ") })
-    return if (fuel) {
+    val fuel = card?.fuelBadge
+    return if (fuel != null) {
         D2Labels(
             energy = "연료",
-            badge = D2Rules.fuelBadge(card?.chips.orEmpty()),
+            badge = fuel,
             portCaption = "주유구",
             connector = null,
         )

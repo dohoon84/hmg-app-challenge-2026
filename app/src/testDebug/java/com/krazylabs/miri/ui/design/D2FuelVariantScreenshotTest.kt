@@ -92,6 +92,23 @@ class D2FuelVariantScreenshotTest {
         absent("주유소에 가요")
     }
 
+    @Test
+    fun aRenamedFuelCardStillShowsTheFuelPill() {
+        val card = fuelCard(FuelKind.GASOLINE, PortSide.FRONT_LEFT).copy(
+            title = "기름 넣으러 가요",
+            lines = listOf("문은 왼쪽에 있어요."),
+        )
+        render(dark = false) { D2ChargeScreen(card, dark = false) }
+        rule.onNodeWithText("기름 넣으러 가요").assertExists()
+        rule.onNodeWithText("연료").assertExists()
+        rule.onNodeWithText("휘발유").assertExists()
+        rule.onNodeWithText("주유구").assertExists()
+        absent("충전")
+        absent("충전구")
+        absent("15% 남음")
+        rule.onAllNodesWithText("% 남음", substring = true).assertCountEquals(0)
+    }
+
     private fun assertFuelNodes(badge: String, side: String) {
         rule.onNodeWithText("주유소에 가요").assertExists()
         rule.onNodeWithText("정차 중 · 출발 전").assertExists()
@@ -127,6 +144,7 @@ class D2FuelVariantScreenshotTest {
             chips = face.chips,
             portName = face.port?.name,
             chargePercent = 15,
+            fuelBadge = face.fuelBadge,
         )
     }
 

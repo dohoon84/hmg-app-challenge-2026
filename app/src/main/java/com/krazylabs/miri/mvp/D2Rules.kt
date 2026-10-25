@@ -16,6 +16,11 @@ data class D2Face(
     val routeKey: String = "",
     /** Road id that [routeKey] was promoted from, when the destination arrives later. */
     val routeId: String = "",
+    /**
+     * Badge chosen from the fuel kind. Null is an EV stop.
+     * The screen branches on this value, not on the title or the body.
+     */
+    val fuelBadge: String? = null,
 )
 
 /**
@@ -63,6 +68,13 @@ object D2Rules {
         if (!ev && role != DestinationRole.GAS) return null
         val chips = mutableListOf<String>()
         val lines = mutableListOf<String>()
+        val fuelBadge = if (ev) {
+            null
+        } else if (identity.fuels.size == 1) {
+            fuelChip(identity.fuels[0])
+        } else {
+            MULTI_FUEL_CHIP
+        }
         val portClip = if (ev) chargePortClip(port) else fuelSideClip(port)
         val fuelKey = if (ev) {
             "vo_fuel_electric"
@@ -81,7 +93,7 @@ object D2Rules {
         } else {
             val side = fuelSide(port)
             lines += if (side == null) "주유구는 ${chargePhrase(port)}에 있어요." else "주유구는 ${side}에 있어요."
-            chips += if (identity.fuels.size == 1) fuelChip(identity.fuels[0]) else MULTI_FUEL_CHIP
+            chips += fuelBadge ?: MULTI_FUEL_CHIP
         }
         val speak = portClip != null && fuelKey != null
         val clips = if (speak) {
@@ -106,6 +118,7 @@ object D2Rules {
             arrivalClips = arrival,
             port = port,
             routeKey = routeKey,
+            fuelBadge = fuelBadge,
         )
     }
 

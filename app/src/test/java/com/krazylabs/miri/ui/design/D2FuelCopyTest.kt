@@ -53,9 +53,39 @@ class D2FuelCopyTest {
                 lines = listOf("주유구는 왼쪽에 있어요."),
                 chips = listOf("경유"),
                 chargePercent = 8,
+                fuelBadge = "경유",
             ),
         )
         assertFuel(labels, badge = "경유")
+    }
+
+    @Test
+    fun aRenamedFuelCardKeepsTheFuelBadge() {
+        val face = fuelFace(FuelKind.GASOLINE, PortSide.FRONT_LEFT)
+        assertEquals("휘발유", face.fuelBadge)
+        val labels = d2Labels(
+            shown(face, chargePercent = 15).copy(
+                title = "기름 넣으러 가요",
+                lines = listOf("문은 왼쪽에 있어요."),
+            ),
+        )
+        assertFuel(labels, badge = "휘발유")
+    }
+
+    @Test
+    fun aMissingFuelBadgeStaysOnTheEvCopy() {
+        val face = fuelFace(FuelKind.GASOLINE, PortSide.FRONT_LEFT)
+        val labels = d2Labels(
+            shown(face, chargePercent = 15).copy(
+                title = "주유소에 가요",
+                lines = listOf("주유구는 왼쪽에 있어요."),
+                fuelBadge = null,
+            ),
+        )
+        assertEquals("충전", labels.energy)
+        assertEquals("15% 남음", labels.badge)
+        assertEquals("충전구", labels.portCaption)
+        assertNull(labels.connector)
     }
 
     @Test
@@ -110,5 +140,6 @@ class D2FuelCopyTest {
         chips = face.chips,
         portName = face.port?.name,
         chargePercent = chargePercent,
+        fuelBadge = face.fuelBadge,
     )
 }
