@@ -62,7 +62,9 @@ fun gearBackendLiteral(): String {
     return if (raw.equals("PLEOS", ignoreCase = true)) "PLEOS" else "AAOS"
 }
 
+// Default team segment. With no -Pteam, exportContestApk writes apk/krazylabs_miri_release.apk.
 val teamName = (findProperty("team") as? String)?.takeIf { it.isNotBlank() } ?: "krazylabs"
+val contestApkName = "${teamName}_miri_release.apk"
 
 fun signingProp(name: String): String? =
     keystoreProperties.getProperty(name)?.takeIf { it.isNotBlank() }
@@ -474,14 +476,14 @@ fun Project.bookmarkFieldLogInRelease(): String? {
 
 tasks.register<Copy>("exportContestApk") {
     group = "distribution"
-    description = "Copy a signed pleos release APK into apk/. Fails when release signing is not configured."
+    description = "Copy a signed pleos release APK to apk/$contestApkName. Fails when release signing is not configured."
     dependsOn("checkPleosReleaseContents")
     from(layout.buildDirectory.dir("outputs/apk/pleos/release"))
     include("*-release.apk")
     exclude("*unaligned*")
     exclude("*unsigned*")
     into(rootProject.layout.projectDirectory.dir("apk"))
-    rename { "${teamName}_miri_release.apk" }
+    rename { contestApkName }
 }
 
 tasks.register("checkSecretsNotTracked") {

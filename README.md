@@ -12,8 +12,8 @@
 | 항목 | 현재 값 | 제출 전 |
 |---|---|---|
 | 표시 이름 | 미리 (Miri) | 확정 |
-| applicationId | `com.krazylabs.miri` | 팀 패키지 |
-| 제출 APK 파일명 | 빌드 후 `apk/placeholder-team_foundation_release.apk` (git에는 없음) | `apk/팀명_앱이름_release.apk` |
+| applicationId | `com.krazylabs.miri` | 확정 |
+| 제출 APK 파일명 | `apk/krazylabs_miri_release.apk` (`-Pteam`을 주지 않을 때. git에는 없음) | 같은 이름 |
 
 ## 실행 방법
 
@@ -36,6 +36,34 @@ Apple Silicon Mac의 Android Studio에서 엽니다. JDK 17 이상, Gradle 8.11.
 
 `assembleDebug`는 `fakeDebug`와 `pleosDebug`를 모두 만듭니다. `fake`는 `android.hardware.type.automotive`가 필수가 아니라서 일반 기기에 설치됩니다. `pleos`는 오토모티브 기기 전용입니다.
 
+`exportContestApk`는 서명된 pleos release를 `apk/krazylabs_miri_release.apk`로 복사합니다. 팀 이름만 바꾸려면 `./gradlew exportContestApk -Pteam=다른팀`입니다. 기본값은 `krazylabs`입니다. 릴리스 서명이 없으면 이 작업은 빌드를 시작하기 전에 실패합니다. 서명 없는 release는 제출하지 않습니다.
+
+에뮬레이터 `Pleos_Connect_API_34`가 떠 있을 때 설치하고 실행합니다.
+
+```bash
+adb install -r apk/krazylabs_miri_release.apk
+adb shell am start -n com.krazylabs.miri/.MainActivity
+```
+
+디버그 빌드로 화면만 볼 때는 `app/build/outputs/apk/pleos/debug/app-pleos-debug.apk`를 같은 방식으로 설치합니다. fake는 `com.krazylabs.miri.fake`입니다.
+
+```bash
+adb install -r app/build/outputs/apk/pleos/debug/app-pleos-debug.apk
+adb shell am start -n com.krazylabs.miri/.MainActivity
+adb install -r app/build/outputs/apk/fake/debug/app-fake-debug.apk
+adb shell am start -n com.krazylabs.miri.fake/com.krazylabs.miri.MainActivity
+```
+
+### 촬영 모드
+
+촬영은 디버그 빌드에만 있습니다. 릴리스는 `BuildConfig.FILMING`이 `false`이고 수신기가 매니페스트에 없습니다. 새 권한은 없고 화면 버튼도 없습니다. 켜면 테마는 다크로 고정되고, 디버그 패널과 점선 `반납 장소로 안내`가 숨습니다. 자동 재생은 실제 기어가 P일 때만 시작합니다. 컷 표와 명령 전체는 `docs/filming.md`입니다.
+
+```bash
+adb shell am broadcast -n com.krazylabs.miri/.mvp.FilmingReceiver -a com.krazylabs.miri.action.FILMING --ez on true
+adb shell am broadcast -n com.krazylabs.miri/.mvp.FilmingReceiver -a com.krazylabs.miri.action.AUTOPLAY --ez start true --es profile storyboard-v1
+adb shell am broadcast -n com.krazylabs.miri/.mvp.FilmingReceiver -a com.krazylabs.miri.action.FILMING --ez on false
+```
+
 릴리스 서명은 `keystore.properties`(저장소 루트, git 제외) 또는 환경 변수에서 읽습니다. 키 이름은 `STORE_FILE`, `STORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`입니다. `STORE_FILE`은 프로젝트 루트 기준 경로입니다. 네 값이 모두 있고 키스토어 파일이 있을 때만 release가 서명됩니다. 하나라도 없으면 release APK는 서명되지 않으며 설치할 수 없습니다. 그 경우 debug 변형으로 실행합니다. debug 키로 release를 서명하지 않습니다.
 
 `*.jks`, `*.keystore`, `keystore.properties`, `signing.properties`는 git에 올리지 않습니다. 제출 APK도 마감 직전에 한 번만 커밋합니다. 지금은 `apk/.gitkeep`만 있습니다.
@@ -48,12 +76,42 @@ Vehicle / NaviHelper / Car 연결은 `ProcessLifecycleOwner`의 시작과 중지
 
 | 항목 | 값 |
 |---|---|
-| 대상 기기 | Pleos Connect AVD, API 34, Automotive, arm64, 콜드 부팅 |
+| Vehicle SDK | `ai.pleos.playground:Vehicle:2.3.2` |
+| NaviHelper | `ai.pleos.playground:NaviHelper:3.0.5` |
+| 대상 기기 | AAOS API 34 에뮬레이터 AVD `Pleos_Connect_API_34`, 2560×1440, Automotive, arm64, 콜드 부팅 |
 | 시스템 이미지 | `crp-arm64-sys-img.xml` (위 URL) |
 | 개발 PC | Apple Silicon Mac, Android Studio |
 | minSdk / targetSdk / compileSdk | 28 / 34 / 34. Car 리스너 API는 30 이상에서만 동작합니다. |
 | 언어·UI | Kotlin, Jetpack Compose, MVVM, Coroutines/Flow, Hilt, Room |
 | 이 저장소를 빌드한 환경 | Linux VM, JDK 21, Android SDK platform 34. Pleos AVD는 여기서 실행하지 않습니다. |
+
+AVD 이름과 해상도는 `docs/mvp/navi-event-check.md` §7에 적힌 실측 환경과 같습니다. `Pleos_Connect_API_34`, 2560×1440.
+
+## 시뮬레이션 값과 아직 검증하지 못한 것
+
+기획서 `docs/mvp/mvp-plan.md`에는 §8-1이라는 제목이 없습니다. 시뮬레이션 값과 미검증 항목은 그 문서의 머리말, §0, §6-5, §6-6, §7-1에 있고, 아래는 그 문장을 그대로 옮긴 것입니다.
+
+표기 (`docs/mvp/mvp-plan.md` 머리말): ✅ 원문·실측 근거 있음 / [해석] 원문에 직접 문장은 없고 근거로 판단함 / **미확인** 근거 없음(추측하지 않음)
+
+§0 데모: 약 90초 흐름을 Pleos 에뮬레이터에서 실행. 주행 시뮬레이션이 없어 D2-b·반납 장소 도착 장면은 **녹화 재생 + 자막 '시뮬레이션'**
+
+§6-5 4: 주행 시뮬레이션 없음 → `remainDistance`/`remainTime` 주행 중 갱신은 미확인. 데모 하네스로 대체.
+
+§6-6 D2-b: 데모는 녹화 재생 + 자막 '시뮬레이션'(하네스로 값 주입해 동작 확인).
+
+§7-1 미확인·결정 필요 (`docs/mvp/mvp-plan.md`):
+
+1. **AAOS 권한(CAR_POWERTRAIN·CAR_INFO)이 콘솔 9개 항목 승인 범위에 드는지** — 미확인, 최우선. 콘솔 신청서 V1·V2 설명란에 명시 제안. 기어는 승인 밖이어도 Pleos `Gear`(CAR_DRIVE, AAR에만 있음·문서 없음)로 대체 가능성 있음 — 에뮬레이터 동작 미확인.
+2. 콘솔 항목 한국어 이름 ↔ 권한 상수 공식 대응표 — [해석](도메인 11개 1:1 일치). 항목별 승인 필요 여부·심사 기간 — 미확인(문서상 Vehicle State·NaviHelper는 신청 없이 사용 가능, 승인 목록 10/27 이후 공개).
+3. `getCurrentLocationInfo` 응답·필드, `requestTrip`이 안내를 시작하는지 — M0 측정 대기.
+4. (해결 13:47) 방향지시등은 차임만. 비상등(양쪽 점멸) 처리만 [가정: 말하지 않음] 확인 필요.
+5. 에뮬레이터 VC로 실내등·독서등·방향지시등 값을 바꿀 수 있는지 미확인(M6에서 확인). 못 바꾸면 데모 1:05·1:09는 문 2개로 대체(결정 2), 0:43은 하네스로만 확인.
+6. (해결 13:47) C 창문 문구 확정.
+7. H1 문장 확정(13:47). 브리프 D1 음성 [확정 틀] "고속도로 진입이 {n}번 있어요."를 H1 문장으로 맞추는 브리프 수정은 남음.
+8. '반납 장소로 안내'(requestRoute, N2) — 대표님 미결정.
+9. 'Miri' 이름 앱 기존재 → 상표 검토 권장. 콘솔 패키지 규칙 미확인. 팀명(APK 파일명) 미확인.
+10. 클립 미녹음(10/28 설명회 뒤 음성 서비스 결정).
+11. 착석 신호가 에뮬레이터 VC에서 바뀌는지 미확인 → 안 되면 F1 트리거는 잠금 해제 + P.
 
 fake 화면에서 확인할 것:
 
@@ -74,7 +132,7 @@ git에는 APK를 넣지 않습니다. 아래 경로는 로컬 빌드 결과입�
 
 | 용도 | 경로 |
 |---|---|
-| 제출용 pleos release | 키스토어가 있을 때 `./gradlew exportContestApk` → `apk/placeholder-team_foundation_release.apk` |
+| 제출용 pleos release | 키스토어가 있을 때 `./gradlew exportContestApk` → `apk/krazylabs_miri_release.apk` |
 | 서명된 Android Studio 산출물 | `app/build/outputs/apk/pleos/release/app-pleos-release.apk` |
 | 키스토어 없이 만든 release | `app/build/outputs/apk/pleos/release/app-pleos-release-unsigned.apk` (제출하지 않음) |
 | 폰에서 볼 fake debug | `app/build/outputs/apk/fake/debug/app-fake-debug.apk` |
