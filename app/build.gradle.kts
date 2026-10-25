@@ -62,7 +62,9 @@ fun gearBackendLiteral(): String {
     return if (raw.equals("PLEOS", ignoreCase = true)) "PLEOS" else "AAOS"
 }
 
+// Default team segment. With no -Pteam, exportContestApk writes apk/krazylabs_miri_release.apk.
 val teamName = (findProperty("team") as? String)?.takeIf { it.isNotBlank() } ?: "krazylabs"
+val contestApkName = "${teamName}_miri_release.apk"
 
 fun signingProp(name: String): String? =
     keystoreProperties.getProperty(name)?.takeIf { it.isNotBlank() }
@@ -175,6 +177,10 @@ android {
                 storePassword = releaseStorePassword
                 keyAlias = releaseKeyAlias
                 keyPassword = releaseKeyPassword
+                // AGP 8.7.3 signs with v2 and leaves v3 off. The contest APK needs both.
+                // v1 stays at the AGP default.
+                enableV2Signing = true
+                enableV3Signing = true
             }
         }
     }
@@ -266,6 +272,11 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.compose.ui.test.junit4)
+    // Declares ComponentActivity for createComposeRule(). debugImplementation merges
+    // it into the debug manifest only, which Robolectric reads from the debug
+    // unit-test resource APK. Compose screenshot tests therefore live in src/testDebug.
+    // A testImplementation copy is not merged into that APK, and the release APK
+    // must not contain this activity. checkPleosReleaseContents rejects it.
     debugImplementation(libs.compose.ui.test.manifest)
     testImplementation(files(carJar))
 }
@@ -330,7 +341,7 @@ val allowedPleosReleasePermissions = setOf(
 
 tasks.register("checkPleosReleaseContents") {
     group = "verification"
-    description = "Fail the pleos release APK when it contains the fake flavor or an extra permission."
+    description = "Fail the pleos release APK when it contains the fake flavor, an extra permission, or a test activity."
     dependsOn("assemblePleosRelease", "checkSecretsNotTracked")
     inputs.file(pleosReleaseMergedManifest)
     doLast {
@@ -389,6 +400,13 @@ tasks.register("checkPleosReleaseContents") {
                     if (hit != null) {
                         throw GradleException("${apk.name} contains $hit")
                     }
+                    val testClassHit = listOf(
+                        "androidx/compose/ui/test",
+                        "androidx.compose.ui.test",
+                    ).firstOrNull { marker -> text.contains(marker) }
+                    if (testClassHit != null) {
+                        throw GradleException("${apk.name} contains a ui-test class: $testClassHit")
+                    }
                 }
             }
         }
@@ -410,6 +428,13 @@ tasks.register("checkPleosReleaseContents") {
             manifestXml.contains("com.krazylabs.miri.action.AUTOPLAY")
         ) {
             throw GradleException("pleos release manifest contains the filming receiver")
+        }
+        val testManifestHit = listOf(
+            "androidx.activity.ComponentActivity",
+            "androidx.compose.ui.test",
+        ).firstOrNull { marker -> manifestXml.contains(marker) }
+        if (testManifestHit != null) {
+            throw GradleException("pleos release manifest contains a test activity entry: $testManifestHit")
         }
     }
 }
@@ -474,14 +499,75 @@ fun Project.bookmarkFieldLogInRelease(): String? {
 
 tasks.register<Copy>("exportContestApk") {
     group = "distribution"
-    description = "Copy a signed pleos release APK into apk/. Fails when release signing is not configured."
+    description = "Copy a signed pleos release APK to apk/$contestApkName. Fails when release signing is not configured."
     dependsOn("checkPleosReleaseContents")
     from(layout.buildDirectory.dir("outputs/apk/pleos/release"))
     include("*-release.apk")
     exclude("*unaligned*")
     exclude("*unsigned*")
     into(rootProject.layout.projectDirectory.dir("apk"))
-    rename { "${teamName}_miri_release.apk" }
+    rename { contestApkName }
+    doLast {
+        val exported = rootProject.layout.projectDirectory.file("apk/$contestApkName").asFile
+        if (!exported.isFile) {
+            throw GradleException("exportContestApk did not write ${exported.path}")
+        }
+        val apksigner = findApksigner()
+        if (apksigner == null) {
+            logger.warn(
+                "apksigner was not found. exportContestApk skipped APK Signature Scheme v2 and v3 verification.",
+            )
+            return@doLast
+        }
+        // minSdk is 28, so plain `apksigner verify` only evaluates v3 and prints
+        // v2 as false even when the v2 block is in the APK. 24 makes it check both.
+        val process = ProcessBuilder(
+            apksigner.absolutePath,
+            "verify",
+            "--min-sdk-version",
+            "24",
+            "--verbose",
+            exported.absolutePath,
+        )
+            .redirectErrorStream(true)
+            .start()
+        val output = process.inputStream.bufferedReader().readText()
+        val code = process.waitFor()
+        val v2 = output.lineSequence().any { line ->
+            line.contains("Verified using v2 scheme") && line.trimEnd().endsWith("true")
+        }
+        val v3 = output.lineSequence().any { line ->
+            line.contains("Verified using v3 scheme") && line.trimEnd().endsWith("true")
+        }
+        if (code != 0 || !v2 || !v3) {
+            throw GradleException(
+                "exportContestApk requires APK Signature Scheme v2 and v3. " +
+                    "apksigner verify exit $code for ${exported.name} (v2=$v2, v3=$v3).",
+            )
+        }
+    }
+}
+
+/** Newest build-tools apksigner, or one on PATH. Missing means the export skips scheme checks. */
+fun findApksigner(): File? {
+    val pathHit = System.getenv("PATH").orEmpty()
+        .split(File.pathSeparator)
+        .asSequence()
+        .map { File(it, "apksigner") }
+        .firstOrNull { it.isFile && it.canExecute() }
+    if (pathHit != null) return pathHit
+    val sdk = localProperties.getProperty("sdk.dir")?.takeIf { it.isNotBlank() }?.let { File(it) }
+        ?: System.getenv("ANDROID_HOME")?.takeIf { it.isNotBlank() }?.let { File(it) }
+        ?: System.getenv("ANDROID_SDK_ROOT")?.takeIf { it.isNotBlank() }?.let { File(it) }
+        ?: return null
+    val buildTools = File(sdk, "build-tools")
+    if (!buildTools.isDirectory) return null
+    return buildTools.listFiles().orEmpty()
+        .filter { it.isDirectory }
+        .sortedByDescending { it.name }
+        .firstNotNullOfOrNull { dir ->
+            File(dir, "apksigner").takeIf { it.isFile && it.canExecute() }
+        }
 }
 
 tasks.register("checkSecretsNotTracked") {
