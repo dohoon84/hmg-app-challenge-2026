@@ -81,7 +81,7 @@ object D2Rules {
         } else {
             val side = fuelSide(port)
             lines += if (side == null) "주유구는 ${chargePhrase(port)}에 있어요." else "주유구는 ${side}에 있어요."
-            chips += if (identity.fuels.size == 1) fuelChip(identity.fuels[0]) else "연료"
+            chips += if (identity.fuels.size == 1) fuelChip(identity.fuels[0]) else MULTI_FUEL_CHIP
         }
         val speak = portClip != null && fuelKey != null
         val clips = if (speak) {
@@ -137,6 +137,22 @@ object D2Rules {
         "오른쪽" -> "vo_port_right"
         else -> null
     }
+
+    /**
+     * Pill text for a fuel stop. Single-fuel labels come from [fuelChip].
+     * A multi-fuel car, and a card with no fuel chip, stay [MULTI_FUEL_CHIP].
+     */
+    fun fuelBadge(chips: List<String>): String {
+        val known = buildSet {
+            add(MULTI_FUEL_CHIP)
+            FuelKind.entries.forEach { kind ->
+                if (kind != FuelKind.ELECTRIC) add(fuelChip(kind))
+            }
+        }
+        return chips.firstOrNull { it in known } ?: MULTI_FUEL_CHIP
+    }
+
+    private const val MULTI_FUEL_CHIP = "연료"
 
     private fun fuelChip(kind: FuelKind): String = when (kind) {
         FuelKind.GASOLINE -> "휘발유"
