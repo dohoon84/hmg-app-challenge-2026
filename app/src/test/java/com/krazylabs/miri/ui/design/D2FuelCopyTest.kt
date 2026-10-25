@@ -79,13 +79,14 @@ class D2FuelCopyTest {
             shown(face, chargePercent = 15).copy(
                 title = "주유소에 가요",
                 lines = listOf("주유구는 왼쪽에 있어요."),
+                chips = listOf("전기", "DC 콤보"),
                 fuelBadge = null,
             ),
         )
         assertEquals("충전", labels.energy)
         assertEquals("15% 남음", labels.badge)
         assertEquals("충전구", labels.portCaption)
-        assertNull(labels.connector)
+        assertEquals("DC 콤보", labels.connector)
     }
 
     @Test
