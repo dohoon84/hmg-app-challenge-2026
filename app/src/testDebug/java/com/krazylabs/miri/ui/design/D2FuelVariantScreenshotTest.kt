@@ -10,7 +10,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.test.assertCountEquals
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -88,9 +87,9 @@ class D2FuelVariantScreenshotTest {
         rule.onNodeWithText("오른쪽 뒤").assertExists()
         rule.onNodeWithText("커넥터").assertExists()
         rule.onNodeWithText("DC 콤보").assertExists()
-        rule.onNodeWithText("연료").assertDoesNotExist()
-        rule.onNodeWithText("주유구").assertDoesNotExist()
-        rule.onNodeWithText("주유소에 가요").assertDoesNotExist()
+        absent("연료")
+        absent("주유구")
+        absent("주유소에 가요")
     }
 
     private fun assertFuelNodes(badge: String, side: String) {
@@ -101,13 +100,17 @@ class D2FuelVariantScreenshotTest {
         rule.onNodeWithText("주유구").assertExists()
         rule.onNodeWithText(side).assertExists()
         rule.onNodeWithText("다 봤어요").assertExists()
-        rule.onNodeWithText("충전").assertDoesNotExist()
-        rule.onNodeWithText("충전구").assertDoesNotExist()
-        rule.onNodeWithText("충전소에 가요").assertDoesNotExist()
-        rule.onNodeWithText("커넥터").assertDoesNotExist()
-        rule.onNodeWithText("15% 남음").assertDoesNotExist()
+        absent("충전")
+        absent("충전구")
+        absent("충전소에 가요")
+        absent("커넥터")
+        absent("15% 남음")
         rule.onAllNodesWithText("% 남음", substring = true).assertCountEquals(0)
         rule.onAllNodesWithText("남음", substring = true).assertCountEquals(0)
+    }
+
+    private fun absent(text: String) {
+        rule.onAllNodesWithText(text).assertCountEquals(0)
     }
 
     private fun fuelCard(kind: FuelKind, door: PortSide): ShownCard {
