@@ -36,7 +36,7 @@ Apple Silicon Mac의 Android Studio에서 엽니다. JDK 17 이상, Gradle 8.11.
 
 `assembleDebug`는 `fakeDebug`와 `pleosDebug`를 모두 만듭니다. `fake`는 `android.hardware.type.automotive`가 필수가 아니라서 일반 기기에 설치됩니다. `pleos`는 오토모티브 기기 전용입니다.
 
-`exportContestApk`는 서명된 pleos release를 `apk/krazylabs_miri_release.apk`로 복사합니다. 팀 이름만 바꾸려면 `./gradlew exportContestApk -Pteam=다른팀`입니다. 기본값은 `krazylabs`입니다. 릴리스 서명이 없으면 이 작업은 빌드를 시작하기 전에 실패합니다. 서명 없는 release는 제출하지 않습니다. `apksigner`가 있으면 내보낸 APK가 APK Signature Scheme v2와 v3로 검증되는지 확인하고, 아니면 실패합니다. `apksigner`가 없으면 그 확인만 건너뜁니다.
+`exportContestApk`는 서명된 pleos release를 `apk/krazylabs_miri_release.apk`로 복사합니다. 팀 이름만 바꾸려면 `./gradlew exportContestApk -Pteam=다른팀`입니다. 기본값은 `krazylabs`입니다. 릴리스 서명이 없으면 이 작업은 빌드를 시작하기 전에 실패합니다. 서명 없는 release는 제출하지 않습니다. `apksigner`가 있으면 내보낸 APK가 APK Signature Scheme v2와 v3로 검증되는지 확인하고, 아니면 실패합니다. `apksigner`가 없으면 그 확인만 건너뜁니다. 직접 확인할 때는 `apksigner verify -v --print-certs --min-sdk-version 24`를 씁니다. minSdk가 28이면 이 옵션 없이 v3만 보고 v2를 false로 찍습니다.
 
 에뮬레이터 `Pleos_Connect_API_34`가 떠 있을 때 설치하고 실행합니다.
 

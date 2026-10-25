@@ -519,9 +519,13 @@ tasks.register<Copy>("exportContestApk") {
             )
             return@doLast
         }
+        // minSdk is 28, so plain `apksigner verify` only evaluates v3 and prints
+        // v2 as false even when the v2 block is in the APK. 24 makes it check both.
         val process = ProcessBuilder(
             apksigner.absolutePath,
             "verify",
+            "--min-sdk-version",
+            "24",
             "--verbose",
             exported.absolutePath,
         )
