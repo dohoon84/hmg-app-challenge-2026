@@ -94,6 +94,8 @@ data class VehicleSnapshot(
     val fuelReadable: Boolean = false,
     val socPercent: Int? = null,
     val socReadable: Boolean = false,
+    /** True when [socPercent] came from EvBatteryStateOfCharge. */
+    val socFromEv: Boolean = false,
     val odometerKm: Float? = null,
     val odometerReadable: Boolean = false,
     val rangeMeters: Float? = null,

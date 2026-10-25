@@ -44,6 +44,19 @@ interface NavigationRepository {
     val here: StateFlow<HereFix?>
         get() = NavIdle.here
 
+    /** Increments each time the rental-origin request stores a fix. Route refreshes do not. */
+    val hereSerial: StateFlow<Long>
+        get() = NavIdle.hereSerial
+
+    /**
+     * The fix accepted for the rental-origin request.
+     * Route refreshes update [here] and must not replace this.
+     */
+    val originFix: StateFlow<HereFix?>
+        get() = NavIdle.originFix
+    val bookmarks: StateFlow<List<PlaceRequest>>
+        get() = NavIdle.bookmarks
+
     fun start()
     fun stop()
     fun setDestination(request: PlaceRequest)
@@ -52,6 +65,21 @@ interface NavigationRepository {
 
     /** Re-read gear-independent nav state. Default is a no-op so test fakes stay valid. */
     fun refreshRoute() {}
+
+    /**
+     * Ask for [getCurrentLocationInfo]. If the link is not ready yet, the
+     * read runs when it becomes ready. Does not open the navigation screen.
+     */
+    fun requestCurrentLocation() {}
+
+    /**
+     * Issues a location read about 3 seconds after the link is READY, and only
+     * when [requestCurrentLocation] asked for one. Default does nothing.
+     */
+    fun pollLocation(nowMs: Long) {}
+
+    /** Ask for [getBookmarkInfo]. The list arrives on the bookmark callback. */
+    fun refreshBookmarks() {}
 }
 
 private object NavIdle {
@@ -59,4 +87,7 @@ private object NavIdle {
     val charging: StateFlow<Boolean> = MutableStateFlow(false)
     val recents: StateFlow<List<PlaceRequest>> = MutableStateFlow(emptyList())
     val here: StateFlow<HereFix?> = MutableStateFlow(null)
+    val hereSerial: StateFlow<Long> = MutableStateFlow(0L)
+    val originFix: StateFlow<HereFix?> = MutableStateFlow(null)
+    val bookmarks: StateFlow<List<PlaceRequest>> = MutableStateFlow(emptyList())
 }

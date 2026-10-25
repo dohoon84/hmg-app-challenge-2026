@@ -1,22 +1,26 @@
 package com.krazylabs.miri.ui
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.krazylabs.miri.BuildConfig
 import com.krazylabs.miri.mvp.CardVoiceGate
+import com.krazylabs.miri.domain.GearBackend
 import com.krazylabs.miri.domain.GearPosition
+import com.krazylabs.miri.domain.VehicleSnapshot
 import com.krazylabs.miri.domain.PlaceRequest
 import com.krazylabs.miri.domain.TripEstimate
 import com.krazylabs.miri.domain.TurnLamps
 import com.krazylabs.miri.driving.DrivingStateRepository
+import com.krazylabs.miri.mvp.AutoPlayFeed
 import com.krazylabs.miri.mvp.CardFace
 import com.krazylabs.miri.mvp.CardSession
 import com.krazylabs.miri.mvp.CarSpec
 import com.krazylabs.miri.mvp.DemoActions
+import com.krazylabs.miri.mvp.CheckItem
 import com.krazylabs.miri.mvp.CheckRules
 import com.krazylabs.miri.mvp.CueKind
-import com.krazylabs.miri.mvp.D1Face
 import com.krazylabs.miri.mvp.D2Rules
 import com.krazylabs.miri.mvp.DeckInput
 import com.krazylabs.miri.mvp.DestinationRole
@@ -24,13 +28,28 @@ import com.krazylabs.miri.mvp.DriveCueEngine
 import com.krazylabs.miri.mvp.DriveCueInput
 import com.krazylabs.miri.mvp.F2Draft
 import com.krazylabs.miri.mvp.F3Face
+import com.krazylabs.miri.mvp.Filming
+import com.krazylabs.miri.mvp.FilmingChrome
+import com.krazylabs.miri.mvp.FilmingCommand
 import com.krazylabs.miri.mvp.F3Rules
+import com.krazylabs.miri.mvp.GuideNote
 import com.krazylabs.miri.mvp.MiriPane
 import com.krazylabs.miri.mvp.RearDoorNote
+import com.krazylabs.miri.mvp.ReturnGuidanceFeature
 import com.krazylabs.miri.mvp.RentalArm
+import com.krazylabs.miri.mvp.RentalDistance
 import com.krazylabs.miri.mvp.RouteKey
+import com.krazylabs.miri.mvp.NearbyPlace
+import com.krazylabs.miri.mvp.PLACE_DEST_ID
+import com.krazylabs.miri.mvp.RentalOrigin
 import com.krazylabs.miri.mvp.ReturnForm
 import com.krazylabs.miri.mvp.ScenarioInput
+import com.krazylabs.miri.mvp.assembleReturnPlaces
+import com.krazylabs.miri.mvp.bookmarkRowLabel
+import com.krazylabs.miri.mvp.emptyBookmarkSlot
+import com.krazylabs.miri.mvp.intakeVisible
+import com.krazylabs.miri.mvp.originRow
+import com.krazylabs.miri.mvp.toPlaceRequest
 import com.krazylabs.miri.mvp.ScenarioOverrides
 import com.krazylabs.miri.mvp.TodayRoad
 import com.krazylabs.miri.mvp.TripOnce
@@ -70,9 +89,17 @@ data class ShownCard(
     val note: String? = null,
     val portName: String? = null,
     val showGuide: Boolean = false,
+    /** SOC or fuel percent for the D2 hero. Null when the car has not reported one. */
+    val chargePercent: Int? = null,
+    val checks: List<CheckItem> = emptyList(),
 )
 
-data class PlaceChip(val id: String, val label: String)
+data class PlaceChip(
+    val id: String,
+    val label: String,
+    val caption: String? = null,
+    val distance: String? = null,
+)
 
 data class MiriUi(
     val pane: MiriPane = MiriPane.F1,
@@ -80,9 +107,20 @@ data class MiriUi(
     val simulator: Boolean = false,
     val lamps: TurnLamps = TurnLamps(),
     val card: ShownCard? = null,
-    val places: List<PlaceChip> = listOf(PlaceChip(F2Draft.PLACE_PICKUP, F2Draft.PICKUP_LABEL)),
+    val places: List<PlaceChip> = listOf(PlaceChip(F2Draft.PLACE_PICKUP, F2Draft.PICKUP_LABEL, caption = "위치 확인 중")),
     val scenario: ScenarioOverrides = ScenarioOverrides(),
     val showScenarioPanel: Boolean = false,
+    val placeSearchEnabled: Boolean = true,
+    val placeSheetOpen: Boolean = false,
+    val bookmarks: List<PlaceChip> = emptyList(),
+    val sheetRecents: List<PlaceChip> = emptyList(),
+    val demoHighlight: com.krazylabs.miri.mvp.DemoHighlight = com.krazylabs.miri.mvp.DemoHighlight.NONE,
+    val demoCaption: String = "",
+    val demoCaptions: Boolean = false,
+    val demoPlaying: Boolean = false,
+    val guideNote: String = "",
+    val dev: FilmingChrome = FilmingChrome(),
+    val filming: Boolean = false,
 )
 
 @HiltViewModel
@@ -98,6 +136,9 @@ class MiriViewModel @Inject constructor(
     scheduler: SpeechScheduler,
     tts: SpeechEngine,
     private val demo: DemoActions,
+    private val cabin: com.krazylabs.miri.vehicle.CabinOverride,
+    private val playback: com.krazylabs.miri.mvp.DemoPlayback,
+    private val filming: Filming,
 ) : ViewModel() {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val player = ClipCuePlayer(context, chime, scheduler, tts, focus)
@@ -114,6 +155,16 @@ class MiriViewModel @Inject constructor(
     private val zone = ZoneId.of("Asia/Seoul")
     private var ownCar = prefs.getBoolean(KEY_OWN, false)
     private var kind = prefs.getString(KEY_KIND, null)
+    private var forceIntake = false
+    private var origin = readOrigin()
+    private var rentalOdometerKm: Float? = readOdometerStart()
+    private var placeSheetOpen = false
+    private var guideNote = ""
+    private var guideNoteAt = 0L
+    private var guideNoteCard = ""
+    private var f3Visit = 0
+    private var onF3 = false
+    private var epilogue: String? = null
     private var edgesOpen = true
     private var edgesAtMs = 0L
     private var hostVisible = true
@@ -122,9 +173,20 @@ class MiriViewModel @Inject constructor(
     private var checkReshow = false
     private var demoReturnAt: Long? = null
     private var demoReturnMinutes: Int? = null
+    private var fastForward = false
     private val lampOverride = MutableStateFlow<TurnLamps?>(null)
 
-    private val _ui = MutableStateFlow(MiriUi(simulator = simulator.enabled, showScenarioPanel = BuildConfig.DEBUG))
+    private val _ui = MutableStateFlow(
+        MiriUi(
+            simulator = simulator.enabled,
+            showScenarioPanel = BuildConfig.DEBUG,
+            dev = FilmingChrome.of(
+                filming = false,
+                debug = BuildConfig.DEBUG,
+                returnGuidance = BuildConfig.RETURN_GUIDANCE,
+            ),
+        ),
+    )
     val ui: StateFlow<MiriUi> = _ui.asStateFlow()
 
     init {
@@ -143,7 +205,33 @@ class MiriViewModel @Inject constructor(
                 today,
             )
         }
+        if (origin.pending) {
+            origin = origin.dropPending()
+            prefs.edit().putBoolean(KEY_ORIGIN_WAIT, false).apply()
+        }
         armTicker()
+        viewModelScope.launch {
+            filming.active.collect { publish() }
+        }
+        viewModelScope.launch {
+            filming.signals.collect { applyFilmingCommands() }
+        }
+    }
+
+    private fun applyFilmingCommands() {
+        filming.drain().forEach { command ->
+            when (command) {
+                is FilmingCommand.Play -> startAutoPlay(
+                    command.step,
+                    command.holdScale,
+                    command.profile,
+                    command.seconds,
+                )
+                is FilmingCommand.Stop -> stopAutoPlay()
+                is FilmingCommand.Set -> Unit
+                FilmingCommand.Ignore -> Unit
+            }
+        }
     }
 
     private fun armTicker() {
@@ -183,12 +271,14 @@ class MiriViewModel @Inject constructor(
 
     fun chooseOwnCar() {
         ownCar = true
+        forceIntake = false
         prefs.edit().putBoolean(KEY_OWN, true).remove(KEY_KIND).apply()
         kind = null
         publish()
     }
 
     fun chooseKind(rental: Boolean) {
+        forceIntake = false
         kind = if (rental) KIND_RENTAL else KIND_SHARE
         ownCar = false
         form.reset()
@@ -197,12 +287,17 @@ class MiriViewModel @Inject constructor(
             .putString(KEY_KIND, kind)
             .remove(KEY_MINUTE)
             .apply()
-        rememberOrigin()
+        beginOriginRequest()
         publish()
     }
 
     fun openDates() {
         form.openDateSheet()
+        publish()
+    }
+
+    fun closeDates() {
+        form.closeDateSheet()
         publish()
     }
 
@@ -218,6 +313,20 @@ class MiriViewModel @Inject constructor(
 
     fun selectPlace(placeId: String) {
         form.selectPlace(placeId)
+        placeSheetOpen = false
+        publish()
+    }
+
+    fun openPlaceSheet() {
+        if (currentGear() != GearPosition.PARK) return
+        form.closeDateSheet()
+        placeSheetOpen = true
+        navigationRepository.refreshBookmarks()
+        publish()
+    }
+
+    fun closePlaceSheet() {
+        placeSheetOpen = false
         publish()
     }
 
@@ -239,7 +348,47 @@ class MiriViewModel @Inject constructor(
     }
 
     fun updateScenario(next: ScenarioOverrides) {
-        scenarioInput.update(next)
+        scenarioInput.update(next.copy(armNewRental = false))
+        publish()
+    }
+
+    /** One-shot. Outside Park the button does not arm, so a later stop cannot reset F3. */
+    fun requestNewRental() {
+        if (currentGear() != GearPosition.PARK) return
+        scenarioInput.update(scenarioInput.overrides.value.copy(armNewRental = true))
+        publish()
+    }
+
+    fun startAutoPlay(
+        fromStep: String? = null,
+        holdScale: Float = 1f,
+        profile: String? = null,
+        seconds: Int? = null,
+    ) {
+        playback.playCut(
+            playbackHost,
+            viewModelScope,
+            drivingStateRepository.state.value.gear,
+            fromStep,
+            holdScale,
+            profile,
+            seconds,
+        )
+    }
+
+    fun stopAutoPlay() = playback.stop()
+
+    fun toggleDemoCaptions() {
+        playback.toggleCaptions()
+        publish()
+    }
+
+    /** Debug panel. AAOS is the build default; PLEOS reads Vehicle.getGear(). */
+    fun setGearBackend(mode: String) {
+        val next = GearBackend.normalize(mode)
+        drivingStateRepository.setGearBackend(next)
+        vehicleRepository.setGearBackend(next)
+        scenarioInput.update(scenarioInput.overrides.value.copy(gearBackend = next))
         publish()
     }
 
@@ -247,14 +396,31 @@ class MiriViewModel @Inject constructor(
 
     fun requestDemoRoad() = demo.requestDemoRoad()
 
-    fun requestReturnGuide() = demo.requestReturnGuide(returnPlace())
+    fun requestReturnGuide() {
+        guideNote = ReturnGuidanceFeature.offer(returnPlace()) { place ->
+            demo.requestReturnGuide(place)
+        }
+        guideNoteAt = System.currentTimeMillis()
+        guideNoteCard = ""
+        publish()
+    }
+
+    fun dismissCard() {
+        session.dismissD1()
+        publish()
+    }
 
     private fun publish() {
         val now = System.currentTimeMillis()
+        playback.onRealGear(drivingStateRepository.state.value.gear)
         if (!edgesOpen && edgesAtMs != 0L && now >= edgesAtMs) edgesOpen = true
-        val scenario = scenarioInput.overrides.value
+        var scenario = scenarioInput.overrides.value
         SpeechUsage.apply(scenario.speechUsage.ifBlank { BuildConfig.SPEECH_USAGE })
-        val gear = drivingStateRepository.state.value.gear
+        val gear = currentGear()
+        if (scenario.armNewRental && gear != GearPosition.PARK) {
+            scenario = scenario.copy(armNewRental = false)
+            scenarioInput.update(scenario)
+        }
         val moving = gear == GearPosition.DRIVE || gear == GearPosition.REVERSE
         if (moving && !wasMoving) {
             if (form.saved == null) form.closedWithoutConfirm()
@@ -262,7 +428,7 @@ class MiriViewModel @Inject constructor(
         }
         if (moving) drove = true
         wasMoving = moving
-        val snapshot = vehicleRepository.snapshot.value
+        val snapshot = cabin.overlay(vehicleRepository.snapshot.value)
         rental.observe(
             locked = snapshot.doorLocked,
             occupied = snapshot.driverOccupied,
@@ -278,23 +444,74 @@ class MiriViewModel @Inject constructor(
             session.resetRental()
             kind = null
             form.reset()
-            prefs.edit().remove(KEY_KIND).remove(KEY_MINUTE).remove(KEY_EPOCH_DAY).remove(KEY_DAY).putBoolean(KEY_OWN, false).apply()
-            if (scenario.armNewRental) scenarioInput.update(scenario.copy(armNewRental = false))
+            forceIntake = true
+            placeSheetOpen = false
+            val editor = prefs.edit()
+                .remove(KEY_KIND)
+                .remove(KEY_MINUTE)
+                .remove(KEY_EPOCH_DAY)
+                .remove(KEY_DAY)
+                .putBoolean(KEY_OWN, false)
+            keepRentalOdometer(editor, snapshot)
+            editor.apply()
+            beginOriginRequest()
+            if (scenario.armNewRental) {
+                scenario = scenario.clearedForNewRental()
+                scenarioInput.update(scenario)
+                SpeechUsage.apply(scenario.speechUsage.ifBlank { BuildConfig.SPEECH_USAGE })
+            }
         }
+        if (gear != GearPosition.PARK) placeSheetOpen = false
+        navigationRepository.pollLocation(now)
+        syncOrigin(now, gear == GearPosition.PARK)
         val lamps = lampOverride.value ?: snapshot.turnLamps
         val destination = navigationRepository.destination.value
         val road = navigationRepository.road.value
+        val playing = playback.running.value
+        val realCharging = navigationRepository.chargingStation.value ||
+            (destination != null && destinationRole(destination.name) == DestinationRole.CHARGING)
+        val formAt = if (playing && scenario.returnInMinutes == null && !scenario.fixedReturn) {
+            demoReturnMinutes = null
+            demoReturnAt = null
+            null
+        } else {
+            returnAtMs(now, scenario)
+        }
+        val feed = AutoPlayFeed.resolve(
+            playing = playing,
+            pretendCharging = scenario.pretendCharging,
+            returnInMinutes = scenario.returnInMinutes,
+            scenarioRemainMeters = scenario.remainMeters,
+            scenarioRemainSeconds = scenario.remainSeconds,
+            realCharging = realCharging,
+            realRouteId = road.routeId,
+            realRouteKey = RouteKey.of(destination, road.routeId),
+            realTolls = road.tolls,
+            realHighways = road.highways,
+            realRouting = road.routing,
+            realRemainMeters = destination?.remainDistance,
+            realRemainSeconds = destination?.remainTime,
+            formMinutesLeft = formAt?.let { (it - now) / 60_000L },
+            fixedReturn = playing && scenario.fixedReturn,
+        )
         val role = when {
-            scenario.pretendCharging || navigationRepository.chargingStation.value -> DestinationRole.CHARGING
-            destination != null -> destinationRole(destination.name)
+            feed.charging -> DestinationRole.CHARGING
+            !playing && destination != null -> destinationRole(destination.name)
             else -> DestinationRole.OTHER
         }
         val identity = snapshot.identity
-        val routeKey = RouteKey.of(destination, road.routeId)
+        // Our own guidance-usage playback is in the active configurations.
+        // Count it as navigation only when it is someone else.
         val navVoice = speechFocus.navigationOrAssistantActive()
-        val d2 = D2Rules.offer(identity, role, specAgrees = CarSpec.agrees(identity), routeKey = routeKey)
-        val remainMeters = scenario.remainMeters ?: destination?.remainDistance
-        val remainSeconds = scenario.remainSeconds ?: destination?.remainTime
+        val offered = D2Rules.offer(
+            identity,
+            role,
+            specAgrees = CarSpec.agrees(identity),
+            routeKey = feed.routeKey,
+        )?.copy(routeId = feed.routeId)
+        val d2 = AutoPlayFeed.cardD2(playing, gear, offered)
+        val remainMeters = feed.remainMeters
+        val remainSeconds = feed.remainSeconds
         val cue = driveCue.step(
             DriveCueInput(
                 nowMs = now,
@@ -303,32 +520,28 @@ class MiriViewModel @Inject constructor(
                 navVoice = navVoice,
                 holdMs = scenario.turnMs,
                 acceptEdges = edgesOpen,
-                routeId = routeKey,
+                routeId = feed.routeKey,
                 d2bEligible = d2 != null && d2.arrivalClips.isNotEmpty(),
                 remainMeters = remainMeters,
                 remainSeconds = remainSeconds,
                 d2bClips = d2?.arrivalClips ?: emptyList(),
             ),
         )
-        val tolls = scenario.pretendTolls ?: road.tolls
-        val highways = scenario.pretendHighways ?: road.highways
-        val pretendRoad = scenario.pretendTolls != null || scenario.pretendHighways != null
-        val routeId = when {
-            road.routeId.isNotEmpty() -> road.routeId
-            pretendRoad -> "pretend"
-            else -> ""
-        }
-        val guiding = (road.routing || pretendRoad) && routeId.isNotEmpty()
-        val d1Clip = TodayRoad.voiceKey(tolls, highways, parked = true)
-        val d1 = if (guiding && role == DestinationRole.OTHER && d1Clip != null) {
-            D1Face(routeId, d1Lines(tolls, highways), d1Clip)
+        val d1 = if (role == DestinationRole.OTHER) {
+            TodayRoad.face(
+                routeId = if (playing) "" else feed.routeId,
+                routing = if (playing) false else feed.routing,
+                tolls = if (playing) 0 else feed.tolls,
+                highways = if (playing) 0 else feed.highways,
+                pretendTolls = scenario.pretendTolls,
+                pretendHighways = scenario.pretendHighways,
+            )
         } else {
             null
         }
-        val returnAt = returnAtMs(now, scenario)
-        val minutesLeft = returnAt?.let { (it - now) / 60_000L }
-        val f3Key = if (!ownCar && kind != null && minutesLeft != null) {
-            F3Rules.dueKey(kind, minutesLeft, session.f3Shown())
+        val returnAt = formAt
+        val f3Key = if (!ownCar && kind != null && feed.f3MinutesLeft != null) {
+            F3Rules.dueKey(kind, feed.f3MinutesLeft, session.f3Shown())
         } else {
             null
         }
@@ -346,7 +559,7 @@ class MiriViewModel @Inject constructor(
                     target = target,
                     returnAtMs = returnAt,
                     nowMs = now,
-                    etaSeconds = cachedTrip?.eta,
+                    etaSeconds = if (playing) feed.remainSeconds else cachedTrip?.eta,
                     zone = zone,
                 ),
             )
@@ -368,7 +581,13 @@ class MiriViewModel @Inject constructor(
                 ownCar = ownCar,
                 kind = kind,
                 returnSaved = form.saved != null,
-                showIntake = if (snapshot.doorLocked == null) kind == null else rental.primed(),
+                showIntake = intakeVisible(
+                    doorLocked = snapshot.doorLocked,
+                    kind = kind,
+                    ownCar = ownCar,
+                    primed = rental.primed(),
+                    forcedNewRental = forceIntake,
+                ),
                 checkItems = if (drove && !moving) items else emptyList(),
                 checkNote = rearNote.observe(snapshot.doors, moving),
                 checkTitle = if (navigationRepository.arrival.value != null) {
@@ -385,11 +604,29 @@ class MiriViewModel @Inject constructor(
                 d2 = d2,
                 f3 = if (ownCar) null else f3,
                 d1 = d1,
+                tripLine = RentalDistance.line(
+                    startKm = rentalOdometerKm,
+                    currentKm = snapshot.odometerKm,
+                    readable = snapshot.odometerReadable,
+                ),
                 nowMs = now,
                 cardMs = scenario.cardMs,
                 showGuide = scenario.showReturnGuide,
+                epilogue = epilogue,
+                checkHoldMs = if (filming.active.value) FilmingChrome.CHECKED_HOLD_MS else 0L,
             ),
         )
+        val f3Now = step.pane == MiriPane.F3 && step.card != null
+        if (f3Now && !onF3) f3Visit += 1
+        onF3 = f3Now
+        val cardKey = if (f3Now) "F3#$f3Visit" else "${step.pane}:${step.card?.title.orEmpty()}"
+        guideNote = GuideNote.retain(guideNote, guideNoteAt, now, guideNoteCard, cardKey)
+        if (guideNote.isEmpty()) {
+            guideNoteAt = 0L
+            guideNoteCard = ""
+        } else if (guideNoteCard.isEmpty()) {
+            guideNoteCard = cardKey
+        }
         val cardOpen = hostVisible && step.card != null && cue.kind == CueKind.NONE
         val voice = cardVoice.decide(
             offered = if (cardOpen) step.voice else VoicePlay.None,
@@ -399,22 +636,52 @@ class MiriViewModel @Inject constructor(
             nowMs = now,
         )
         if (speechHalt.shouldStop(hostVisible, gear, navVoice)) player.stop()
-        if (hostVisible) {
+        Log.i(
+            DECK_TAG,
+            "pane=${step.pane} kind=$kind saved=${form.saved != null} drove=$drove " +
+                "edges=$edgesOpen lock=${snapshot.doorLocked} d1=${d1?.routeId} " +
+                "d2=${d2?.routeKey} f3=${f3?.key} checks=${items.size}",
+        )
+        if (hostVisible && !fastForward) {
             when (cue.kind) {
                 CueKind.CHIME -> player.chime()
                 CueKind.CLIPS -> player.clips(cue.clips)
                 CueKind.NONE -> play(voice)
             }
         }
+        val filmingOn = filming.active.value
+        val chrome = FilmingChrome.of(
+            filming = filmingOn,
+            debug = BuildConfig.DEBUG,
+            returnGuidance = BuildConfig.RETURN_GUIDANCE,
+        )
         _ui.value = MiriUi(
             pane = step.pane,
             draft = form.draft,
             simulator = simulator.enabled,
             lamps = lamps,
-            card = step.card?.toShown(),
+            card = step.card?.toShown()?.let { face ->
+                if (step.pane == MiriPane.D2) {
+                    val percent = if (identity.evOnly) snapshot.socPercent else snapshot.fuelPercent
+                    face.copy(chargePercent = percent)
+                } else {
+                    face
+                }
+            },
             places = placeChips(),
             scenario = scenarioInput.overrides.value,
-            showScenarioPanel = BuildConfig.DEBUG,
+            showScenarioPanel = chrome.scenarioPanel,
+            placeSearchEnabled = gear == GearPosition.PARK,
+            placeSheetOpen = placeSheetOpen,
+            bookmarks = sheetChips(navigationRepository.bookmarks.value),
+            sheetRecents = sheetChips(navigationRepository.recentPlaces.value),
+            demoHighlight = if (chrome.highlights) playback.highlight.value else com.krazylabs.miri.mvp.DemoHighlight.NONE,
+            demoCaption = if (chrome.captions) playback.caption.value else "",
+            demoCaptions = chrome.captions && playback.captionsOn.value,
+            demoPlaying = playback.running.value,
+            guideNote = if (chrome.returnGuide) guideNote else "",
+            dev = chrome,
+            filming = filmingOn,
         )
     }
 
@@ -460,6 +727,11 @@ class MiriViewModel @Inject constructor(
     }
 
     private fun returnAtMs(now: Long, scenario: ScenarioOverrides): Long? {
+        if (scenario.fixedReturn) {
+            demoReturnMinutes = null
+            demoReturnAt = null
+            return savedReturnAt()
+        }
         val minutes = scenario.returnInMinutes
         if (minutes != null) {
             if (demoReturnMinutes != minutes || demoReturnAt == null) {
@@ -470,45 +742,218 @@ class MiriViewModel @Inject constructor(
         }
         demoReturnMinutes = null
         demoReturnAt = null
+        return savedReturnAt()
+    }
+
+    private fun savedReturnAt(): Long? {
         val saved = form.saved ?: return null
-        val date = LocalDate.ofEpochDay(saved.epochDay)
-        val time = LocalTime.of(saved.minuteOfDay / 60, saved.minuteOfDay % 60)
-        return date.atTime(time).atZone(zone).toInstant().toEpochMilli()
+        return F3Rules.savedReturnAtMs(saved.epochDay, saved.minuteOfDay, zone)
     }
 
     private fun returnPlace(): PlaceRequest? {
         val savedId = form.saved?.placeId ?: form.draft.placeId
-        if (savedId != F2Draft.PLACE_PICKUP) {
-            return navigationRepository.recentPlaces.value.firstOrNull { it.poiId == savedId }
-                ?: navigationRepository.recentPlaces.value.firstOrNull { it.name == savedId }
+        if (savedId == F2Draft.PLACE_PICKUP) {
+            val lat = origin.latitude
+            val lon = origin.longitude
+            if (!origin.located || lat == null || lon == null) return null
+            return PlaceRequest(lat, lon, F2Draft.PICKUP_LABEL, origin.address)
         }
-        val lat = prefs.getString(KEY_LAT, null)?.toDoubleOrNull() ?: return navigationRepository.here.value?.let {
-            PlaceRequest(it.latitude, it.longitude, F2Draft.PICKUP_LABEL, it.address)
+        if (savedId == PLACE_DEST_ID) {
+            val destination = navigationRepository.destination.value ?: return null
+            val name = destination.name.ifBlank { destination.address }.ifBlank { "목적지" }
+            return PlaceRequest(destination.latitude, destination.longitude, name, destination.address, poiId = PLACE_DEST_ID)
         }
-        val lon = prefs.getString(KEY_LON, null)?.toDoubleOrNull() ?: return null
-        return PlaceRequest(lat, lon, F2Draft.PICKUP_LABEL)
+        knownPlaces().firstOrNull { it.poiId == savedId || it.name == savedId }?.let { return it }
+        return demo.demoReturnPlaces().firstOrNull { it.id == savedId }?.toPlaceRequest()
     }
 
-    private fun rememberOrigin() {
-        val here = navigationRepository.here.value ?: return
+    private fun knownPlaces(): List<PlaceRequest> =
+        navigationRepository.recentPlaces.value + navigationRepository.bookmarks.value
+
+    private fun beginOriginRequest() {
+        origin = origin.begin(navigationRepository.hereSerial.value, System.currentTimeMillis())
         prefs.edit()
-            .putString(KEY_LAT, here.latitude.toString())
-            .putString(KEY_LON, here.longitude.toString())
+            .remove(KEY_LAT)
+            .remove(KEY_LON)
+            .remove(KEY_ADDR)
+            .putBoolean(KEY_ORIGIN_WAIT, true)
+            .apply()
+        navigationRepository.requestCurrentLocation()
+        syncOrigin(System.currentTimeMillis(), currentGear() == GearPosition.PARK)
+    }
+
+    private fun syncOrigin(now: Long, parked: Boolean) {
+        origin = origin.tick(now, parked)
+        if (!origin.pending && prefs.getBoolean(KEY_ORIGIN_WAIT, false)) {
+            prefs.edit().putBoolean(KEY_ORIGIN_WAIT, false).apply()
+        }
+        if (!origin.pending || !parked) return
+        val fix = navigationRepository.originFix.value ?: return
+        val next = origin.arrive(
+            navigationRepository.hereSerial.value,
+            fix.latitude,
+            fix.longitude,
+            fix.address,
+            parked = true,
+        )
+        if (next.pending || next == origin) return
+        origin = next
+        prefs.edit()
+            .putString(KEY_LAT, fix.latitude.toString())
+            .putString(KEY_LON, fix.longitude.toString())
+            .putString(KEY_ADDR, fix.address)
+            .putBoolean(KEY_ORIGIN_WAIT, false)
             .apply()
     }
 
-    private fun placeChips(): List<PlaceChip> {
-        val recents = navigationRepository.recentPlaces.value.take(3).map {
-            PlaceChip(it.poiId.ifEmpty { it.name }, it.name)
+    private fun currentGear(): GearPosition = cabin.gear(drivingStateRepository.state.value.gear)
+
+    private val playbackHost = object : com.krazylabs.miri.mvp.DemoPlaybackHost {
+        override fun refresh() = publish()
+        override fun rewindToIntake() = this@MiriViewModel.rewindToIntake()
+        override fun chooseRental() = chooseKind(rental = true)
+        override fun defaultReturnMinute(): Int = nextReturnMinute()
+        override fun selectReturnMinute(minuteOfDay: Int) = selectTime(minuteOfDay)
+        override fun selectReturnDay(offset: Int) = selectDate(offset)
+        override fun selectReturnPlace(placeId: String) = selectPlace(placeId)
+        override fun confirmReturn() = this@MiriViewModel.confirmReturn()
+        override fun scenario(): ScenarioOverrides = scenarioInput.overrides.value
+        override fun applyScenario(next: ScenarioOverrides) = updateScenario(next)
+        override fun clearDemo() {
+            scenarioInput.update(scenarioInput.overrides.value.clearedForNewRental())
         }
-        return listOf(PlaceChip(F2Draft.PLACE_PICKUP, F2Draft.PICKUP_LABEL)) + recents
+        override fun setEpilogue(which: String?) {
+            epilogue = which
+            publish()
+        }
+        override fun setFastForward(on: Boolean) {
+            fastForward = on
+        }
     }
 
-    private fun d1Lines(tolls: Int, highways: Int): List<String> {
-        val lines = mutableListOf<String>()
-        if (tolls > 0) lines += "톨게이트 ${tolls}곳"
-        if (highways > 0) lines += "고속도로 진입 ${highways}번"
-        return lines
+    private fun rewindToIntake() {
+        if (currentGear() != GearPosition.PARK) return
+        ownCar = false
+        kind = null
+        form.reset()
+        forceIntake = true
+        placeSheetOpen = false
+        drove = false
+        wasMoving = false
+        checkReshow = false
+        demoReturnAt = null
+        demoReturnMinutes = null
+        epilogue = null
+        guideNote = ""
+        guideNoteAt = 0L
+        guideNoteCard = ""
+        session.resetRental()
+        driveCue.resetRental()
+        rearNote.reset()
+        val editor = prefs.edit()
+            .putBoolean(KEY_OWN, false)
+            .remove(KEY_KIND)
+            .remove(KEY_MINUTE)
+            .remove(KEY_EPOCH_DAY)
+            .remove(KEY_DAY)
+        keepRentalOdometer(editor, cabin.overlay(vehicleRepository.snapshot.value))
+        editor.apply()
+        scenarioInput.update(scenarioInput.overrides.value.clearedForNewRental())
+        publish()
+    }
+
+    private fun nextReturnMinute(): Int {
+        val now = java.time.LocalTime.now(zone)
+        val minutes = com.krazylabs.miri.ui.design.visibleReturnMinutes(0, now.hour * 60 + now.minute)
+        return minutes.firstOrNull() ?: -1
+    }
+
+    private fun readOdometerStart(): Float? =
+        if (prefs.contains(KEY_ODO)) prefs.getFloat(KEY_ODO, 0f) else null
+
+    /** A new rental keeps the odometer only when it can be read. */
+    private fun keepRentalOdometer(editor: android.content.SharedPreferences.Editor, snapshot: VehicleSnapshot) {
+        val start = RentalDistance.startToKeep(snapshot.odometerKm, snapshot.odometerReadable)
+        rentalOdometerKm = start
+        if (start == null) editor.remove(KEY_ODO) else editor.putFloat(KEY_ODO, start)
+    }
+
+    private fun readOrigin(): RentalOrigin {
+        val lat = prefs.getString(KEY_LAT, null)?.toDoubleOrNull()
+        val lon = prefs.getString(KEY_LON, null)?.toDoubleOrNull()
+        val pending = prefs.getBoolean(KEY_ORIGIN_WAIT, false)
+        return RentalOrigin(
+            latitude = lat,
+            longitude = lon,
+            address = prefs.getString(KEY_ADDR, "").orEmpty(),
+            pending = pending,
+            seenSerial = if (pending) navigationRepository.hereSerial.value else 0L,
+        )
+    }
+
+    private fun placeChips(): List<PlaceChip> {
+        val here = navigationRepository.here.value
+        val destination = navigationRepository.destination.value?.let { place ->
+            val name = place.name.ifBlank { place.address }.ifBlank { return@let null }
+            NearbyPlace(
+                id = PLACE_DEST_ID,
+                name = name,
+                caption = if (place.name.isNotBlank()) place.address else "",
+                latitude = place.latitude,
+                longitude = place.longitude,
+            )
+        }
+        val recents = navigationRepository.recentPlaces.value.mapNotNull { place ->
+            val name = place.name.ifBlank { place.address }.ifBlank { return@mapNotNull null }
+            NearbyPlace(
+                id = place.poiId.ifBlank { place.name },
+                name = name,
+                caption = place.address.ifBlank { "최근 목적지" },
+                latitude = place.latitude,
+                longitude = place.longitude,
+            )
+        }
+        val selectedId = form.saved?.placeId ?: form.draft.placeId
+        val selected = (navigationRepository.bookmarks.value + navigationRepository.recentPlaces.value)
+            .firstOrNull { it.poiId == selectedId }
+            ?.let { place ->
+                val name = place.name.ifBlank { place.address }.ifBlank { return@let null }
+                NearbyPlace(
+                    id = place.poiId.ifBlank { place.name },
+                    name = name,
+                    caption = place.address,
+                    latitude = place.latitude,
+                    longitude = place.longitude,
+                )
+            }
+        return assembleReturnPlaces(
+            origin = originRow(origin, here?.latitude, here?.longitude),
+            destination = destination,
+            recents = recents,
+            selected = selected,
+            hereLatitude = here?.latitude,
+            hereLongitude = here?.longitude,
+            demo = demo.demoReturnPlaces(),
+        ).map { place ->
+            PlaceChip(
+                place.id,
+                place.name,
+                caption = place.caption.takeIf { it.isNotBlank() },
+                distance = place.distance,
+            )
+        }
+    }
+
+    private fun sheetChips(places: List<PlaceRequest>): List<PlaceChip> = places.mapNotNull { place ->
+        if (emptyBookmarkSlot(place.name, place.address, place.latitude, place.longitude)) {
+            return@mapNotNull null
+        }
+        val label = bookmarkRowLabel(place.name, place.address, place.latitude, place.longitude)
+        PlaceChip(
+            id = place.poiId.ifBlank { label },
+            label = label,
+            caption = place.address.trim().takeIf { it.isNotEmpty() && it != label },
+        )
     }
 
     private fun CardFace.toShown(): ShownCard = ShownCard(
@@ -520,6 +965,7 @@ class MiriViewModel @Inject constructor(
         note = note,
         portName = portName,
         showGuide = showGuide,
+        checks = checks,
     )
 
     private companion object {
@@ -532,9 +978,13 @@ class MiriViewModel @Inject constructor(
         const val KEY_PLACE = "place"
         const val KEY_LAT = "origin_lat"
         const val KEY_LON = "origin_lon"
+        const val KEY_ADDR = "origin_address"
+        const val KEY_ORIGIN_WAIT = "origin_wait"
+        const val KEY_ODO = "odometer_km"
         const val KIND_RENTAL = "rental"
         const val KIND_SHARE = "share"
         const val SETTLE_MS = 2_500L
         const val TRIP_TIMEOUT_MS = 7_000L
+        const val DECK_TAG = "MiriDeck"
     }
 }

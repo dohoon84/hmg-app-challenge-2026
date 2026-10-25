@@ -95,6 +95,13 @@ class PleosCarClientConnectTest {
         assertEquals(2, connector.link.port.gearRegistrations)
         assertEquals(0, connector.link.port.rangeRegistrations)
         assertEquals(0, connector.link.disconnects)
+        assertEquals(2, client.bindGeneration.value)
+        assertTrue(connector.link.port.intReads >= 2)
+    }
+
+    @Test
+    fun connectWaitsForCarService() {
+        assertEquals(Car.CAR_WAIT_TIMEOUT_WAIT_FOREVER, CAR_CONNECT_WAIT_MS)
     }
 
     @Test
@@ -163,6 +170,7 @@ class PleosCarClientConnectTest {
         var gearRegistrations = 0
         var rangeRegistrations = 0
         var unregisters = 0
+        var intReads = 0
 
         override fun isPropertyAvailable(propertyId: Int, areaId: Int): Boolean = true
 
@@ -178,7 +186,10 @@ class PleosCarClientConnectTest {
             unregisters += 1
         }
 
-        override fun getIntProperty(propertyId: Int, areaId: Int): Int = 0
+        override fun getIntProperty(propertyId: Int, areaId: Int): Int {
+            intReads += 1
+            return 0
+        }
 
         override fun getIntArrayProperty(propertyId: Int, areaId: Int): IntArray = intArrayOf()
 

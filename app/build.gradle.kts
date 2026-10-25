@@ -83,6 +83,25 @@ if (releaseStorePath != null && !hasReleaseSigning) {
     logger.warn("Release signing is incomplete. The release APK will be unsigned.")
 }
 
+fun localProp(name: String): String? =
+    localProperties.getProperty(name)?.takeIf { it.isNotBlank() }
+        ?: System.getenv(name)?.takeIf { it.isNotBlank() }
+
+val debugStorePath = localProp("DEBUG_STORE_FILE")
+val debugStorePassword = localProp("DEBUG_STORE_PASSWORD")
+val debugKeyAlias = localProp("DEBUG_KEY_ALIAS")
+val debugKeyPassword = localProp("DEBUG_KEY_PASSWORD")
+val debugStoreFile = debugStorePath?.let { rootProject.file(it) }
+val hasDebugSigning = debugStoreFile != null &&
+    debugStoreFile.isFile &&
+    debugStorePassword != null &&
+    debugKeyAlias != null &&
+    debugKeyPassword != null
+
+if (debugStorePath != null && !hasDebugSigning) {
+    logger.warn("Debug signing is incomplete. The debug APK will use the Android debug key.")
+}
+
 android {
     namespace = "com.krazylabs.miri"
     compileSdk = 34
@@ -96,6 +115,10 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // M6 can flip this to NAVIGATION_GUIDANCE. The debug panel overrides it at runtime.
         buildConfigField("String", "SPEECH_USAGE", "\"SONIFICATION\"")
+        // F3 '반납 장소로 안내'. Debug overrides this to true. Release stays false.
+        buildConfigField("boolean", "RETURN_GUIDANCE", "false")
+        // Filming mode for a demo video. Debug overrides this to true. Release stays false.
+        buildConfigField("boolean", "FILMING", "false")
     }
 
     // AAOS Car API (GEAR_SELECTION, CarUxRestrictions, INFO_* identity).
@@ -134,6 +157,18 @@ android {
     }
 
     signingConfigs {
+        // Debug only. A box may set DEBUG_STORE_* in local.properties (gitignored)
+        // so emulator installs share one signature. Missing values keep the
+        // Android debug key. Release signing below is unchanged. No keystore
+        // is committed.
+        getByName("debug") {
+            if (hasDebugSigning) {
+                storeFile = debugStoreFile
+                storePassword = debugStorePassword
+                keyAlias = debugKeyAlias
+                keyPassword = debugKeyPassword
+            }
+        }
         if (hasReleaseSigning) {
             create("release") {
                 storeFile = releaseStoreFile
@@ -145,6 +180,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            buildConfigField("boolean", "RETURN_GUIDANCE", "true")
+            buildConfigField("boolean", "FILMING", "true")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
@@ -226,7 +265,13 @@ dependencies {
     testImplementation(libs.coroutines.test)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
+    testImplementation(libs.compose.ui.test.junit4)
+    debugImplementation(libs.compose.ui.test.manifest)
     testImplementation(files(carJar))
+}
+
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    systemProperty("miri.designMatch.update", System.getProperty("miri.designMatch.update") ?: "false")
 }
 
 val contestSigningMessage =
@@ -252,6 +297,13 @@ val forbiddenPleosReleaseNames = listOf(
     "FakeDrivingStateRepository",
     "DemoScenario",
     "DebugDemoActions",
+    "PleosConnectorNames",
+    "ConnectorProbe",
+    "AutoPlayDirector",
+    "ScriptedCabinFeed",
+    "FilmingReceiver",
+    "FilmingController",
+    "FilmingBus",
 )
 
 // Names the app may ship. Library merges (Vehicle binding, AndroidX receiver) are included.
@@ -330,14 +382,94 @@ tasks.register("checkPleosReleaseContents") {
                     val text = zip.getInputStream(entry).use { input ->
                         String(input.readBytes(), Charsets.ISO_8859_1)
                     }
-                    val hit = forbiddenPleosReleaseNames.firstOrNull { name -> text.contains(name) }
+                    val hit = forbiddenPleosReleaseNames.firstOrNull { name ->
+                        // Identifier boundary so ConnectorProbe does not match ConnectorProbeText.
+                        Regex("(?<![A-Za-z0-9_])${Regex.escape(name)}(?![A-Za-z0-9_])").containsMatchIn(text)
+                    }
                     if (hit != null) {
                         throw GradleException("${apk.name} contains $hit")
                     }
                 }
             }
         }
+        val logHit = project.bookmarkFieldLogInRelease()
+        if (logHit != null) {
+            throw GradleException("release sources log a bookmark field: $logHit")
+        }
+        val guidance = project.pleosReleaseBoolean("RETURN_GUIDANCE")
+        if (guidance != "false") {
+            throw GradleException("pleos release RETURN_GUIDANCE must be false, was $guidance")
+        }
+        val filming = project.pleosReleaseBoolean("FILMING")
+        if (filming != "false") {
+            throw GradleException("pleos release FILMING must be false, was $filming")
+        }
+        if (
+            manifestXml.contains("FilmingReceiver") ||
+            manifestXml.contains("com.krazylabs.miri.action.FILMING") ||
+            manifestXml.contains("com.krazylabs.miri.action.AUTOPLAY")
+        ) {
+            throw GradleException("pleos release manifest contains the filming receiver")
+        }
     }
+}
+
+/** A boolean packaged into the pleos release APK. Debug sets the same field to true. */
+fun Project.pleosReleaseBoolean(field: String): String {
+    val buildConfig = layout.buildDirectory.file(
+        "generated/source/buildConfig/pleos/release/com/krazylabs/miri/BuildConfig.java",
+    ).get().asFile
+    if (!buildConfig.isFile) {
+        throw GradleException("pleos release BuildConfig not found at $buildConfig")
+    }
+    val match = Regex("""boolean\s+${Regex.escape(field)}\s*=\s*(true|false)""")
+        .find(buildConfig.readText())
+        ?: throw GradleException("pleos release BuildConfig has no $field")
+    return match.groupValues[1]
+}
+
+/** A Log call in main, pleos, or release must not print bookmark coordinates or names. */
+fun Project.bookmarkFieldLogInRelease(): String? {
+    val roots = listOf("src/main", "src/pleos", "src/release")
+    val logStart = Regex("""Log\.[iwd]\(""")
+    val field = Regex("""latitude|address|name=""")
+    roots.forEach { root ->
+        val dir = file(root)
+        if (!dir.isDirectory) return@forEach
+        dir.walkTopDown().filter { it.isFile && it.extension == "kt" }.forEach { source ->
+            val lines = source.readLines()
+            var index = 0
+            while (index < lines.size) {
+                if (!logStart.containsMatchIn(lines[index])) {
+                    index += 1
+                    continue
+                }
+                val call = StringBuilder()
+                var depth = 0
+                var started = false
+                var end = index
+                while (end < lines.size && end < index + 12) {
+                    val part = lines[end]
+                    call.append(part).append('\n')
+                    part.forEach { ch ->
+                        if (ch == '(') {
+                            depth += 1
+                            started = true
+                        } else if (ch == ')') {
+                            depth -= 1
+                        }
+                    }
+                    if (started && depth <= 0) break
+                    end += 1
+                }
+                if (field.containsMatchIn(call)) {
+                    return "${source.relativeTo(projectDir).path}:${index + 1}"
+                }
+                index = end + 1
+            }
+        }
+    }
+    return null
 }
 
 tasks.register<Copy>("exportContestApk") {

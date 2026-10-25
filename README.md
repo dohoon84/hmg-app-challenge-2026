@@ -137,7 +137,7 @@ Vehicle 2.3.2 AAR을 풀어 확인했습니다.
 
 ## 10/27 이후 권한 정리
 
-읽기 권한은 `app/src/pleos/AndroidManifest.xml`에 있습니다. fake 빌드에는 합쳐지지 않습니다. `NAVI_ROUTE_SEARCH`는 `src/pleosDebug`에만 있습니다. `android.car.permission.CAR_ENERGY`는 선언하지 않습니다. `CAR_LIGHTS`는 실내등·방향지시등·독서등 읽기입니다. `CONTROL_CAR_*`는 선언하지 않습니다. `checkPleosReleaseContents`가 release 매니페스트를 허용 목록과 비교하고, dex에 `DemoScenario`가 있으면 실패합니다.
+읽기 권한은 `app/src/pleos/AndroidManifest.xml`에 있습니다. fake 빌드에는 합쳐지지 않습니다. `NAVI_ROUTE_SEARCH`는 선언하지 않습니다. 콘솔에서 Coming Soon이라 요청할 수 없습니다. `android.car.permission.CAR_ENERGY`는 선언하지 않습니다. `CAR_LIGHTS`는 실내등·방향지시등·독서등 읽기입니다. `CONTROL_CAR_*`는 선언하지 않습니다. `checkPleosReleaseContents`가 release 매니페스트를 허용 목록과 비교하고, dex에 `DemoScenario`가 있으면 실패합니다.
 
 | 권한 | 쓰는 곳 | 정리 |
 |---|---|---|
@@ -148,7 +148,7 @@ Vehicle 2.3.2 AAR을 풀어 확인했습니다.
 | `pleos.car.permission.CAR_INFO` | VIN 읽기 | VIN을 안 쓰면 제거 |
 | `pleos.car.permission.CAR_LIGHTS` | 방향지시등, 실내등, 독서등 읽기 | set 계열은 호출하지 않음 |
 | `pleos.car.permission.CAR_SEATS` | 좌석 capability와 운전석 착석 값 | 시트 이동이 아님 |
-| `pleos.car.permission.NAVI_ROUTE_SEARCH` | debug `requestRoute` | release 매니페스트에 없음 |
+| `pleos.car.permission.NAVI_ROUTE_SEARCH` | 선언하지 않음 | 콘솔 Coming Soon. release와 debug 매니페스트 모두에 없음 |
 | `pleos.car.permission.NAVI_ROUTE` | 목적지·도착·ETA·TBT | 내비를 안 쓰면 제거 |
 | `android.car.permission.CAR_POWERTRAIN` | `GEAR_SELECTION` 읽기 | 콘솔 9개 항목 포함 여부는 미확인 |
 | `android.car.permission.CAR_INFO` | 유종·주유구·충전구·커넥터 | 콘솔 9개 항목 포함 여부는 미확인 |

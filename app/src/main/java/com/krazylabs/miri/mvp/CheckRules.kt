@@ -5,6 +5,15 @@ import com.krazylabs.miri.domain.PanelState
 import com.krazylabs.miri.domain.SeatId
 import com.krazylabs.miri.domain.WindowId
 
+enum class CheckKind { DOOR, WINDOW, LIGHT, CHARGE, FUEL }
+
+data class CheckItem(
+    val kind: CheckKind,
+    val text: String,
+    /** Filming keeps a just-closed door on screen. The product list never sets this. */
+    val settled: Boolean = false,
+)
+
 object CheckRules {
     const val FOOTER = "다 끝나면 알려 드릴게요."
     const val DONE = "점검 끝. 좋은 하루 보내세요."
@@ -18,10 +27,10 @@ object CheckRules {
         cabinOn: Boolean?,
         reading: Map<SeatId, Boolean>,
         lightsUseDoorStandIn: Boolean,
-    ): List<String> {
-        val lines = mutableListOf<String>()
+    ): List<CheckItem> {
+        val lines = mutableListOf<CheckItem>()
         DoorId.entries.forEach { id ->
-            if (doors[id]?.open == true) lines += doorLine(id)
+            if (doors[id]?.open == true) lines += CheckItem(CheckKind.DOOR, doorLine(id))
         }
         listOf(
             WindowId.ROW_1_LEFT,
@@ -29,21 +38,37 @@ object CheckRules {
             WindowId.ROW_2_LEFT,
             WindowId.ROW_2_RIGHT,
         ).forEach { id ->
-            if (windows[id]?.open == true) lines += "${windowName(id)} 창문이 열려 있어요."
+            if (windows[id]?.open == true) {
+                lines += CheckItem(CheckKind.WINDOW, "${windowName(id)} 창문이 열려 있어요.")
+            }
         }
         if (!lightsUseDoorStandIn) {
-            if (cabinOn == true) lines += "실내등이 켜져 있어요."
+            if (cabinOn == true) lines += CheckItem(CheckKind.LIGHT, "실내등이 켜져 있어요.")
             SeatId.entries.forEach { seat ->
-                if (reading[seat] == true) lines += "${readingName(seat)} 독서등이 켜져 있어요."
+                if (reading[seat] == true) {
+                    lines += CheckItem(CheckKind.LIGHT, "${readingName(seat)} 독서등이 켜져 있어요.")
+                }
             }
         }
         return lines
     }
 
-    fun chargeLine(ev: Boolean, level: Int?, target: Int?): String? {
+    /** Below the return target only. Equal or above stays off the card. */
+    fun chargeLine(ev: Boolean, level: Int?, target: Int?): CheckItem? {
         if (level == null || target == null || level >= target) return null
         val word = if (ev) "충전" else "연료"
-        return "$word $level% · 반납 기준 $target%"
+        val kind = if (ev) CheckKind.CHARGE else CheckKind.FUEL
+        return CheckItem(kind, "$word $level% · 반납 기준 $target%")
+    }
+
+    fun statusBadge(kind: CheckKind, settled: Boolean = false): String = when {
+        settled && (kind == CheckKind.DOOR || kind == CheckKind.WINDOW) -> "닫힘"
+        settled -> "확인"
+        else -> when (kind) {
+            CheckKind.DOOR, CheckKind.WINDOW -> "열림"
+            CheckKind.LIGHT -> "켜짐"
+            CheckKind.CHARGE, CheckKind.FUEL -> "부족"
+        }
     }
 
     fun badge(count: Int): String = "아직 ${count}개"

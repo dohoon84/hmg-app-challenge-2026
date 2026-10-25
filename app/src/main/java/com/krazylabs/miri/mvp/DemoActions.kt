@@ -7,4 +7,7 @@ interface DemoActions {
     fun requestDemoRoute()
     fun requestDemoRoad()
     fun requestReturnGuide(place: PlaceRequest?)
+
+    /** Spec rows for the debug scenario. Release returns an empty list. */
+    fun demoReturnPlaces(): List<ReturnPlace>
 }

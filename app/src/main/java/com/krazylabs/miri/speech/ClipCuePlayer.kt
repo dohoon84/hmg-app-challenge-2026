@@ -52,6 +52,13 @@ class ClipCuePlayer(
     private var holdingFocus = false
     private var batchChimed = false
 
+    /**
+     * True while this player holds focus for a clip, TTS line, or chime.
+     * Navigation-guidance usage makes that playback look like guidance to
+     * [SpeechFocus.navigationOrAssistantActive]. Callers ignore it.
+     */
+    val audible: Boolean get() = holdingFocus
+
     fun stop() {
         generation += 1
         ticket?.cancel()

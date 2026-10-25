@@ -11,4 +11,7 @@ interface VehicleRepository {
     fun start()
     fun stop()
     fun refresh()
+
+    /** Debug override. Blank keeps the build-time gear backend. */
+    fun setGearBackend(mode: String) {}
 }

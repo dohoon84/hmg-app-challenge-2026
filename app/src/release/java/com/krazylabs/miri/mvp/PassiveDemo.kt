@@ -11,4 +11,6 @@ class PassiveDemo @Inject constructor() : DemoActions {
     override fun requestDemoRoad() = Unit
 
     override fun requestReturnGuide(place: PlaceRequest?) = Unit
+
+    override fun demoReturnPlaces(): List<ReturnPlace> = emptyList()
 }
