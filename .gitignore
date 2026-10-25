@@ -16,6 +16,7 @@ build/
 *.dex
 *.jks
 *.keystore
+*.p12
 keystore.properties
 signing.properties
 output-metadata.json
